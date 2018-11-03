@@ -1,0 +1,9 @@
+{
+  "Enable": [
+    "gofmt",
+    "vet",
+    "golint"
+  ],
+  "Deadline": "30s",
+  "Vendor": true
+}
