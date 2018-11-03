@@ -13,7 +13,9 @@ func GitRun(path string, args []string, crash bool) []byte {
 	)
 	cmdName := "git"
 	args = append([]string{"-C", path}, args...)
-	if cmdOut, err = exec.Command(cmdName, args...).Output(); err != nil {
+
+	cmd := exec.Command(cmdName, args...)
+	if cmdOut, err = cmd.CombinedOutput(); err != nil {
 		if crash == true {
 			log.Error(fmt.Sprintf("Failed to run %v\n", args))
 			log.Fatal(err)

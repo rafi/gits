@@ -13,7 +13,7 @@ go get github.com/rafi/gmux
 Or on macOS:
 
 ```bash
-brew install rafi/tap/gmux
+brew install rafi/tap/gmux --HEAD
 ```
 
 ## Usage
