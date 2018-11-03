@@ -11,8 +11,7 @@ before_deploy:
   - make VERSION=${TRAVIS_TAG} release -j2
 deploy:
   provider: releases
-  api_key:
-    secure: ${GITHUB_TOKEN}
+  api_key: ${GITHUB_TOKEN}
   file: release/*
   file_glob: true
   skip_cleanup: true
