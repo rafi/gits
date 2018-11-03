@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/c-bata/go-prompt"
-	. "github.com/logrusorgru/aurora"
+	"github.com/logrusorgru/aurora"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/rafi/gmux/common"
 	log "github.com/sirupsen/logrus"
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var repo_path string
+var repoPath string
 
 func init() {
 	rootCmd.AddCommand(checkoutCmd)
@@ -23,26 +23,26 @@ var checkoutCmd = &cobra.Command{
 	Short: "Traverse repositories and optionally checkout branch",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		for _, project_name := range args {
-			fmt.Printf("%v %v\n", Blue("::"), project_name)
-			project := common.GetProject(project_name)
-			project_base_path, err := homedir.Expand(project.Path)
+		for _, projectName := range args {
+			fmt.Printf("%v %v\n", aurora.Blue("::"), projectName)
+			project := common.GetProject(projectName)
+			projectBasePath, err := homedir.Expand(project.Path)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			for _, repo_cfg := range project.Repos {
-				path, err := homedir.Expand(repo_cfg["dir"])
+			for _, repoCfg := range project.Repos {
+				path, err := homedir.Expand(repoCfg["dir"])
 				if err != nil {
 					log.Fatal(err)
 				}
-				if len(project_base_path) > 0 && string(path[0]) != "/" {
-					path = filepath.Join(project_base_path, path)
+				if len(projectBasePath) > 0 && string(path[0]) != "/" {
+					path = filepath.Join(projectBasePath, path)
 				}
-				repo_path = path
+				repoPath = path
 
 				current := GitCurrentBranch(path)
-				ps := fmt.Sprintf("%v [%v]> ", repo_cfg["dir"], current)
+				ps := fmt.Sprintf("%v [%v]> ", repoCfg["dir"], current)
 
 				want := prompt.Input(ps, BranchCompleter)
 				if len(want) > 0 {
@@ -54,15 +54,18 @@ var checkoutCmd = &cobra.Command{
 	},
 }
 
+// BranchCompleter use go-prompt to display list
+// of branches with auto-completion
 func BranchCompleter(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{}
-	for _, branch := range GitBranches(repo_path) {
+	for _, branch := range GitBranches(repoPath) {
 		entry := prompt.Suggest{Text: branch}
 		s = append(s, entry)
 	}
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
+// GitCurrentBranch returns current branch
 func GitCurrentBranch(path string) string {
 	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
 	output := common.GitRun(path, args, true)
@@ -70,6 +73,7 @@ func GitCurrentBranch(path string) string {
 	return branch
 }
 
+// GitBranches returns list of branches, local and remote
 func GitBranches(path string) []string {
 	args := []string{"for-each-ref", "--shell", "--format=%(refname)", "refs"}
 	output := common.GitRun(path, args, true)

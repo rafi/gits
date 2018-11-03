@@ -18,6 +18,7 @@ var rootCmd = &cobra.Command{
 	//	Run: func(cmd *cobra.Command, args []string) { },
 }
 
+// Execute is the entry-point of cobra
 func Execute() {
 	log.SetLevel(log.InfoLevel)
 

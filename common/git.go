@@ -6,6 +6,7 @@ import (
 	"os/exec"
 )
 
+// GitRun executes git command-line with provided arguments
 func GitRun(path string, args []string, crash bool) []byte {
 	var (
 		cmdOut []byte

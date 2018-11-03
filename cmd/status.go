@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 	// "github.com/davecgh/go-spew/spew"
-	. "github.com/logrusorgru/aurora"
+	"github.com/logrusorgru/aurora"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/rafi/gmux/common"
 	log "github.com/sirupsen/logrus"
@@ -30,28 +30,28 @@ var statusCmd = &cobra.Command{
 			untracked string
 		)
 
-		for _, project_name := range args {
-			fmt.Printf("%v %v\n", Blue("::"), project_name)
-			project := common.GetProject(project_name)
-			project_base_path, err := homedir.Expand(project.Path)
+		for _, projectName := range args {
+			fmt.Printf("%v %v\n", aurora.Blue("::"), projectName)
+			project := common.GetProject(projectName)
+			projectBasePath, err := homedir.Expand(project.Path)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			max_len := 0
-			for _, repo_cfg := range project.Repos {
-				if i := len(repo_cfg["dir"]); i > max_len {
-					max_len = i
+			maxLen := 0
+			for _, repoCfg := range project.Repos {
+				if i := len(repoCfg["dir"]); i > maxLen {
+					maxLen = i
 				}
 			}
 
-			for _, repo_cfg := range project.Repos {
-				path, err := homedir.Expand(repo_cfg["dir"])
+			for _, repoCfg := range project.Repos {
+				path, err := homedir.Expand(repoCfg["dir"])
 				if err != nil {
 					log.Fatal(err)
 				}
-				if len(project_base_path) > 0 && string(path[0]) != "/" {
-					path = filepath.Join(project_base_path, path)
+				if len(projectBasePath) > 0 && string(path[0]) != "/" {
+					path = filepath.Join(projectBasePath, path)
 				}
 
 				version := GitDescribe(path)
@@ -65,11 +65,11 @@ var statusCmd = &cobra.Command{
 					untracked = fmt.Sprintf("?%d", count)
 				}
 
-				fmt.Printf("%"+strconv.Itoa(max_len+2)+"v %3v %3v %4v %v %v\n",
-					Gray(repo_cfg["dir"]),
-					Red(modified),
-					Blue(untracked),
-					Magenta(GitDiff(path)),
+				fmt.Printf("%"+strconv.Itoa(maxLen+2)+"v %3v %3v %4v %v %v\n",
+					aurora.Gray(repoCfg["dir"]),
+					aurora.Red(modified),
+					aurora.Blue(untracked),
+					aurora.Magenta(GitDiff(path)),
 					GitCurrentPosition(path),
 					version,
 				)
@@ -78,6 +78,7 @@ var statusCmd = &cobra.Command{
 	},
 }
 
+// GitModified returns the number of modified files
 func GitModified(path string) int {
 	args := []string{"diff", "--shortstat"}
 	output := common.GitRun(path, args, true)
@@ -93,23 +94,27 @@ func GitModified(path string) int {
 	return 0
 }
 
+// GitUntracked returns the number of untracked files
 func GitUntracked(path string) int {
 	args := []string{"ls-files", "--others", "--exclude-standard"}
 	output := common.GitRun(path, args, true)
 	return len(strings.Split(string(output), "\n")) - 1
 }
 
+// GitCurrentPosition returns a short log description of HEAD
 func GitCurrentPosition(path string) string {
 	args := []string{"log", "-1", "--color=always", "--format=%C(auto)%D %C(242)(%aN %ar)%Creset"}
 	output := common.GitRun(path, args, true)
 	return strings.TrimSuffix(string(output), "\n")
 }
 
+// GitDescribe generates a version description based on tags and hash
 func GitDescribe(path string) string {
 	args := []string{"describe", "--always"}
 	return strings.TrimSuffix(string(common.GitRun(path, args, true)), "\n")
 }
 
+// GitDiff returns a formatted string of ahead/behind counts
 func GitDiff(path string) string {
 	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
 	branch := strings.TrimSuffix(string(common.GitRun(path, args, true)), "\n")
