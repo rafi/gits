@@ -1,4 +1,4 @@
-# Git-Multiplex (gmux)
+# Git-Multiplex (gmux) [![Build Status](https://travis-ci.org/rafi/gmux.svg?branch=master)](https://travis-ci.org/rafi/gmux)
 
 > A Fast CLI Git manager for multiple repositories
 
