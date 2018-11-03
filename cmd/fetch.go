@@ -23,7 +23,7 @@ var fetchCmd = &cobra.Command{
 
 		for _, projectName := range args {
 			fmt.Printf("%v %v\n", aurora.Blue("::"), projectName)
-			project := common.GetProject(projectName)
+			project := cfg.Projects[projectName]
 			projectBasePath, err := homedir.Expand(project.Path)
 			if err != nil {
 				log.Fatal(err)

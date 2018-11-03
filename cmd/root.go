@@ -2,12 +2,17 @@ package cmd
 
 import (
 	homedir "github.com/mitchellh/go-homedir"
+	"github.com/rafi/gmux/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"os"
+	"path"
 )
 
 var cfgFile string
+
+var cfg common.GmuxConfig
 
 var rootCmd = &cobra.Command{
 	Use:   "gmux",
@@ -30,15 +35,16 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gmux.yaml)")
+
+	rootCmd.PersistentFlags().BoolVarP(&cfg.Verbose, "verbose", "v", false, "display verbose output")
+	_ = viper.BindPFlag("Verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	viper.SetConfigType("yaml")
+	viper.SetDefault("Verbose", false)
+
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
@@ -52,14 +58,22 @@ func initConfig() {
 		// Search config in home directory with filename
 		viper.AddConfigPath(home)
 		viper.SetConfigName(".gmux")
+		if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
+			viper.AddConfigPath(path.Join(xdgConfigHome, "gmux"))
+		} else {
+			viper.AddConfigPath(path.Join(home, ".config", "gmux"))
+		}
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	viper.SetConfigType("yaml")
+	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		log.Debug("Using config file ", viper.ConfigFileUsed())
-	} else {
+	if err := viper.ReadInConfig(); err != nil {
 		log.Fatal("Unable to load config file, ", err)
+	}
+	_ = viper.Unmarshal(&cfg)
+	if cfg.Verbose {
+		log.SetLevel(log.DebugLevel)
+		log.WithField("config", viper.ConfigFileUsed()).Debug("Loaded config")
 	}
 }
