@@ -11,8 +11,8 @@ var cfgFile string
 
 var rootCmd = &cobra.Command{
 	Use:   "gmux",
-	Short: "GitMultiplex is a manager for multiple Git repositories",
-	Long:  "A Fast Git manager for multiple repositories",
+	Short: "Git-Multiplex is a manager for multiple Git repositories",
+	Long:  "A Fast CLI Git manager for multiple repositories",
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	//	Run: func(cmd *cobra.Command, args []string) { },
