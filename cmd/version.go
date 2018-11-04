@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version will contain version on build
 var Version string
 
 func init() {
