@@ -9,7 +9,7 @@ import (
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/logrusorgru/aurora"
 	homedir "github.com/mitchellh/go-homedir"
-	"github.com/rafi/gmux/common"
+	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

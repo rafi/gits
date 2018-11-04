@@ -17,6 +17,6 @@ var versionCmd = &cobra.Command{
 	Short: "Show version",
 	Args:  cobra.ExactArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("gmux: %v\n", Version)
+		fmt.Printf("gits: %v\n", Version)
 	},
 }

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	homedir "github.com/mitchellh/go-homedir"
-	"github.com/rafi/gmux/common"
+	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -12,11 +12,11 @@ import (
 
 var cfgFile string
 
-var cfg common.GmuxConfig
+var cfg common.Config
 
 var rootCmd = &cobra.Command{
-	Use:   "gmux",
-	Short: "Git-Multiplex is a manager for multiple Git repositories",
+	Use:   "gits",
+	Short: "Gits is a manager for multiple Git repositories",
 	Long:  "A Fast CLI Git manager for multiple repositories",
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
@@ -35,7 +35,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gmux.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gits.yaml)")
 
 	rootCmd.PersistentFlags().BoolVarP(&cfg.Verbose, "verbose", "v", false, "display verbose output")
 	_ = viper.BindPFlag("Verbose", rootCmd.PersistentFlags().Lookup("verbose"))
@@ -57,11 +57,11 @@ func initConfig() {
 
 		// Search config in home directory with filename
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".gmux")
+		viper.SetConfigName(".gits")
 		if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
-			viper.AddConfigPath(path.Join(xdgConfigHome, "gmux"))
+			viper.AddConfigPath(path.Join(xdgConfigHome, "gits"))
 		} else {
-			viper.AddConfigPath(path.Join(home, ".config", "gmux"))
+			viper.AddConfigPath(path.Join(home, ".config", "gits"))
 		}
 	}
 

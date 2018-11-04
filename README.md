@@ -1,4 +1,4 @@
-# Git-Multiplex (gmux) [![Build Status](https://travis-ci.org/rafi/gmux.svg?branch=master)](https://travis-ci.org/rafi/gmux)
+# Gits [![Build Status](https://travis-ci.org/rafi/gits.svg?branch=master)](https://travis-ci.org/rafi/gits)
 
 > A Fast CLI Git manager for multiple repositories
 
@@ -7,18 +7,18 @@
 Requirements: [Git](https://git-scm.com/)
 
 ```bash
-go get github.com/rafi/gmux
+go get github.com/rafi/gits
 ```
 
 Or on macOS:
 
 ```bash
-brew install rafi/tap/gmux --HEAD
+brew install rafi/tap/gits --HEAD
 ```
 
 ## Usage
 
-Usage: `gmux [command] <project>`
+Usage: `gits [command] <project>`
 
 Available Commands:
 
@@ -29,7 +29,7 @@ Available Commands:
 
 ## Config
 
-Configuration file must be present at `~/.gmux.yaml`, here is an example:
+Configuration file must be present at `~/.gits.yaml`, here is an example:
 
 ```yaml
 ---

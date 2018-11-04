@@ -1,6 +1,6 @@
 package main
 
-import "github.com/rafi/gmux/cmd"
+import "github.com/rafi/gits/cmd"
 
 func main() {
 	cmd.Execute()

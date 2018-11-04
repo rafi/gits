@@ -16,7 +16,7 @@ $(GOMETALINTER):
 lint: $(GOMETALINTER)
 	gometalinter ./... --vendor
 
-BINARY := gmux
+BINARY := gits
 VERSION := $(shell git describe --always --tags)
 PLATFORMS := linux darwin
 os = $(word 1, $@)
@@ -25,7 +25,7 @@ os = $(word 1, $@)
 $(PLATFORMS):
 	mkdir -p release
 	GOOS=$(os) GOARCH=amd64 go build \
-			-ldflags="-X github.com/rafi/gmux/cmd.Version=$(VERSION)" \
+			-ldflags="-X github.com/rafi/gits/cmd.Version=$(VERSION)" \
 			-o release/$(BINARY)-$(VERSION)-$(os)-amd64
 
 .PHONY: release

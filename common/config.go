@@ -9,8 +9,8 @@ type ProjectInfo struct {
 	Repos []RepoInfo `mapstructure:"repos"`
 }
 
-// GmuxConfig is the root of configuration
-type GmuxConfig struct {
+// Config is the root of configuration
+type Config struct {
 	Projects map[string]ProjectInfo `mapstructure:"projects"`
 	Verbose  bool
 }
