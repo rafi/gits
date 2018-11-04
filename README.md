@@ -2,6 +2,8 @@
 
 > A Fast CLI Git manager for multiple repositories
 
+![gits animated overview](http://rafi.io/static/img/project/gits/overview.gif)
+
 ## Install
 
 Requirements: [Git](https://git-scm.com/)
