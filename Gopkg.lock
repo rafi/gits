@@ -126,11 +126,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e6d37194751838237ca6cccbcebde1b119195bad7f104b2494f10d915cb32fe4"
+  digest = "1:4cd499f102d1dbd7583f07431c8530b385f089c4b188a0778bc47a870930eb9b"
   name = "github.com/pkg/term"
   packages = ["termios"]
   pruneopts = "UT"
-  revision = "cc118f533a7e84f48e389384d0d75606ea2e098a"
+  revision = "93e6c91493094ff99a036fea0040802a1e0a4f69"
 
 [[projects]]
   digest = "1:69b1cc331fca23d702bd72f860c6a647afd0aa9fcbc1d0659b1365e26546dd70"
@@ -160,12 +160,12 @@
   version = "v1.3.0"
 
 [[projects]]
-  digest = "1:645cabccbb4fa8aab25a956cbcbdf6a6845ca736b2c64e197ca7cbb9d210b939"
+  branch = "master"
+  digest = "1:94fa1f2ef03d8c002dcfc02f4d778b95c7db66d2304ba718a9cade5bf88c91a1"
   name = "github.com/spf13/cobra"
   packages = ["."]
   pruneopts = "UT"
-  revision = "ef82de70bb3f60c65fb8eebacbb2d122ef517385"
-  version = "v0.0.3"
+  revision = "fe5e611709b0c57fa4a89136deaa8e1d4004d053"
 
 [[projects]]
   digest = "1:68ea4e23713989dc20b1bded5d9da2c5f9be14ff9885beef481848edd18c26cb"
@@ -197,18 +197,18 @@
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
   pruneopts = "UT"
-  revision = "4d3f4d9ffa16a13f451c3b2999e9c49e9750bf06"
+  revision = "e4dc69e5b2fd71dcaf8bd5d054eb936deb78d1fa"
 
 [[projects]]
   branch = "master"
-  digest = "1:417d27a82efb8473554234a282be33d23b0d6adc121e636b55950f913ac071d6"
+  digest = "1:6a875550c3b582f6c2d7e2ce44aba792511f00016d7c46b0a4fb26f730ef3058"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "UT"
-  revision = "9b800f95dbbc54abff0acf7ee32d88ba4e328c89"
+  revision = "66b7b1311ac80bbafcd2daeef9a5e6e2cd1e2399"
 
 [[projects]]
   digest = "1:8029e9743749d4be5bc9f7d42ea1659471767860f0cdc34d37c3111bd308a295"
