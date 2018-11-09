@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 	// "github.com/davecgh/go-spew/spew"
-	"github.com/logrusorgru/aurora"
+	aur "github.com/logrusorgru/aurora"
 	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -55,10 +55,10 @@ var statusCmd = &cobra.Command{
 				}
 
 				fmt.Printf("%"+strconv.Itoa(maxLen+2)+"v %3v %3v %4v %v %v\n",
-					aurora.Gray(repoCfg["dir"]),
-					aurora.Red(modified),
-					aurora.Blue(untracked),
-					aurora.Magenta(GitDiff(path)),
+					aur.Gray(repoCfg["dir"]),
+					aur.Red(modified),
+					aur.Blue(untracked),
+					aur.Magenta(GitDiff(path)),
 					GitCurrentPosition(path),
 					version,
 				)

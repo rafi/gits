@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/logrusorgru/aurora"
+	aur "github.com/logrusorgru/aurora"
 	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -37,7 +37,7 @@ var fetchCmd = &cobra.Command{
 				output := common.GitRun(path, args, true)
 
 				fmt.Printf("  %v %v\n",
-					aurora.Gray(repoCfg["dir"]),
+					aur.Gray(repoCfg["dir"]),
 					strings.TrimSuffix(string(output), "\n"),
 				)
 			}
