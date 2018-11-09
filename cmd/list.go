@@ -14,7 +14,7 @@ var listCmd = &cobra.Command{
 	Short: "Lists all projects",
 	Args:  cobra.ExactArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
-		for projectName, _ := range cfg.Projects {
+		for projectName := range cfg.Projects {
 			fmt.Println(projectName)
 		}
 	},

@@ -15,9 +15,10 @@ var cfgFile string
 var cfg common.Config
 
 var rootCmd = &cobra.Command{
-	Use:   "gits",
-	Short: "Gits is a manager for multiple Git repositories",
-	Long:  "A Fast CLI Git manager for multiple repositories",
+	Use:                    "gits",
+	Short:                  "Gits is a manager for multiple Git repositories",
+	Long:                   "A Fast CLI Git manager for multiple repositories",
+	BashCompletionFunction: bashCompletionFunc,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	//	Run: func(cmd *cobra.Command, args []string) { },
@@ -69,7 +70,7 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatal("Unable to load config file, ", err)
+		log.Error("Unable to load config file, ", err)
 	}
 	_ = viper.Unmarshal(&cfg)
 	if cfg.Verbose {
@@ -77,3 +78,29 @@ func initConfig() {
 		log.WithField("config", viper.ConfigFileUsed()).Debug("Loaded config")
 	}
 }
+
+const (
+	bashCompletionFunc = `__gits_get_projects()
+{
+    local gits_output out
+    if gits_output=$(gits list 2>/dev/null); then
+        out=($(echo "${gits_output}" | awk '{print $1}'))
+        COMPREPLY=( $( compgen -W "${out[*]}" -- "$cur" ) )
+    fi
+    if [[ $? -eq 0 ]]; then
+        return 0
+    fi
+}
+
+__custom_func() {
+    case ${last_command} in
+        gits_checkout | gits_clone | gits_fetch | gits_status)
+            __gits_get_projects
+            return
+            ;;
+        *)
+            ;;
+    esac
+}
+`
+)
