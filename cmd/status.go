@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/logrusorgru/aurora"
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -31,27 +29,18 @@ var statusCmd = &cobra.Command{
 		)
 
 		for _, projectName := range args {
-			fmt.Printf("%v %v\n", aurora.Blue("::"), projectName)
-			project := cfg.Projects[projectName]
-			projectBasePath, err := homedir.Expand(project.Path)
+			project, err := cfg.GetProject(projectName)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			maxLen := 0
-			for _, repoCfg := range project.Repos {
-				if i := len(repoCfg["dir"]); i > maxLen {
-					maxLen = i
-				}
-			}
+			fmt.Print(project.GetTitle())
+			maxLen := project.GetMaxLen()
 
 			for _, repoCfg := range project.Repos {
-				path, err := homedir.Expand(repoCfg["dir"])
+				path, err := project.GetRepoAbsPath(repoCfg["dir"])
 				if err != nil {
 					log.Fatal(err)
-				}
-				if len(projectBasePath) > 0 && string(path[0]) != "/" {
-					path = filepath.Join(projectBasePath, path)
 				}
 
 				version := GitDescribe(path)

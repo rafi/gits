@@ -3,12 +3,9 @@ package cmd
 import (
 	"fmt"
 	"github.com/c-bata/go-prompt"
-	"github.com/logrusorgru/aurora"
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"path/filepath"
 	"strings"
 )
 
@@ -24,30 +21,26 @@ var checkoutCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		for _, projectName := range args {
-			fmt.Printf("%v %v\n", aurora.Blue("::"), projectName)
-			project := cfg.Projects[projectName]
-			projectBasePath, err := homedir.Expand(project.Path)
+			project, err := cfg.GetProject(projectName)
 			if err != nil {
 				log.Fatal(err)
 			}
 
+			fmt.Print(project.GetTitle())
+
 			for _, repoCfg := range project.Repos {
-				path, err := homedir.Expand(repoCfg["dir"])
+				repoPath, err = project.GetRepoAbsPath(repoCfg["dir"])
 				if err != nil {
 					log.Fatal(err)
 				}
-				if len(projectBasePath) > 0 && string(path[0]) != "/" {
-					path = filepath.Join(projectBasePath, path)
-				}
-				repoPath = path
 
-				current := GitCurrentBranch(path)
+				current := GitCurrentBranch(repoPath)
 				ps := fmt.Sprintf("%v [%v]> ", repoCfg["dir"], current)
 
 				want := prompt.Input(ps, BranchCompleter)
 				if len(want) > 0 {
 					args := []string{"checkout", want}
-					common.GitRun(path, args, true)
+					common.GitRun(repoPath, args, true)
 				}
 			}
 		}
