@@ -19,9 +19,6 @@ var rootCmd = &cobra.Command{
 	Short:                  "Gits is a manager for multiple Git repositories",
 	Long:                   "A Fast CLI Git manager for multiple repositories",
 	BashCompletionFunction: bashCompletionFunc,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	//	Run: func(cmd *cobra.Command, args []string) { },
 }
 
 // Execute is the entry-point of cobra

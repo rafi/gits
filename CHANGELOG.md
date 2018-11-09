@@ -1,3 +1,14 @@
+
+v0.2.0 / 2018-11-09
+===================
+
+* Add bash completion
+* Introduce list command
+* Document YAML config definition
+* Introduce clone command
+* Optimize code and use struct methods
+* Add animated overview
+
 v0.1.0 / 2018-11-03
 ===================
 
