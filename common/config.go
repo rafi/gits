@@ -28,9 +28,19 @@ type Config struct {
 // GetProject correctly returns a proper project object
 func (config Config) GetProject(name string) (ProjectInfo, error) {
 	var err error
-	project := config.Projects[name]
-	project.AbsPath, err = homedir.Expand(project.Path)
-	project.Name = name
+	var project ProjectInfo
+	if name == "." || name[0:1] == "/" || name[0:2] == "./" {
+		project.Path, err = filepath.Abs(name)
+		if err == nil {
+			project.Name = filepath.Base(project.Path)
+			project.Repos, err = GitDiscoverRepos(project.Path)
+		}
+	} else {
+		project := config.Projects[name]
+		project.AbsPath, err = homedir.Expand(project.Path)
+		project.Name = name
+	}
+
 	return project, err
 }
 

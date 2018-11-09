@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	// "github.com/davecgh/go-spew/spew"
@@ -21,6 +22,8 @@ var statusCmd = &cobra.Command{
 	Short: "Shows Git repositories short status",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+
+		runtime.GOMAXPROCS(runtime.NumCPU())
 
 		var (
 			count     int
