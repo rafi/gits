@@ -34,7 +34,10 @@ var cloneCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
-				fmt.Printf("%"+strconv.Itoa(maxLen+2)+"v ", aur.Gray(repoCfg["dir"]))
+				fmt.Printf(
+					"%"+strconv.Itoa(maxLen+2)+"v ",
+					aur.Gray(12, repoCfg["dir"]))
+
 				if repoCfg["src"] != "" {
 					result := GitClone(repoCfg["src"], path)
 					if result != "" {

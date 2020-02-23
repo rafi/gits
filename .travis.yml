@@ -1,14 +1,25 @@
 ---
 
 language: go
+
+# use the latest ubuntu environment (18.04) available on travis
+dist: bionic
+
 go:
   - 1.11.x
   - 1.12.x
   - 1.13.x
+
+# Force-enable Go modules. Also force go to use the code in vendor/
+# This won't be necessary when Go 1.14 lands.
+env: GO111MODULE=on GOFLAGS='-mod vendor'
+
 script:
   - make
+
 before_deploy:
   - make VERSION=${TRAVIS_TAG} release -j2
+
 deploy:
   provider: releases
   api_key: ${GITHUB_TOKEN}

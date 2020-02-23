@@ -37,7 +37,7 @@ var fetchCmd = &cobra.Command{
 				output := common.GitRun(path, args, true)
 
 				fmt.Printf("  %v %v\n",
-					aur.Gray(repoCfg["dir"]),
+					aur.Gray(12, repoCfg["dir"]),
 					strings.TrimSuffix(string(output), "\n"),
 				)
 			}

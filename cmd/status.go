@@ -58,7 +58,7 @@ var statusCmd = &cobra.Command{
 				}
 
 				fmt.Printf("%"+strconv.Itoa(maxLen+2)+"v %3v %3v %4v %v %v\n",
-					aur.Gray(repoCfg["dir"]),
+					aur.Gray(12, repoCfg["dir"]),
 					aur.Red(modified),
 					aur.Blue(untracked),
 					aur.Magenta(GitDiff(path)),
