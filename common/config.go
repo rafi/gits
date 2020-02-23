@@ -36,7 +36,7 @@ func (config Config) GetProject(name string) (ProjectInfo, error) {
 			project.Repos, err = GitDiscoverRepos(project.Path)
 		}
 	} else {
-		project := config.Projects[name]
+		project = config.Projects[name]
 		project.AbsPath, err = homedir.Expand(project.Path)
 		project.Name = name
 	}
