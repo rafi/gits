@@ -1,20 +1,19 @@
 PKGS := $(shell go list ./... | grep -v /vendor)
+GOLANGCI_URL = https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh
+GOLANGCI_VERSION = v1.23.6
 
 .PHONY: test
 test: lint
-	go test $(PKGS)
+	go test -v $(PKGS)
 
-BIN_DIR := $(GOPATH)/bin
-GOMETALINTER := $(BIN_DIR)/gometalinter
+GOLANGCI := bin/golangci-lint
 
-$(GOMETALINTER):
-	go get -u github.com/golang/lint/golint
-	go get -u github.com/alecthomas/gometalinter
-	gometalinter --install &> /dev/null
+$(GOLANGCI):
+	curl -sfL $(GOLANGCI_URL) | sh -s $(GOLANGCI_VERSION)
 
 .PHONY: lint
-lint: $(GOMETALINTER)
-	gometalinter ./... --vendor
+lint: $(GOLANGCI)
+	./bin/golangci-lint run
 
 BINARY := gits
 VERSION := $(shell git describe --always --tags)
