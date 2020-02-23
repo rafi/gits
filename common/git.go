@@ -20,7 +20,7 @@ func GitRun(path string, args []string, crash bool) []byte {
 
 	cmd := exec.Command(cmdName, args...)
 	if cmdOut, err = cmd.CombinedOutput(); err != nil {
-		if crash == true {
+		if crash {
 			log.Error(fmt.Sprintf("Failed to run %v\n", args))
 			log.Fatal(err)
 		} else {
@@ -48,6 +48,9 @@ func GitDiscoverRepos(path string) ([]RepoInfo, error) {
 		},
 		ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
 			_, err = fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			if err != nil {
+				log.Fatal(err)
+			}
 			return godirwalk.SkipNode
 		},
 		Unsorted: true,
