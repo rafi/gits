@@ -35,6 +35,11 @@ var checkoutCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
+				if ! common.GitIsRepo(repoPath) {
+					log.Warn(fmt.Sprintf("Not a Git repository %v\n", repoPath))
+					continue
+				}
+
 				current := GitCurrentBranch(repoPath)
 				ps := fmt.Sprintf("%v [%v]> ", repoCfg["dir"], current)
 

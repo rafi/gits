@@ -31,6 +31,16 @@ func GitRun(path string, args []string, crash bool) []byte {
 	return cmdOut
 }
 
+func GitIsRepo(path string) bool {
+	cmdName := "git"
+	args := []string{"-C", path, "rev-parse", "--is-inside-work-tree"}
+	result := exec.Command(cmdName, args...)
+	if err := result.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
 // GitDiscoverRepos recursively search for git repositories
 func GitDiscoverRepos(path string) ([]RepoInfo, error) {
 	var repos []RepoInfo

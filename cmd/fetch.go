@@ -35,6 +35,11 @@ var fetchCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
+				if ! common.GitIsRepo(path) {
+					log.Warn(fmt.Sprintf("Not a Git repository %v\n", path))
+					continue
+				}
+
 				args = []string{"fetch", "--all", "--tags", "--prune"}
 				output := common.GitRun(path, args, true)
 

@@ -2,6 +2,8 @@ package common
 
 import (
 	"fmt"
+	"strings"
+
 	aur "github.com/logrusorgru/aurora"
 	"path/filepath"
 	homedir "github.com/mitchellh/go-homedir"
@@ -56,9 +58,15 @@ func (project ProjectInfo) GetTitle() string {
 
 // GetMaxLen returns length of the widest repo directory in a project
 func (project ProjectInfo) GetMaxLen() int {
+	// Find home directory
+	home, err := homedir.Dir()
+	if err != nil {
+		log.Fatal("Unable to find home directory, ", err)
+	}
+
 	maxLen := 0
 	for _, repoCfg := range project.Repos {
-		if i := len(repoCfg["dir"]); i > maxLen {
+		if i := len(strings.Replace(repoCfg["dir"], home, "~", 1)); i > maxLen {
 			maxLen = i
 		}
 	}

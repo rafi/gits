@@ -34,6 +34,11 @@ var cloneCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
+				if _, err := os.Stat(path); os.IsExist(err) {
+					log.Warn(fmt.Sprintf("Directory already exists %v\n", path))
+					continue
+				}
+
 				fmt.Printf(
 					"%"+strconv.Itoa(maxLen+2)+"v ",
 					aur.Gray(12, repoCfg["dir"]))

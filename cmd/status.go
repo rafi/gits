@@ -34,6 +34,12 @@ var statusCmd = &cobra.Command{
 			untracked string
 		)
 
+		// Find home directory
+		home, err := homedir.Dir()
+		if err != nil {
+			log.Fatal("Unable to find home directory, ", err)
+		}
+
 		for _, projectName := range args {
 			project, err := cfg.GetProject(projectName)
 			if err != nil {
@@ -49,6 +55,15 @@ var statusCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
+				if ! common.GitIsRepo(path) {
+					fmt.Printf(
+						"  %"+strconv.Itoa(maxLen)+"v %12s %s\n",
+						aur.Gray(12, strings.Replace(repoCfg["dir"], home, "~", 1)),
+						aur.Magenta("x"),
+						aur.Cyan("Not a Git repository"),
+					)
+					continue
+				}
 				version := GitDescribe(path)
 
 				modified = ""
@@ -61,7 +76,7 @@ var statusCmd = &cobra.Command{
 				}
 
 				fmt.Printf("%"+strconv.Itoa(maxLen+2)+"v %3v %3v %4v %v %v\n",
-					aur.Gray(12, repoCfg["dir"]),
+					aur.Gray(12, strings.Replace(repoCfg["dir"], home, "~", 1)),
 					aur.Red(modified),
 					aur.Blue(untracked),
 					aur.Magenta(GitDiff(path)),
