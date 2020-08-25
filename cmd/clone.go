@@ -15,7 +15,7 @@ func init() {
 }
 
 var cloneCmd = &cobra.Command{
-	Use:   "clone <project>",
+	Use:   "clone <project>...",
 	Short: "Clones all repositories",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {

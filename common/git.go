@@ -2,11 +2,12 @@ package common
 
 import (
 	"fmt"
-	"github.com/karrick/godirwalk"
-	log "github.com/sirupsen/logrus"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/karrick/godirwalk"
+	log "github.com/sirupsen/logrus"
 )
 
 // GitRun executes git command-line with provided arguments
@@ -38,7 +39,7 @@ func GitDiscoverRepos(path string) ([]RepoInfo, error) {
 		Callback: func(osPathname string, de *godirwalk.Dirent) error {
 			if de.IsDir() {
 				_, err := os.Stat(filepath.Join(osPathname, ".git"))
-				if !os.IsNotExist(err) {
+				if os.IsExist(err) {
 					repo := RepoInfo{"dir": osPathname}
 					repos = append(repos, repo)
 					return filepath.SkipDir

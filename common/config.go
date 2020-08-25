@@ -3,8 +3,9 @@ package common
 import (
 	"fmt"
 	aur "github.com/logrusorgru/aurora"
-	homedir "github.com/mitchellh/go-homedir"
 	"path/filepath"
+	homedir "github.com/mitchellh/go-homedir"
+	log "github.com/sirupsen/logrus"
 )
 
 // RepoInfo represents a single repository

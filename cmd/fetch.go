@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	aur "github.com/logrusorgru/aurora"
+
 	"github.com/rafi/gits/common"
-	log "github.com/sirupsen/logrus"
+
+	aur "github.com/logrusorgru/aurora"
 	"github.com/spf13/cobra"
+	log "github.com/sirupsen/logrus"
 	"strings"
 )
 
@@ -14,7 +16,7 @@ func init() {
 }
 
 var fetchCmd = &cobra.Command{
-	Use:   "fetch <project>",
+	Use:   "fetch <project>...",
 	Short: "Fetches and prunes from all remotes",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {

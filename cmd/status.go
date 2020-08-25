@@ -6,11 +6,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/rafi/gits/common"
+
 	// "github.com/davecgh/go-spew/spew"
 	aur "github.com/logrusorgru/aurora"
-	"github.com/rafi/gits/common"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	homedir "github.com/mitchellh/go-homedir"
+	log "github.com/sirupsen/logrus"
 )
 
 func init() {
@@ -18,7 +21,7 @@ func init() {
 }
 
 var statusCmd = &cobra.Command{
-	Use:   "status <project>",
+	Use:   "status <project>...",
 	Short: "Shows Git repositories short status",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {

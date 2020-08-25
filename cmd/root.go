@@ -1,13 +1,15 @@
 package cmd
 
 import (
-	homedir "github.com/mitchellh/go-homedir"
-	"github.com/rafi/gits/common"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"os"
 	"path"
+
+	"github.com/rafi/gits/common"
+
+	"github.com/spf13/cobra"
+	homedir "github.com/mitchellh/go-homedir"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 var cfgFile string

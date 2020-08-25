@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/c-bata/go-prompt"
 	"github.com/rafi/gits/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"strings"
 )
 
 var repoPath string
@@ -16,7 +17,7 @@ func init() {
 }
 
 var checkoutCmd = &cobra.Command{
-	Use:   "checkout <project>",
+	Use:   "checkout <project>...",
 	Short: "Traverse repositories and optionally checkout branch",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
