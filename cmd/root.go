@@ -93,7 +93,7 @@ const (
 
 __gits_custom_func() {
     case ${last_command} in
-        gits_checkout | gits_clone | gits_fetch | gits_status)
+        gits_checkout | gits_clone | gits_fetch | gits_status | gits_list)
             __gits_get_projects
             return
             ;;
