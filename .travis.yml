@@ -10,9 +10,8 @@ go:
   - 1.12.x
   - 1.13.x
 
-# Force-enable Go modules. Also force go to use the code in vendor/
-# This won't be necessary when Go 1.14 lands.
-env: GO111MODULE=on GOFLAGS='-mod vendor'
+# Force-enable Go modules.
+env: GO111MODULE=on
 
 script:
   - make
