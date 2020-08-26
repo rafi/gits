@@ -9,9 +9,9 @@ import (
 	"github.com/rafi/gits/common"
 
 	aur "github.com/logrusorgru/aurora"
-	"github.com/spf13/cobra"
 	homedir "github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -55,7 +55,7 @@ var listCmd = &cobra.Command{
 					var state aur.Value
 					if _, err := os.Stat(path); os.IsNotExist(err) {
 						state = aur.Magenta("Doesn't exist")
-					} else if ! common.GitIsRepo(path) {
+					} else if !common.GitIsRepo(path) {
 						state = aur.Magenta("Not a Git repository")
 					}
 

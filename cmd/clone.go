@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	aur "github.com/logrusorgru/aurora"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"os"
 	"os/exec"
 	"strconv"
+
+	aur "github.com/logrusorgru/aurora"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 func init() {

@@ -11,9 +11,9 @@ import (
 
 	// "github.com/davecgh/go-spew/spew"
 	aur "github.com/logrusorgru/aurora"
-	"github.com/spf13/cobra"
 	homedir "github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -55,7 +55,7 @@ var statusCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
-				if ! common.GitIsRepo(path) {
+				if !common.GitIsRepo(path) {
 					fmt.Printf(
 						"  %"+strconv.Itoa(maxLen)+"v %12s %s\n",
 						aur.Gray(12, strings.Replace(repoCfg["dir"], home, "~", 1)),

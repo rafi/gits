@@ -2,10 +2,10 @@ package common
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	aur "github.com/logrusorgru/aurora"
-	"path/filepath"
 	homedir "github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
 )

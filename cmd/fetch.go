@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/rafi/gits/common"
 
 	aur "github.com/logrusorgru/aurora"
-	"github.com/spf13/cobra"
 	log "github.com/sirupsen/logrus"
-	"strings"
+	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -35,7 +35,7 @@ var fetchCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
-				if ! common.GitIsRepo(path) {
+				if !common.GitIsRepo(path) {
 					log.Warn(fmt.Sprintf("Not a Git repository %v\n", path))
 					continue
 				}

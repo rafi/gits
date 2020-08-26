@@ -35,7 +35,7 @@ var checkoutCmd = &cobra.Command{
 					log.Fatal(err)
 				}
 
-				if ! common.GitIsRepo(repoPath) {
+				if !common.GitIsRepo(repoPath) {
 					log.Warn(fmt.Sprintf("Not a Git repository %v\n", repoPath))
 					continue
 				}
