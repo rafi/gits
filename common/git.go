@@ -23,7 +23,7 @@ func GitRun(path string, args []string, crash bool) []byte {
 	if cmdOut, err = cmd.CombinedOutput(); err != nil {
 		if crash {
 			log.Error(fmt.Sprintf("Failed to run %v\n", args))
-			log.Fatal(err)
+			log.Fatal(fmt.Sprintf("%s %s", cmdOut, err))
 		} else {
 			return nil
 		}
@@ -49,9 +49,10 @@ func GitDiscoverRepos(path string) ([]RepoInfo, error) {
 		Callback: func(osPathname string, de *godirwalk.Dirent) error {
 			if de.IsDir() {
 				_, err := os.Stat(filepath.Join(osPathname, ".git"))
-				if os.IsExist(err) {
+				if !os.IsNotExist(err) {
 					repo := RepoInfo{"dir": osPathname}
 					repos = append(repos, repo)
+					// Stop searching in current directory
 					return filepath.SkipDir
 				}
 			}
