@@ -1,4 +1,11 @@
 
+v0.3.0 / 2020-09-04
+===================
+
+* List command can list project directories
+* Improve error handling
+* Migrate from dep to Go modules
+
 v0.2.1 / 2020-02-24
 ===================
 
