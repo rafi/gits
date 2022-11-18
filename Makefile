@@ -1,6 +1,6 @@
 PKGS := $(shell go list ./...)
 GOLANGCI_URL = https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh
-GOLANGCI_VERSION = v1.30.0
+GOLANGCI_VERSION = v1.50.1
 
 .PHONY: test
 test: lint

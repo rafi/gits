@@ -1,0 +1,13 @@
+# golangci-lint config
+
+# options for analysis running
+run:
+  # default concurrency is a available CPU number
+  # concurrency: 4
+  timeout: 20s
+
+# all available settings of specific linters
+linters-settings:
+  gci:
+    # put imports beginning with prefix after 3rd-party packages
+    local-prefixes: github.com/rafi/gits
