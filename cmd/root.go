@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 
-	"github.com/rafi/gits/common"
+	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/pkg/git"
 
 	homedir "github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
@@ -12,9 +16,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
-
-var cfg common.Config
+var (
+	cfgFile string
+	cfg     cli.Config
+)
 
 var rootCmd = &cobra.Command{
 	Use:                    "gits",
@@ -32,27 +37,89 @@ func Execute() {
 	}
 }
 
+func loadGit() git.Git {
+	gitPath := "git"
+	git := git.New(gitPath)
+	return git
+}
+
+func loadProjectsFromArgs(git git.Git, args []string) []domain.Project {
+	projects := []domain.Project{}
+	for _, projectName := range args {
+		proj, err := getProject(projectName, cfg, git)
+		if err != nil {
+			log.Fatal(err)
+		}
+		projects = append(projects, proj)
+	}
+
+	return projects
+}
+
+// Get correctly returns a proper project object
+func getProject(name string, config cli.Config, git git.Git) (domain.Project, error) {
+	var (
+		err       error
+		project   domain.Project
+		repoPaths []string
+	)
+
+	if name == "." || name[0:1] == "/" || name[0:2] == "./" {
+		project.Path, err = filepath.Abs(name)
+		if err != nil {
+			return domain.Project{}, fmt.Errorf("getProject: %w", err)
+		}
+		project.Name = filepath.Base(project.Path)
+		repoPaths, err = git.DiscoverRepos(project.Path)
+		if err != nil {
+			return domain.Project{}, fmt.Errorf("getProject: %w", err)
+		}
+		for _, repoPath := range repoPaths {
+			repo := domain.Repository{"dir": repoPath}
+			project.Repos = append(project.Repos, repo)
+		}
+	} else {
+		project = config.Projects[name]
+		project.Name = name
+		project.AbsPath, err = homedir.Expand(project.Path)
+		if err != nil {
+			return domain.Project{}, fmt.Errorf("getProject: %w", err)
+		}
+	}
+
+	return project, nil
+}
+
 func init() {
-	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initApp)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gits.yaml)")
+	rootCmd.PersistentFlags().
+		StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gits.yaml)")
 
-	rootCmd.PersistentFlags().BoolVarP(&cfg.Verbose, "verbose", "v", false, "display verbose output")
+	rootCmd.PersistentFlags().
+		BoolVarP(&cfg.Verbose, "verbose", "v", false, "display verbose output")
 	_ = viper.BindPFlag("Verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
+// initApp initializes the application.
+func initApp() {
+	if err := initConfig(); err != nil {
+		log.Fatal(err)
+	}
+}
+
 // initConfig reads in config file and ENV variables if set.
-func initConfig() {
+func initConfig() error {
 	viper.SetDefault("Verbose", false)
 
-	if cfgFile != "" {
+	if len(cfgFile) > 0 {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
 		// Find home directory.
 		home, err := homedir.Dir()
 		if err != nil {
-			log.Fatal("Unable to find home directory, ", err)
+			return fmt.Errorf("Unable to find home directory: %w", err)
 		}
 
 		// Search config in home directory with filename
@@ -69,37 +136,16 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		log.Error("Unable to load config file, ", err)
+		return fmt.Errorf("Unable to load config file: %w", err)
 	}
-	_ = viper.Unmarshal(&cfg)
+
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return fmt.Errorf("Unable to parse config file: %w", err)
+	}
+
 	if cfg.Verbose {
 		log.SetLevel(log.DebugLevel)
 		log.WithField("config", viper.ConfigFileUsed()).Debug("Loaded config")
 	}
+	return nil
 }
-
-const (
-	bashCompletionFunc = `__gits_get_projects()
-{
-    local gits_output out
-    if gits_output=$(gits list 2>/dev/null); then
-        out=($(echo "${gits_output}" | awk '{print $1}'))
-        COMPREPLY=( $( compgen -W "${out[*]}" -- "$cur" ) )
-    fi
-    if [[ $? -eq 0 ]]; then
-        return 0
-    fi
-}
-
-__gits_custom_func() {
-    case ${last_command} in
-        gits_checkout | gits_clone | gits_fetch | gits_status | gits_list)
-            __gits_get_projects
-            return
-            ;;
-        *)
-            ;;
-    esac
-}
-`
-)

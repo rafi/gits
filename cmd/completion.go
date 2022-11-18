@@ -3,7 +3,6 @@ package cmd
 import (
 	"os"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -12,6 +11,7 @@ func init() {
 }
 
 // completionCmd represents the completion command
+// nolint:gochecknoglobals
 var completionCmd = &cobra.Command{
 	Use:   "completion",
 	Short: "Generates bash completion scripts",
@@ -24,10 +24,33 @@ To configure your bash shell to load completions for each session add to your ba
 # ~/.bashrc or ~/.profile
 . <(gits completion)
 `,
-	Run: func(cmd *cobra.Command, args []string) {
-		err := rootCmd.GenBashCompletion(os.Stdout)
-		if err != nil {
-			log.Fatal(err)
-		}
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return rootCmd.GenBashCompletion(os.Stdout)
 	},
 }
+
+const (
+	bashCompletionFunc = `__gits_get_projects()
+{
+    local gits_output out
+    if gits_output=$(gits list 2>/dev/null); then
+        out=($(echo "${gits_output}" | awk '{print $1}'))
+        COMPREPLY=( $( compgen -W "${out[*]}" -- "$cur" ) )
+    fi
+    if [[ $? -eq 0 ]]; then
+        return 0
+    fi
+}
+
+__gits_custom_func() {
+    case ${last_command} in
+        gits_checkout | gits_clone | gits_fetch | gits_status | gits_list)
+            __gits_get_projects
+            return
+            ;;
+        *)
+            ;;
+    esac
+}
+`
+)

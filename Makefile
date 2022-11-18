@@ -24,7 +24,7 @@ os = $(word 1, $@)
 $(PLATFORMS):
 	mkdir -p release
 	GOOS=$(os) GOARCH=amd64 go build \
-			-ldflags="-X github.com/rafi/gits/cmd.Version=$(VERSION)" \
+			-ldflags="-X github.com/rafi/gits/cmd.version=$(VERSION)" \
 			-o release/$(BINARY)-$(VERSION)-$(os)-amd64
 
 .PHONY: release

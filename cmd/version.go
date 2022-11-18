@@ -6,18 +6,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version will contain version on build
-var Version string
+// version will contain version on build
+var version string
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
 }
 
+// nolint:gochecknoglobals
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show version",
 	Args:  cobra.ExactArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("gits: %v\n", Version)
+		fmt.Printf("gits: %v\n", version)
 	},
 }
