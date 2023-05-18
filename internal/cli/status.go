@@ -47,7 +47,7 @@ func Status(git git.Git, config Config, projects []domain.Project) error {
 			}
 			version, err := git.Describe(path)
 			if err != nil {
-				return fmt.Errorf("Error in describe query: %w", err)
+				version = ""
 			}
 
 			modified = ""
@@ -66,11 +66,11 @@ func Status(git git.Git, config Config, projects []domain.Project) error {
 			leftMargin := 2
 			diff, err := git.Diff(path)
 			if err != nil {
-				return fmt.Errorf("Error in diff query: %w", err)
+				diff = "-"
 			}
 			currentRef, err := git.CurrentPosition(path)
 			if err != nil {
-				return fmt.Errorf("Error in current ref query: %w", err)
+				currentRef = "N/A"
 			}
 
 			fmt.Printf("%"+strconv.Itoa(maxLen+leftMargin)+"v %3v %3v %4v %v %v\n",
