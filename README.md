@@ -1,8 +1,8 @@
-# Gits [![Build Status](https://travis-ci.org/rafi/gits.svg?branch=master)](https://travis-ci.org/rafi/gits)
+# Gits
 
 > A Fast CLI Git manager for multiple repositories
 
-![gits animated overview](http://rafi.io/static/img/project/gits/overview.gif)
+![gits animated overview](http://rafi.io/img/project/gits/overview.gif)
 
 ## Install
 
@@ -24,12 +24,12 @@ Usage: `gits [command] <project>`
 
 Available Commands:
 
-* `checkout` - Traverse repositories and optionally checkout branch
-* `clone` -    Clones all repositories for specified project(s)
-* `fetch` -    Fetches and prunes from all remotes
-* `help` -     Help about any command
-* `status` -   Shows Git repositories short status
-* `version` -  Shows gits current version
+* `checkout` — Traverse repositories and optionally checkout branch
+* `clone` —    Clones all repositories for specified project(s)
+* `fetch` —    Fetches and prunes from all remotes
+* `help` —     Help about any command
+* `status` —   Shows Git repositories short status
+* `version` —  Shows gits current version
 
 ## Config
 
