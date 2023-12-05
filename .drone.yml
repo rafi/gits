@@ -19,12 +19,13 @@ steps:
     - name: cache
       path: /tmp/cache
 
-- name: test-golang1.18
-  image: golang:1.18
+- name: test-golang1.21
+  image: golang:1.21
   pull: always
   environment:
     CGO_ENABLED: 0
   commands:
+  - make vendor
   - make test
 
 - name: rebuild-cache
@@ -73,12 +74,13 @@ steps:
       path: /tmp/cache
 
 - name: build-all-binary
-  image: golang:1.18
+  image: golang:1.21
   pull: always
   commands:
   - make VERSION=${DRONE_TAG} -j2
   environment:
     CGO_ENABLED: 0
+    GOCACHE: "/drone/src/.cache"
   when:
     event: [ tag ]
 

@@ -1,13 +1,30 @@
 # golangci-lint config
 
-# options for analysis running
 run:
-  # default concurrency is a available CPU number
-  # concurrency: 4
-  timeout: 20s
+  timeout: 2m
+  skip-dirs:
+    - bin
+    - vendor
 
-# all available settings of specific linters
+linters:
+  disable-all: true
+  enable:
+    - dupl
+    - gofmt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - revive
+    - unused
+    - staticcheck
+
 linters-settings:
-  gci:
-    # put imports beginning with prefix after 3rd-party packages
+  gofmt:
+    simplify: true
+  goimports:
     local-prefixes: github.com/rafi/gits
+  dupl:
+    threshold: 400
