@@ -19,9 +19,9 @@ type Git struct {
 
 // NewGit returns a new Git client.
 func NewGit() (g Git, err error) {
-	// Find executable path.
 	client.InstallProtocol("file", file.DefaultClient)
 
+	// Find executable path.
 	g.bin, err = exec.LookPath("git")
 	if err != nil {
 		log.Warnf("unable to find git executable: %s", err)
@@ -83,6 +83,55 @@ func (g Git) Fetch(path string) (string, error) {
 		return "", fmt.Errorf("error during fetch: %w", err)
 	}
 	return cleanOutput(output), nil
+}
+
+func (g Git) Log(path, ref string) (string, error) {
+	args := []string{
+		"log",
+		"-15",
+		"--graph",
+		"--color=always",
+		"--decorate",
+		"--pretty=%C(240)%h%C(reset) -%C(auto)%d%Creset %s %C(242)(%an %ar)",
+	}
+	if len(ref) > 0 {
+		args = append(args, ref)
+	}
+	output, err := g.Exec(path, args)
+	if err != nil {
+		return "", fmt.Errorf("error during log: %w", err)
+	}
+	return cleanOutput(output), nil
+}
+
+func (g Git) CommitDates(path, branch string, days int) ([]string, error) {
+	args := []string{
+		"log",
+		"--format=format:%ad",
+		"--date=short",
+		fmt.Sprintf("--since=%d days ago", days),
+		branch,
+	}
+	output, err := g.Exec(path, args)
+	if err != nil {
+		return nil, fmt.Errorf("error during commit dates: %w", err)
+	}
+	return strings.Split(cleanOutput(output), "\n"), nil
+}
+
+func (g Git) Refs(path string) ([]string, error) {
+	args := []string{
+		"for-each-ref",
+		"--format=%(refname)",
+		"refs/heads",
+		"refs/tags",
+		"--sort=-committerdate",
+	}
+	output, err := g.Exec(path, args)
+	if err != nil {
+		return nil, fmt.Errorf("error during commit dates: %w", err)
+	}
+	return strings.Split(cleanOutput(output), "\n"), nil
 }
 
 // Exec executes git command-line with provided arguments.

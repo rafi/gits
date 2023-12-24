@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/cli/types"
 )
 
 type Error struct {
@@ -26,8 +27,32 @@ func HandlerErrors(list []Error) {
 	}
 }
 
+// AbortOnRepoState prints an error message and aborts if the repository is in
+// an error state.
+func AbortOnRepoState(repo domain.Repository, theme types.Theme) error {
+	path := repo.AbsPath
+	fmt.Printf(" %s", path)
+	switch repo.State {
+	case domain.RepoStateError:
+		fmt.Printf(" %s", theme.Error.Render("Not a Git repository"))
+	case domain.RepoStateNoLocal:
+		fmt.Printf(" %s", theme.Error.Render("Not cloned"))
+	}
+	fmt.Printf("\n")
+	return nil
+}
+
+// ProjectTitleWithBullet returns a formatted project title.
+func ProjectTitleWithBullet(project domain.Project, theme types.Theme) string {
+	return fmt.Sprintf(
+		"%s %s",
+		theme.Bullet.Render("::"),
+		ProjectTitle(project, theme),
+	)
+}
+
 // ProjectTitle returns a formatted project title.
-func ProjectTitle(project domain.Project, theme Theme) string {
+func ProjectTitle(project domain.Project, theme types.Theme) string {
 	sourceName := getSourceType(project)
 	if sourceName != "" {
 		sourceName = theme.Provider.Render(" [" + sourceName + "]")
@@ -38,8 +63,7 @@ func ProjectTitle(project domain.Project, theme Theme) string {
 	}
 
 	return fmt.Sprintf(
-		"%s %s%s%s",
-		theme.Bullet.Render("::"),
+		"%s%s%s",
 		theme.ProjectTitle.Render(project.Name),
 		sourceName,
 		projectDesc,
@@ -47,18 +71,18 @@ func ProjectTitle(project domain.Project, theme Theme) string {
 }
 
 // ProjectTreeTitle returns a formatted project title for tree display.
-func ProjectTreeTitle(project domain.Project, homeDir string, theme Theme) string {
+func ProjectTreeTitle(project domain.Project, homeDir string, theme types.Theme) string {
 	title := theme.ProjectTitle.Render(project.Name)
 	sourceName := getSourceType(project)
 	if sourceName != "" {
 		sourceName := theme.Provider.Render(sourceName)
-		title = fmt.Sprintf("%s:%s", title, sourceName)
+		title = fmt.Sprintf("%s %s", title, sourceName)
 	}
 	projectPath := ""
 	if project.AbsPath != "" {
 		projectPath = Path(project.AbsPath, homeDir)
 	}
-	title = fmt.Sprintf("%s %s", title, projectPath)
+	title = fmt.Sprintf("%s %s", title, theme.RepoPath.Render(projectPath))
 	return title
 }
 

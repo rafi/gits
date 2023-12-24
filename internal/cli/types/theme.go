@@ -1,4 +1,4 @@
-package cli
+package types
 
 import (
 	"fmt"
@@ -9,29 +9,51 @@ import (
 	"github.com/rafi/gits/domain"
 )
 
+const (
+	LeftMargin  = 2
+	RightMargin = 2
+)
+
 type Theme struct {
+	// General
+	Normal        lipgloss.Style
+	PreviewHeader lipgloss.Style
+	Bullet        lipgloss.Style
+
+	// Project
+	ProjectTitle lipgloss.Style
+	Provider     lipgloss.Style
+	Desc         lipgloss.Style
+
+	// Repository
+	RepoTitle lipgloss.Style
+	RepoPath  lipgloss.Style
+	GitOutput lipgloss.Style
+
+	// Branch
+	BranchName      lipgloss.Style
+	BranchCurrent   lipgloss.Style
+	BranchIndicator lipgloss.Style
+	RemoteName      lipgloss.Style
+
+	// Tag
+	TagIndicator lipgloss.Style
+
 	// Status
 	Modified  lipgloss.Style
 	Untracked lipgloss.Style
 	Diff      lipgloss.Style
 	Error     lipgloss.Style
 
-	// Project
-	ProjectTitle lipgloss.Style
-	Bullet       lipgloss.Style
-	Provider     lipgloss.Style
-	Desc         lipgloss.Style
-
-	// Repository
-	RepoTitle lipgloss.Style
-	GitOutput lipgloss.Style
-
-	// Table
+	// List table
 	TableBorder      lipgloss.Border
 	TableBorderStyle lipgloss.Style
 	TableHeader      lipgloss.Style
 	TableRowEven     lipgloss.Style
 	TableRowOdd      lipgloss.Style
+
+	// Chart
+	ChartDates lipgloss.Style
 }
 
 func (t *Theme) ParseConfig(cfg domain.Theme) (err error) {
@@ -80,33 +102,50 @@ func parseThemeStyle(style domain.Style) (lipgloss.Style, error) {
 
 func NewThemeDefault() Theme {
 	theme := Theme{
+		// General
+		Normal:        lipgloss.NewStyle(),
+		PreviewHeader: lipgloss.NewStyle(),
+		Bullet:        lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
+
+		// Project
+		ProjectTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true),
+		Provider:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		Desc:         lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+
+		// Repository
+		RepoTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true),
+		RepoPath:  lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		GitOutput: lipgloss.NewStyle().Foreground(lipgloss.Color("66")),
+
+		// Branch
+		BranchName:      lipgloss.NewStyle().Foreground(lipgloss.Color("68")),
+		BranchCurrent:   lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
+		BranchIndicator: lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true),
+		RemoteName:      lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+
+		// Tag
+		TagIndicator: lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
+
 		// Status
 		Modified:  lipgloss.NewStyle().Foreground(lipgloss.Color("169")).Width(3).Align(lipgloss.Right),
 		Untracked: lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Width(3).Align(lipgloss.Right),
 		Diff:      lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Width(5).Align(lipgloss.Right),
 		Error:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 
-		// Project
-		ProjectTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("73")),
-		Bullet:       lipgloss.NewStyle().Foreground(lipgloss.Color("132")),
-		Provider:     lipgloss.NewStyle().Foreground(lipgloss.Color("65")),
-		Desc:         lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-
-		// Repository
-		RepoTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("36")),
-		GitOutput: lipgloss.NewStyle().Foreground(lipgloss.Color("66")),
-
-		// Table
+		// List table
 		TableBorder:      lipgloss.NormalBorder(),
 		TableBorderStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		TableHeader:      lipgloss.NewStyle().Foreground(lipgloss.Color("73")),
 		TableRowEven:     lipgloss.NewStyle().Foreground(lipgloss.Color("249")),
 		TableRowOdd:      lipgloss.NewStyle().Foreground(lipgloss.Color("247")),
+
+		// Chart
+		ChartDates: lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 	}
 	return theme
 }
 
-func (t Theme) TableRowStyle(row, col int) lipgloss.Style {
+func (t Theme) TableRowStyle(row, _ int) lipgloss.Style {
 	var s lipgloss.Style
 	switch {
 	case row == 0:
@@ -116,8 +155,6 @@ func (t Theme) TableRowStyle(row, col int) lipgloss.Style {
 	default:
 		s = t.TableRowOdd
 	}
-	if col > 0 {
-		s.Padding(0, 1)
-	}
+	s.Copy().Margin(0, 1)
 	return s
 }

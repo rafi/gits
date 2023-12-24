@@ -3,17 +3,17 @@ package main
 import (
 	"fmt"
 	"runtime"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/browse"
 	"github.com/rafi/gits/internal/cli/checkout"
 	"github.com/rafi/gits/internal/cli/clone"
 	"github.com/rafi/gits/internal/cli/fetch"
 	"github.com/rafi/gits/internal/cli/list"
 	"github.com/rafi/gits/internal/cli/status"
 	"github.com/rafi/gits/internal/cli/sync"
+	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -30,88 +30,100 @@ func init() {
 		PersistentFlags().
 		StringVarP(&listOutput, "output", "o", listOutput, "output style (json, name, table, tree, wide)")
 
+	// Gits commands.
+	rootCmd.AddCommand(branchOverviewCmd)
+	rootCmd.AddCommand(browseCmd)
 	rootCmd.AddCommand(checkoutCmd)
 	rootCmd.AddCommand(cloneCmd)
 	rootCmd.AddCommand(fetchCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(repoOverviewCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
-// nolint:gochecknoglobals
+var branchOverviewCmd = &cobra.Command{
+	Use:               "branch-overview <project> <repo> [branch]",
+	Args:              cobra.RangeArgs(2, 3),
+	ValidArgsFunction: completeProjectRepoBranch,
+	RunE:              runWithDeps(browse.ExecBranchOverview),
+	Hidden:            true,
+}
+
+var browseCmd = &cobra.Command{
+	Use:               "browse [project] [repo] [branch]",
+	Short:             "Browse branches and tags",
+	Args:              cobra.MaximumNArgs(3),
+	ValidArgsFunction: completeProjectRepoBranch,
+	RunE:              runWithDeps(browse.ExecBrowse),
+}
+
 var checkoutCmd = &cobra.Command{
-	Use:               "checkout <project>...",
-	Short:             "Traverse repositories and optionally checkout branch",
-	Args:              cobra.MinimumNArgs(1),
-	ValidArgsFunction: completeProjectNames,
+	Use:               "checkout [project] [repo]",
+	Short:             "Checkout branch from multiple repositories, or single",
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProjectRepo,
 	RunE:              runWithDeps(checkout.ExecCheckout),
 }
 
-// nolint:gochecknoglobals
 var cloneCmd = &cobra.Command{
-	Use:               "clone <project>...",
+	Use:               "clone [project] [repo]",
 	Short:             "Clone all repositories",
-	Args:              cobra.MinimumNArgs(1),
-	ValidArgsFunction: completeProjectNames,
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProjectRepo,
 	RunE:              runWithDeps(clone.ExecClone),
 }
 
-// nolint:gochecknoglobals
 var fetchCmd = &cobra.Command{
-	Use:               "fetch <project>...",
+	Use:               "fetch [project] [repo]",
 	Short:             "Fetch and prune from all remotes",
-	Args:              cobra.MinimumNArgs(1),
-	ValidArgsFunction: completeProjectNames,
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProjectRepo,
 	RunE:              runWithDeps(fetch.ExecFetch),
 }
 
-// nolint:gochecknoglobals
 var listCmd = &cobra.Command{
 	Use:               "list [project]...",
 	Short:             "List all projects or their repositories",
+	Aliases:           []string{"ls"},
 	Args:              cobra.ArbitraryArgs,
-	ValidArgsFunction: completeProjectNames,
-	RunE: runWithDeps(func(args []string, deps cli.RuntimeDeps) error {
+	ValidArgsFunction: completeProject,
+	RunE: runWithDeps(func(args []string, deps types.RuntimeDeps) error {
+		// Run with output style.
 		return list.ExecList(listOutput, args, deps)
 	}),
 }
 
-// nolint:gochecknoglobals
+var repoOverviewCmd = &cobra.Command{
+	Use:               "repo-overview <project> <repo>", // TODO: make optional
+	Args:              cobra.ExactArgs(2),
+	ValidArgsFunction: completeProjectRepoBranch,
+	RunE:              runWithDeps(browse.ExecRepoOverview),
+	Hidden:            true,
+}
+
 var statusCmd = &cobra.Command{
 	Use:               "status <project>...",
 	Short:             "Show Git repositories short status",
 	Args:              cobra.MinimumNArgs(1),
-	ValidArgsFunction: completeProjectNames,
+	ValidArgsFunction: completeProject,
 	RunE:              runWithDeps(status.ExecStatus),
 }
 
-// nolint:gochecknoglobals
 var syncCmd = &cobra.Command{
-	Use:               "sync <project>...",
+	Use:               "sync [project]...",
 	Short:             "Synchronize project indexes",
 	Args:              cobra.ArbitraryArgs,
-	ValidArgsFunction: completeProjectNames,
+	ValidArgsFunction: completeProject,
 	RunE:              runWithDeps(sync.ExecSync),
 }
 
-// nolint:gochecknoglobals
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show version",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.NoArgs,
 	Run: func(_ *cobra.Command, _ []string) {
 		fmt.Printf("gits %s %s\n", version.GetVersion(), runtime.Version())
 	},
-}
-
-// completeProjectNames returns a list of project names for shell completion.
-func completeProjectNames(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	var completions []string
-	for key, proj := range configFile.Projects {
-		if toComplete == "" || strings.HasPrefix(key, toComplete) {
-			completions = append(completions, fmt.Sprintf("%s\t%s", key, proj.Desc))
-		}
-	}
-	return completions, cobra.ShellCompDirectiveNoFileComp
 }

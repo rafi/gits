@@ -7,17 +7,18 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 )
 
 // listTree lists projects and repos as a nested tree.
-func listTree(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) error {
+func listTree(projects domain.ProjectListKeyed, deps types.RuntimeDeps) error {
 	tree := makeTree(projects, deps)
 	fmt.Println(tree.String())
 	return nil
 }
 
 // makeTree builds a tree of a collection of projects.
-func makeTree(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) treeprint.Tree {
+func makeTree(projects domain.ProjectListKeyed, deps types.RuntimeDeps) treeprint.Tree {
 	tree := treeprint.New()
 	for _, proj := range projects {
 		branch := makeTreeProject(proj, deps)
@@ -32,7 +33,7 @@ func makeTree(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) treeprint.
 }
 
 // makeTreeProject recursively builds a tree of a single project.
-func makeTreeProject(project domain.Project, deps cli.RuntimeDeps) treeprint.Tree {
+func makeTreeProject(project domain.Project, deps types.RuntimeDeps) treeprint.Tree {
 	tree := treeprint.New()
 	for _, subProj := range project.SubProjects {
 		branch := makeTreeProject(subProj, deps)

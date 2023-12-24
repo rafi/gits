@@ -8,25 +8,43 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/cli/types"
 )
 
-func ExecClone(include []string, deps cli.RuntimeDeps) error {
-	projects, err := project.GetProjects(include, deps)
+// ExecClone clones project repositories, or a specific repo.
+//
+// Args: (optional)
+//   - project name
+//   - repo name
+func ExecClone(args []string, deps types.RuntimeDeps) error {
+	project, err := cli.GetOrSelectProject(args, deps)
 	if err != nil {
-		return fmt.Errorf("unable to list projects: %w", err)
+		return err
 	}
 
-	var errList []cli.Error
-	for _, project := range projects {
-		checkoutProject(project, deps, &errList)
+	// Get specific repo if provided/selected, or all repos in project.
+	repos, err := cli.GetOrSelectRepos(project, args, deps)
+	if err != nil {
+		return err
 	}
-	cli.HandlerErrors(errList)
-	return nil
+
+	if repos == nil {
+		var errList []cli.Error
+		cloneProjectRepos(project, deps, &errList)
+		cli.HandlerErrors(errList)
+		return nil
+	}
+
+	output, err := cloneRepo(project, repos[0], deps)
+	fmt.Println(deps.Theme.GitOutput.Render(output))
+	return err
 }
 
-func checkoutProject(project domain.Project, deps cli.RuntimeDeps, errList *[]cli.Error) {
-	fmt.Println(cli.ProjectTitle(project, deps.Theme))
+func cloneProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+	errorStyle := deps.Theme.Error.Copy()
+
+	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
+
 	if project.Clone != nil && !*project.Clone {
 		log.Warn("Skipping clone due to config")
 		return
@@ -35,44 +53,42 @@ func checkoutProject(project domain.Project, deps cli.RuntimeDeps, errList *[]cl
 		log.Warn("Skipping clone due to missing path")
 		return
 	}
-	maxLen := cli.GetMaxLen(project)
 
 	for _, repo := range project.Repos {
-		repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
-			Inherit(deps.Theme.RepoTitle).
-			MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
-			Width(maxLen).
-			Render()
-		checkoutRepo(repoTitle, repo, deps, errList)
+		output, err := cloneRepo(project, repo, deps)
+		if err != nil {
+			*errList = append(*errList, cli.Error{
+				Message: fmt.Sprint(err),
+				Title:   repo.GetName(),
+				Dir:     repo.AbsPath,
+			})
+			output = errorStyle.Render(err.Error())
+		}
+		fmt.Println(deps.Theme.GitOutput.Render(output))
 	}
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		checkoutProject(subProject, deps, errList)
+		cloneProjectRepos(subProject, deps, errList)
 	}
 }
 
-func checkoutRepo(repoTitle string, repo domain.Repository, deps cli.RuntimeDeps, errList *[]cli.Error) {
-	errorStyle := deps.Theme.Error.Copy()
+func cloneRepo(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) (string, error) {
+	maxLen := cli.GetMaxLen(project)
+	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
+		Inherit(deps.Theme.RepoTitle).
+		MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
+		Width(maxLen).
+		Render()
+
 	fmt.Printf("%s ", repoTitle)
 
 	if repo.State == domain.RepoStateError {
-		fmt.Printf("%s\n", errorStyle.Render(repo.Reason))
-		return
+		return "", fmt.Errorf("not a git repository")
 	}
-	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
-
 	if _, err := os.Stat(repo.AbsPath); !os.IsNotExist(err) {
-		fmt.Printf("%s %s\n", repoPath, errorStyle.Render("Directory already exists"))
-		return
+		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
+		return "", fmt.Errorf("already cloned at %s", repoPath)
 	}
-	result, err := deps.Git.Clone(repo.Src, repo.AbsPath)
-	if err != nil {
-		*errList = append(*errList, cli.Error{
-			Message: fmt.Sprint(err),
-			Title:   repo.GetName(),
-			Dir:     repoPath,
-		})
-		result = errorStyle.Render(err.Error())
-	}
-	fmt.Println(deps.Theme.GitOutput.Render(result))
+
+	return deps.Git.Clone(repo.Src, repo.AbsPath)
 }

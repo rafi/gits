@@ -28,7 +28,22 @@ func (r *Repository) Branches() ([]string, error) {
 
 func (r *Repository) CurrentBranch() (string, error) {
 	head, err := r.client.Head()
-	return head.Name().Short(), err
+	if err != nil {
+		return "", err
+	}
+	return head.Name().Short(), nil
+}
+
+func (r *Repository) IsLocalBranch(branch string) bool {
+	_, err := r.client.Reference(
+		plumbing.NewBranchReferenceName(branch), true)
+	return err == nil
+}
+
+func (r *Repository) IsRemoteBranch(remote, branch string) bool {
+	_, err := r.client.Reference(
+		plumbing.NewRemoteReferenceName(remote, branch), true)
+	return err == nil
 }
 
 func (r *Repository) Remotes() ([]string, error) {

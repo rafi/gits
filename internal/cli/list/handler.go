@@ -6,12 +6,12 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/internal/project"
 )
 
-func ExecList(format string, include []string, deps cli.RuntimeDeps) error {
-	var lister func(domain.ProjectListKeyed, cli.RuntimeDeps) error
+func ExecList(format string, include []string, deps types.RuntimeDeps) error {
+	var lister func(domain.ProjectListKeyed, types.RuntimeDeps) error
 	switch format {
 	case "json":
 		lister = listJSON

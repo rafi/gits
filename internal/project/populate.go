@@ -11,12 +11,12 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/pkg/git"
 	"github.com/rafi/gits/pkg/providers"
 )
 
-func GetProjects(include []string, deps cli.RuntimeDeps) (domain.ProjectListKeyed, error) {
+func GetProjects(include []string, deps types.RuntimeDeps) (domain.ProjectListKeyed, error) {
 	projs := domain.ProjectListKeyed{}
 
 	// Support path based project directories.
@@ -44,6 +44,14 @@ func GetProjects(include []string, deps cli.RuntimeDeps) (domain.ProjectListKeye
 	return projs, nil
 }
 
+func GetProject(name string, deps types.RuntimeDeps) (domain.Project, error) {
+	list, err := GetProjects([]string{name}, deps)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	return list[name], nil
+}
+
 func newProjectFromDisk(path string) domain.Project {
 	return domain.Project{
 		Name:   filepath.Base(path),
@@ -52,12 +60,23 @@ func newProjectFromDisk(path string) domain.Project {
 	}
 }
 
-func populateProject(project *domain.Project, deps cli.RuntimeDeps) error {
+func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 	filesystemType := string(providers.ProviderFilesystem)
-
-	// Default source type of a project _with_ path is "filesystem".
 	emptySource := (project.Source == nil || project.Source.Type == "")
-	if emptySource && project.Path != "" && len(project.Repos) == 0 {
+
+	switch {
+	case emptySource && len(project.Repos) > 0 && project.Path == "":
+		// Process repos individually if project doesn't have a path.
+		var err error
+		for repoIdx, repo := range project.Repos {
+			project.Repos[repoIdx], err = providers.NewFilesystemRepo(repo.Dir, deps.Git)
+			if err != nil {
+				return fmt.Errorf("failed to create filesystem repo: %w", err)
+			}
+		}
+
+	case emptySource && len(project.Repos) == 0:
+		// Default source type of a project _with_ path is "filesystem".
 		if project.Source == nil {
 			project.Source = &domain.ProviderSource{
 				Search: domain.SearchQuery{},
@@ -80,12 +99,15 @@ func populateProject(project *domain.Project, deps cli.RuntimeDeps) error {
 		}
 	}
 
+	// if source != nil {
+	// 	filterRepos(project, source)
+	// }
 	computeState(project, deps.Git)
 	return nil
 }
 
 // getSource populates project repos from a provider source.
-func getSource(project *domain.Project, deps cli.RuntimeDeps) error {
+func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 	var (
 		err         error
 		hasCache    bool

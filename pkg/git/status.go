@@ -7,6 +7,22 @@ import (
 	"strings"
 )
 
+func (g Git) CurrentBranch(path string) (string, error) {
+	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
+	abbrRef, err := g.Exec(path, args)
+	if err != nil {
+		return "", fmt.Errorf("unable to find ref: %w", err)
+	}
+	return cleanOutput(abbrRef), nil
+}
+
+func (g Git) UpstreamBranch(path string) (string, error) {
+	args := []string{"rev-parse", "--abbrev-ref", "@{upstream}"}
+	abbrRefUpstream, _ := g.Exec(path, args)
+	upstream := cleanOutput(abbrRefUpstream)
+	return upstream, nil
+}
+
 // GitModified returns the number of modified files
 func (g Git) Modified(path string) (int, error) {
 	args := []string{"diff", "--shortstat"}
@@ -57,28 +73,12 @@ func (g Git) Describe(path string) (string, error) {
 }
 
 // Diff returns a formatted string of ahead/behind counts
-func (g Git) Diff(path string) (string, error) {
-	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
-	abbrRef, err := g.Exec(path, args)
-	if err != nil {
-		return "", fmt.Errorf("unable to find ref: %w", err)
-	}
-	branch := cleanOutput(abbrRef)
-
-	args = []string{"rev-parse", "--abbrev-ref", "@{upstream}"}
-	abbrRefUpstream, _ := g.Exec(path, args)
-	upstream := cleanOutput(abbrRefUpstream)
-	if upstream == "" {
-		upstream = fmt.Sprintf("origin/%v", branch)
-	}
-
-	args = []string{"rev-list", "--left-right", branch + "..." + upstream}
+func (g Git) Diff(path, branch, target string) (int, int, error) {
+	args := []string{"rev-list", "--left-right", branch + "..." + target}
 	output, _ := g.Exec(path, args)
 
-	result := ""
 	if len(output) == 0 {
-		result = "✓"
-		return result, nil
+		return 0, 0, nil
 	}
 
 	behind := 0
@@ -95,13 +95,5 @@ func (g Git) Diff(path string) (string, error) {
 			ahead++
 		}
 	}
-
-	if ahead > 0 {
-		result = fmt.Sprintf("▲%d", ahead)
-	}
-	if behind > 0 {
-		result = fmt.Sprintf("%v▼%d", result, behind)
-	}
-
-	return result, nil
+	return ahead, behind, nil
 }

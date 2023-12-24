@@ -8,6 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 )
 
 var (
@@ -17,7 +18,7 @@ var (
 )
 
 // listWide lists projects in a wide table format.
-func listWide(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) error {
+func listWide(projects domain.ProjectListKeyed, deps types.RuntimeDeps) error {
 	single := len(projects) == 1
 	rows := [][]string{}
 	headers := makeTableHeader(projects)
@@ -31,7 +32,7 @@ func listWide(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) error {
 }
 
 // listTable lists projects in a table format.
-func listTable(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) error {
+func listTable(projects domain.ProjectListKeyed, deps types.RuntimeDeps) error {
 	single := len(projects) == 1
 	rows := [][]string{}
 	headers := makeTableHeader(projects)
@@ -43,7 +44,7 @@ func listTable(projects domain.ProjectListKeyed, deps cli.RuntimeDeps) error {
 	return printTable(headers, rows, deps.Theme)
 }
 
-func printTable(headers []string, rows [][]string, theme cli.Theme) error {
+func printTable(headers []string, rows [][]string, theme types.Theme) error {
 	t := table.New().
 		Border(theme.TableBorder).
 		BorderStyle(theme.TableBorderStyle).

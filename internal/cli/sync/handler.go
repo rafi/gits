@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/internal/project"
 )
 
-func ExecSync(include []string, deps cli.RuntimeDeps) error {
+func ExecSync(include []string, deps types.RuntimeDeps) error {
 	for _, p := range deps.Projects {
 		if p.Source == nil {
 			continue

@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/mitchellh/go-homedir"
+	"github.com/muesli/termenv"
 
 	"github.com/rafi/gits/domain"
 )
@@ -24,6 +26,7 @@ type File struct {
 	deprecations
 
 	Filename string
+	Color    string
 	Settings domain.Settings
 }
 
@@ -98,7 +101,7 @@ func (f *File) loadConfig(filePath string) error {
 		f.client.Load(provider, json.Parser())
 	case ".toml":
 		f.client.Load(provider, toml.Parser())
-	case ".yaml":
+	case ".yaml", ".yml":
 		f.client.Load(provider, yaml.Parser())
 	default:
 		return fmt.Errorf("unsupported config file format: %s", fileExt)
@@ -108,6 +111,8 @@ func (f *File) loadConfig(filePath string) error {
 	if err := f.client.UnmarshalWithConf("", &f.Projects, koanfConf); err != nil {
 		return fmt.Errorf("unable to parse config file: %w", err)
 	}
+
+	// Delete the special key saved for built-in CLI settings.
 	delete(f.Projects, "settings")
 
 	// Handle deprecated config fields.
@@ -118,6 +123,14 @@ func (f *File) loadConfig(filePath string) error {
 	// Parse special key 'settings'.
 	if err := f.client.UnmarshalWithConf("settings", &f.Settings, koanfConf); err != nil {
 		return fmt.Errorf("unable to parse config file: %w", err)
+	}
+
+	// Set never/always color toggle.
+	switch f.Color {
+	case colorOptionNever.String():
+		lipgloss.SetColorProfile(termenv.Ascii)
+	case colorOptionAlways.String():
+		os.Setenv("CLICOLOR_FORCE", "1")
 	}
 	return nil
 }

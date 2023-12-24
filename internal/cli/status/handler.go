@@ -7,12 +7,13 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/internal/project"
 )
 
 // ExecStatus displays an icon based status of all repositories.
 // Runs 'git' directly due to https://github.com/go-git/go-git/issues/181
-func ExecStatus(include []string, deps cli.RuntimeDeps) error {
+func ExecStatus(include []string, deps types.RuntimeDeps) error {
 	projects, err := project.GetProjects(include, deps)
 	if err != nil {
 		return fmt.Errorf("unable to list projects: %w", err)
@@ -26,14 +27,14 @@ func ExecStatus(include []string, deps cli.RuntimeDeps) error {
 	return nil
 }
 
-func statusProject(project domain.Project, deps cli.RuntimeDeps, errList *[]cli.Error) {
-	fmt.Println(cli.ProjectTitle(project, deps.Theme))
+func statusProject(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 	maxLen := cli.GetMaxLen(project)
 
 	for _, repo := range project.Repos {
 		repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
 			Inherit(deps.Theme.RepoTitle).
-			MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
+			MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
 			Align(lipgloss.Right).
 			Width(maxLen).
 			Render()
@@ -45,7 +46,7 @@ func statusProject(project domain.Project, deps cli.RuntimeDeps, errList *[]cli.
 	}
 }
 
-func statusRepo(repoTitle string, repo domain.Repository, deps cli.RuntimeDeps, errList *[]cli.Error) {
+func statusRepo(repoTitle string, repo domain.Repository, deps types.RuntimeDeps, errList *[]cli.Error) {
 	errorStyle := deps.Theme.Error.Copy().PaddingLeft(14)
 	fmt.Printf("%s ", repoTitle)
 
@@ -87,10 +88,34 @@ func statusRepo(repoTitle string, repo domain.Repository, deps cli.RuntimeDeps, 
 		untracked = fmt.Sprintf("?%d", count)
 	}
 
-	diff, err := deps.Git.Diff(repo.AbsPath)
+	branch, err := deps.Git.CurrentBranch(repo.AbsPath)
+	if err != nil {
+		fmt.Println(err)
+	}
+	upstream, err := deps.Git.UpstreamBranch(repo.AbsPath)
+	if err != nil {
+		upstream = "ERROR"
+		fmt.Println(err)
+	}
+	if upstream == "" {
+		upstream = fmt.Sprintf("origin/%v", branch)
+	}
+
+	diff := ""
+	ahead, behind, err := deps.Git.Diff(repo.AbsPath, branch, upstream)
 	if err != nil {
 		diff = "-"
 	}
+	if ahead == 0 && behind == 0 {
+		diff = "✓"
+	}
+	if ahead > 0 {
+		diff = fmt.Sprintf("▲%d", ahead)
+	}
+	if behind > 0 {
+		diff = fmt.Sprintf("%s▼%d", diff, behind)
+	}
+
 	currentRef, err := deps.Git.CurrentPosition(repo.AbsPath)
 	if err != nil {
 		currentRef = "N/A"

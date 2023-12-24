@@ -5,63 +5,76 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/cli/types"
 )
 
-func ExecFetch(include []string, deps cli.RuntimeDeps) error {
-	projects, err := project.GetProjects(include, deps)
+// ExecFetch runs fetch on project repositories, or on a specific repo.
+//
+// Args: (optional)
+//   - project name
+//   - repo name
+func ExecFetch(args []string, deps types.RuntimeDeps) error {
+	project, err := cli.GetOrSelectProject(args, deps)
 	if err != nil {
-		return fmt.Errorf("unable to list projects: %w", err)
+		return err
 	}
 
-	var errList []cli.Error
-	for _, project := range projects {
-		fetchProject(project, deps, &errList)
+	// Get specific repo if provided/selected, or all repos in project.
+	repos, err := cli.GetOrSelectRepos(project, args, deps)
+	if err != nil {
+		return err
 	}
-	cli.HandlerErrors(errList)
-	return nil
+
+	if repos == nil {
+		var errList []cli.Error
+		fetchProjectRepos(project, deps, &errList)
+		cli.HandlerErrors(errList)
+		return nil
+	}
+
+	output, err := fetchRepo(project, repos[0], deps)
+	fmt.Println(deps.Theme.GitOutput.Render(output))
+	return err
 }
 
-func fetchProject(project domain.Project, deps cli.RuntimeDeps, errList *[]cli.Error) {
-	fmt.Println(cli.ProjectTitle(project, deps.Theme))
-	maxLen := cli.GetMaxLen(project)
+func fetchProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+	errorStyle := deps.Theme.Error.Copy().PaddingLeft(1)
+
+	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
 	for _, repo := range project.Repos {
-		repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
-			Inherit(deps.Theme.RepoTitle).
-			MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
-			Width(maxLen).
-			Render()
-		fetchRepo(repoTitle, repo, deps, errList)
+		output, err := fetchRepo(project, repo, deps)
+		if err != nil {
+			*errList = append(*errList, cli.Error{
+				Message: fmt.Sprint(err),
+				Title:   repo.GetName(),
+				Dir:     repo.AbsPath,
+			})
+			output = errorStyle.Render(err.Error())
+		}
+		fmt.Println(deps.Theme.GitOutput.Render(output))
 	}
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		fetchProject(subProject, deps, errList)
+		fetchProjectRepos(subProject, deps, errList)
 	}
 }
 
-func fetchRepo(repoTitle string, repo domain.Repository, deps cli.RuntimeDeps, errList *[]cli.Error) {
+func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) (string, error) {
+	maxLen := cli.GetMaxLen(project)
+	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
+		Inherit(deps.Theme.RepoTitle).
+		MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
+		Width(maxLen).
+		Render()
+
 	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
 	fmt.Printf("%s %s ", repoTitle, repoPath)
-	errorStyle := deps.Theme.Error.Copy().PaddingLeft(1)
 
-	switch repo.State {
-	case domain.RepoStateError:
-		fmt.Printf("%s\n", errorStyle.Render("Not a Git repository"))
-		return
-	case domain.RepoStateNoLocal:
-		fmt.Printf("%s\n", errorStyle.Render("Not cloned"))
-		return
+	// Abort if repository is not cloned or has errors.
+	if repo.State != domain.RepoStateOK {
+		return "", cli.AbortOnRepoState(repo, deps.Theme)
 	}
 
-	output, err := deps.Git.Fetch(repo.AbsPath)
-	if err != nil {
-		*errList = append(*errList, cli.Error{
-			Message: fmt.Sprint(err),
-			Title:   repo.GetName(),
-			Dir:     repoPath,
-		})
-		output = errorStyle.Render(err.Error())
-	}
-	fmt.Println(deps.Theme.GitOutput.Render(output))
+	return deps.Git.Fetch(repo.AbsPath)
 }

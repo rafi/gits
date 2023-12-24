@@ -24,12 +24,21 @@ func newFilesystemProvider() (*filesystemProvider, error) {
 	return provider, nil
 }
 
-func NewFilesystemRepo(path, cloneURL string) domain.Repository {
-	return domain.Repository{
+func NewFilesystemRepo(path string, gitClient git.Git) (domain.Repository, error) {
+	repo := domain.Repository{
 		Name: filepath.Base(path),
 		Dir:  path,
-		Src:  cloneURL,
 	}
+	absPath, err := homedir.Expand(path)
+	if err != nil {
+		return repo, fmt.Errorf("unable to expand path: %w", err)
+	}
+	repo.Src, err = gitClient.Remote(absPath)
+	if err != nil {
+		repo.State = domain.RepoStateError
+		repo.Reason = err.Error()
+	}
+	return repo, nil
 }
 
 func (c *filesystemProvider) LoadRepos(path string, gitClient git.Git, project *domain.Project) error {
@@ -46,11 +55,9 @@ func (c *filesystemProvider) LoadRepos(path string, gitClient git.Git, project *
 			if de.IsDir() {
 				_, err := os.Stat(filepath.Join(path, ".git"))
 				if !os.IsNotExist(err) {
-					remoteSrc, err := gitClient.Remote(path)
-					repo := NewFilesystemRepo(path, remoteSrc)
+					repo, err := NewFilesystemRepo(path, gitClient)
 					if err != nil {
-						repo.State = domain.RepoStateError
-						repo.Reason = err.Error()
+						return err
 					}
 					project.Repos = append(project.Repos, repo)
 					return filepath.SkipDir

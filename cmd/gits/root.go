@@ -5,7 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/internal/config"
 	"github.com/rafi/gits/pkg/git"
 )
@@ -17,15 +17,20 @@ var (
 
 // rootCmd represents gits base command.
 var rootCmd = &cobra.Command{
-	Use:   appName,
-	Short: appShort,
-	Long:  appLong,
+	Use:           appName,
+	Short:         appShort,
+	Long:          appLong,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // main runs the root gits command.
 func main() {
 	rootCmd.PersistentFlags().
-		StringVar(&configPath, "config", "", "config file (default is $HOME/.gits.yaml)")
+		StringVarP(&configPath, "config", "c", "", "config file (default is $HOME/.gits.yaml)")
+
+	rootCmd.PersistentFlags().
+		StringVar(&configFile.Color, "color", config.ColorOptionDefault, "color")
 
 	rootCmd.PersistentFlags().
 		BoolVarP(&configFile.Settings.Verbose, "verbose", "v", false, "display verbose output")
@@ -54,7 +59,7 @@ func setupLogger(cfg config.File) {
 }
 
 // runWithDeps execute a command with dependencies.
-func runWithDeps(f func([]string, cli.RuntimeDeps) error) cobra.PositionalArgs {
+func runWithDeps(f func([]string, types.RuntimeDeps) error) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		homeDir, err := homedir.Dir()
 		if err != nil {
@@ -64,12 +69,12 @@ func runWithDeps(f func([]string, cli.RuntimeDeps) error) cobra.PositionalArgs {
 		if err != nil {
 			log.Fatal(err)
 		}
-		theme := cli.NewThemeDefault()
+		theme := types.NewThemeDefault()
 		if err := theme.ParseConfig(configFile.Settings.Theme); err != nil {
 			log.Fatal(err)
 		}
 
-		return f(args, cli.RuntimeDeps{
+		return f(args, types.RuntimeDeps{
 			Settings: configFile.Settings,
 			Git:      gitClient,
 			Theme:    theme,

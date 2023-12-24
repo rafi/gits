@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/types"
 )
 
-func listJSON(projects domain.ProjectListKeyed, _ cli.RuntimeDeps) error {
+func listJSON(projects domain.ProjectListKeyed, _ types.RuntimeDeps) error {
 	raw, err := json.Marshal(projects)
 	if err != nil {
 		return fmt.Errorf("unable to marshal json: %w", err)
