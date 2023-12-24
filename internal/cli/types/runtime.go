@@ -1,14 +1,8 @@
-package cli
+package types
 
 import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/pkg/git"
-)
-
-const (
-	LeftMargin        = 2
-	RightMargin       = 2
-	NameColor   uint8 = 12
 )
 
 type RuntimeDeps struct {
