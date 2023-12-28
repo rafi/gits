@@ -32,7 +32,7 @@ type cacheStub struct {
 
 func newProjectCache(project domain.Project, checksum string) cacheStub {
 	return cacheStub{
-		Version:   version.GetVersion(),
+		Version:   version.GetMajorMinor(),
 		Timestamp: time.Now().Format(cacheTimeFormat),
 		MD5:       checksum,
 		Project:   project,
@@ -118,7 +118,7 @@ func getCache(key, checksum string, project *domain.Project) (bool, error) {
 	}
 
 	// Bust cache if version or checksum mismatch
-	if cached.Version != version.GetVersion() {
+	if cached.Version != version.GetMajorMinor() {
 		return false, nil
 	}
 	if cached.MD5 != checksum {

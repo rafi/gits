@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // Project represents a single project that can have many child projects,
 // while each project can have many repositories.
 type Project struct {
@@ -30,6 +32,23 @@ func (p Project) GetRepo(name, prefix string) (Repository, bool) {
 		}
 	}
 	return Repository{}, false
+}
+
+func (p Project) GetSubProject(name, prefix string) (Project, bool) {
+	name = strings.Trim(name, "/")
+
+	if name + "/" == prefix {
+		return p, true
+	}
+
+	for _, subProj := range p.SubProjects {
+		subPrefix := prefix + subProj.Name + "/"
+		proj, found := subProj.GetSubProject(name, subPrefix)
+		if found {
+			return proj, true
+		}
+	}
+	return Project{}, false
 }
 
 func (p Project) GetAllRepos(prefix ...string) []Repository {

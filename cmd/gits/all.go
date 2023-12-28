@@ -96,18 +96,18 @@ var listCmd = &cobra.Command{
 }
 
 var repoOverviewCmd = &cobra.Command{
-	Use:               "repo-overview <project> <repo>", // TODO: make optional
+	Use:               "repo-overview <project> <repo>",
 	Args:              cobra.ExactArgs(2),
-	ValidArgsFunction: completeProjectRepoBranch,
+	ValidArgsFunction: completeProjectRepo,
 	RunE:              runWithDeps(browse.ExecRepoOverview),
 	Hidden:            true,
 }
 
 var statusCmd = &cobra.Command{
-	Use:               "status <project>...",
+	Use:               "status [project] [repo]",
 	Short:             "Show Git repositories short status",
-	Args:              cobra.MinimumNArgs(1),
-	ValidArgsFunction: completeProject,
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProjectRepo,
 	RunE:              runWithDeps(status.ExecStatus),
 }
 

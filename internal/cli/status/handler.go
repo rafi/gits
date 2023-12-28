@@ -2,27 +2,33 @@ package status
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
 )
 
 // ExecStatus displays an icon based status of all repositories.
 // Runs 'git' directly due to https://github.com/go-git/go-git/issues/181
+//
+// Args: (optional)
+//   - project name
+//   - repo or sub-project name
 func ExecStatus(include []string, deps types.RuntimeDeps) error {
-	projects, err := project.GetProjects(include, deps)
+	project, err := cli.GetOrSelectProject(include, deps)
 	if err != nil {
-		return fmt.Errorf("unable to list projects: %w", err)
+		return err
+	}
+
+	if len(include) > 1 && strings.Index(include[1], "/") > 0 {
+		include = include[:len(include)-1]
 	}
 
 	var errList []cli.Error
-	for _, project := range projects {
-		statusProject(project, deps, &errList)
-	}
+	statusProject(project, deps, &errList)
 	cli.HandlerErrors(errList)
 	return nil
 }

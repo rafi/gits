@@ -26,9 +26,20 @@ func GetOrSelectProject(args []string, deps types.RuntimeDeps) (domain.Project, 
 		}
 	}
 
+	// Find project by name.
 	p, err := project.GetProject(projName, deps)
 	if err != nil {
 		return p, fmt.Errorf("unable to load project %q: %w", projName, err)
+	}
+
+	// Find a sub-project if provided via 2nd argument.
+	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
+		var found bool
+		p, found = p.GetSubProject(args[1], "")
+		if !found {
+			return p, fmt.Errorf("project %q not found", args[1])
+		}
+		p.Name = args[1]
 	}
 	return p, nil
 }
@@ -46,10 +57,10 @@ func GetOrSelectRepos(project domain.Project, args []string, deps types.RuntimeD
 		if repo.Name == "" || !found {
 			return nil, fmt.Errorf("repo %q not found", args[1])
 		}
-		repos = append(repos, repo)
+		return repos, nil
 
 	case 1:
-		repos = nil
+		return nil, nil
 
 	case 0:
 		repo, _, err := GetOrSelectRepo(project, args, deps)
@@ -57,9 +68,10 @@ func GetOrSelectRepos(project domain.Project, args []string, deps types.RuntimeD
 			err = fmt.Errorf("unable to select repo: %w", err)
 			return nil, err
 		}
-		repos = append(repos, repo)
+		return []domain.Repository{repo}, nil
 	}
-	return repos, nil
+
+	return nil, fmt.Errorf("invalid arguments: %v", args)
 }
 
 // GetOrSelectRepo returns a repository from the 2nd argument, or interactively.

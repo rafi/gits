@@ -24,7 +24,7 @@ func GetProjects(include []string, deps types.RuntimeDeps) (domain.ProjectListKe
 	if len(include) > 0 {
 		first, _ = homedir.Expand(include[0])
 	}
-	if len(first) > 0 && (first == "." || first[0:1] == "/" || first[0:2] == "./") {
+	if len(first) > 0 && (first == "." || first[0:1] == "/" || first[0:2] == "./" || first[0:2] == "../") {
 		project := newProjectFromDisk(first)
 		deps.Projects = domain.ProjectListKeyed{project.Name: project}
 		include = []string{}
@@ -99,9 +99,6 @@ func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 		}
 	}
 
-	// if source != nil {
-	// 	filterRepos(project, source)
-	// }
 	computeState(project, deps.Git)
 	return nil
 }
@@ -135,7 +132,7 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 		}
 	}
 	if !hasCache {
-		c, err := providers.NewCloudProvider(project.Source.Type, "")
+		c, err := providers.NewGitProvider(project.Source.Type, "")
 		if err != nil {
 			return fmt.Errorf("failed to create provider: %w", err)
 		}

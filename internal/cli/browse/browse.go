@@ -1,6 +1,8 @@
 package browse
 
 import (
+	"strings"
+
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/types"
@@ -9,12 +11,16 @@ import (
 // ExecBrowse opens a fzf window to browse the entire catalog.
 // Args: (optional)
 //   - project name
-//   - repo name
+//   - repo or sub-project name
 //   - branch name
 func ExecBrowse(args []string, deps types.RuntimeDeps) error {
 	project, err := cli.GetOrSelectProject(args, deps)
 	if err != nil {
 		return err
+	}
+
+	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
+		args = args[:len(args)-1]
 	}
 
 	repo, repoName, err := cli.GetOrSelectRepo(project, args, deps)

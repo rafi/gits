@@ -17,11 +17,11 @@ const (
 	ProviderFilesystem Provider = "filesystem"
 )
 
-type cloudProviderInterface interface {
+type gitProvider interface {
 	LoadRepos(id string, gitClient git.Git, project *domain.Project) error
 }
 
-func NewCloudProvider(providerName, token string) (cloudProviderInterface, error) {
+func NewGitProvider(providerName, token string) (gitProvider, error) {
 	switch Provider(providerName) {
 	case ProviderGitHub:
 		return newGitHubProvider(token)
