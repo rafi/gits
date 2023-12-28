@@ -20,7 +20,7 @@ import (
 const (
 	appName  = "gits"
 	appShort = "gits is a tool for managing multiple Git repositories"
-	appLong  = `Fast CLI Git manager for multiple repositories with cloud support`
+	appLong  = `Fast CLI Git manager for multiple repositories with GitHub/GitLab/Bitbucket support`
 )
 
 var listOutput = "table"

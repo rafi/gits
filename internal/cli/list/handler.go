@@ -33,7 +33,7 @@ func ExecList(format string, include []string, deps types.RuntimeDeps) error {
 
 	projects, err := project.GetProjects(include, deps)
 	if err != nil {
-		return fmt.Errorf("unable to list projects: %w", err)
+		return err
 	}
 	if len(projects) == 0 {
 		log.Warn("no projects found")

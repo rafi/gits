@@ -49,24 +49,24 @@ func (c *gitLabProvider) LoadRepos(groupID string, gitClient git.Git, project *d
 
 	g, _, err := c.client.Groups.GetGroup(groupID, nil)
 	if err != nil {
-		return fmt.Errorf("LoadRepos: %w", err)
+		return err
 	}
 	if project.Name == "" {
 		project.Name = g.Name
 	}
 	project.SubProjects, err = c.fetchSubGroups(project.ID)
 	if err != nil {
-		return fmt.Errorf("LoadRepos: %w", err)
+		return err
 	}
 	for i, group := range project.SubProjects {
 		err := c.LoadRepos(group.ID, gitClient, &project.SubProjects[i])
 		if err != nil {
-			return fmt.Errorf("LoadRepos: %w", err)
+			return err
 		}
 	}
 	project.Repos, err = c.fetchGroupProjects(groupID)
 	if err != nil {
-		return fmt.Errorf("LoadRepos: %w", err)
+		return err
 	}
 	return nil
 }

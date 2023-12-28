@@ -45,7 +45,7 @@ func (c *filesystemProvider) LoadRepos(path string, gitClient git.Git, project *
 	var err error
 	path, err = homedir.Expand(path)
 	if err != nil {
-		return fmt.Errorf("unable to expand path: %w", err)
+		return err
 	}
 	project.ID = path
 	return godirwalk.Walk(path, &godirwalk.Options{

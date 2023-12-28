@@ -38,7 +38,7 @@ func (c *bitbucketProvider) LoadRepos(ownerName string, _ git.Git, project *doma
 	var err error
 	project.Repos, project.ID, err = c.fetchRepos(ownerName)
 	if err != nil {
-		return fmt.Errorf("LoadRepos: %w", err)
+		return err
 	}
 	return nil
 }

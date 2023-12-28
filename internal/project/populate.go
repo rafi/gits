@@ -37,7 +37,7 @@ func GetProjects(include []string, deps types.RuntimeDeps) (domain.ProjectListKe
 		}
 		proj.Name = name
 		if err := populateProject(&proj, deps); err != nil {
-			return nil, fmt.Errorf("unable to populate project: %w", err)
+			return nil, err
 		}
 		projs[name] = proj
 	}
@@ -71,7 +71,7 @@ func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 		for repoIdx, repo := range project.Repos {
 			project.Repos[repoIdx], err = providers.NewFilesystemRepo(repo.Dir, deps.Git)
 			if err != nil {
-				return fmt.Errorf("failed to create filesystem repo: %w", err)
+				return err
 			}
 		}
 
@@ -94,7 +94,7 @@ func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 		// Populate repos from source.
 		if project.Source.Type != "" {
 			if err := getSource(project, deps); err != nil {
-				return fmt.Errorf("failed to find source repos: %w", err)
+				return err
 			}
 		}
 	}
@@ -119,9 +119,9 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 	}
 
 	// Grab source filter and concat a cache key.
-	id := project.Source.GetFilterID()
+	id, err := project.Source.GetFilterID()
 	if id == "" {
-		return fmt.Errorf("unable to get source filter id for project %s", project.Name)
+		return fmt.Errorf("project %q error: %w", project.Name, err)
 	}
 	cacheKey := makeCacheKey(project.Source.Type, id)
 	cacheChecksum, err := md5sum(deps.Source)
@@ -150,6 +150,9 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 		}
 		if err != nil {
 			return fmt.Errorf("failed to find all projects: %w", err)
+		}
+		if len(project.Repos) == 0 {
+			return fmt.Errorf("no repositories found for project %q", project.Name)
 		}
 
 		if shouldCache {

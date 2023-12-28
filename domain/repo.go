@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Repository represents a single repository from filesystem or cloud provider.
+// Repository represents a single repository from filesystem or git provider.
 type Repository struct {
 	ID        string `json:"id,omitempty"`
 	Name      string `json:"name,omitempty"`

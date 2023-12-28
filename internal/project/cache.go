@@ -40,9 +40,9 @@ func newProjectCache(project domain.Project, checksum string) cacheStub {
 }
 
 func CleanCache(project domain.Project) error {
-	id := project.Source.GetFilterID()
+	id, err := project.Source.GetFilterID()
 	if id == "" {
-		return fmt.Errorf("unable to get source filter id for project %s", project.Name)
+		return fmt.Errorf("project %q error: %w", project.Name, err)
 	}
 	cacheKey := makeCacheKey(project.Source.Type, id)
 	cachePath, err := cacheFilePath(cacheKey)

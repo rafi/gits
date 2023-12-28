@@ -38,7 +38,7 @@ func newGitHubProvider(token string) (*gitHubProvider, error) {
 func (c *gitHubProvider) LoadRepos(ownerName string, _ git.Git, project *domain.Project) (err error) {
 	project.Repos, project.ID, err = c.fetchRepos(ownerName)
 	if err != nil {
-		return fmt.Errorf("LoadRepos: %w", err)
+		return err
 	}
 	return nil
 }
@@ -81,10 +81,11 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 		return repos, ownerID, err
 	}
 
-	if len(repos) > 0 {
-		ownerID = string(q.Search.Edges[0].Node.Repository.Owner.ID)
+	if len(q.Search.Edges) == 0 || q.Search.RepositoryCount == 0 {
+		return repos, ownerID, fmt.Errorf("no repositories found")
 	}
 
+	ownerID = string(q.Search.Edges[0].Node.Repository.Owner.ID)
 	for _, edge := range q.Search.Edges {
 		node := edge.Node.Repository
 		repos = append(repos, domain.Repository{
