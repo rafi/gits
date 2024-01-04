@@ -23,7 +23,10 @@ var (
 	// defaultOpts are the default options passed to fzf.
 	defaultOpts = []string{
 		"--ansi",
+		"--info=right",
 		"--no-multi",
+		"--header-first",
+		"--margin=1,3,0,3",
 	}
 )
 
