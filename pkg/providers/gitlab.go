@@ -39,7 +39,7 @@ func newGitLabProvider(token string) (*gitLabProvider, error) {
 var gitLabListOptions = gitlab.ListOptions{
 	OrderBy:    "id",
 	Pagination: "keyset",
-	PerPage:    20,
+	PerPage:    50,
 	Sort:       "asc",
 }
 
@@ -118,6 +118,9 @@ func (c *gitLabProvider) fetchGroupProjects(groupID string) ([]domain.Repository
 
 		// List all the projects we've found so far.
 		for _, p := range ps {
+			if p.Archived || p.EmptyRepo {
+				continue
+			}
 			projects = append(projects, domain.Repository{
 				ID:        strconv.Itoa(p.ID),
 				Name:      p.Path,

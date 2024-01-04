@@ -37,7 +37,7 @@ func (p Project) GetRepo(name, prefix string) (Repository, bool) {
 func (p Project) GetSubProject(name, prefix string) (Project, bool) {
 	name = strings.Trim(name, "/")
 
-	if name + "/" == prefix {
+	if name+"/" == prefix {
 		return p, true
 	}
 
@@ -52,16 +52,16 @@ func (p Project) GetSubProject(name, prefix string) (Project, bool) {
 }
 
 func (p Project) GetAllRepos(prefix ...string) []Repository {
-	var names []Repository
+	var repos []Repository
 	if len(prefix) == 0 {
 		prefix = []string{""}
 	}
-	names = append(names, p.Repos...)
+	repos = append(repos, p.Repos...)
 	for _, subProj := range p.SubProjects {
 		subPrefix := prefix[0] + subProj.Name + "/"
-		names = append(names, subProj.GetAllRepos(subPrefix)...)
+		repos = append(repos, subProj.GetAllRepos(subPrefix)...)
 	}
-	return names
+	return repos
 }
 
 func (p Project) ListReposWithNamespace(prefix ...string) []string {

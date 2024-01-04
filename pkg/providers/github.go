@@ -58,6 +58,7 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 						Description githubv4.String
 						URL         githubv4.String
 						SSHURL      githubv4.String
+						IsArchived  githubv4.Boolean
 					} `graphql:"... on Repository"`
 				}
 			}
@@ -87,14 +88,17 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 
 	ownerID = string(q.Search.Edges[0].Node.Repository.Owner.ID)
 	for _, edge := range q.Search.Edges {
-		node := edge.Node.Repository
+		repo := edge.Node.Repository
+		if repo.IsArchived {
+			continue
+		}
 		repos = append(repos, domain.Repository{
-			ID:        string(node.ID),
-			Name:      string(node.Name),
-			Namespace: string(node.Owner.Login),
-			Src:       string(node.SSHURL),
-			URL:       string(node.URL),
-			Desc:      string(node.Description),
+			ID:        string(repo.ID),
+			Name:      string(repo.Name),
+			Namespace: string(repo.Owner.Login),
+			Src:       string(repo.SSHURL),
+			URL:       string(repo.URL),
+			Desc:      string(repo.Description),
 		})
 	}
 
