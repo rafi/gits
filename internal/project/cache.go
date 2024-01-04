@@ -20,7 +20,7 @@ import (
 
 const (
 	cacheTimeFormat = time.RFC3339
-	cacheTTL        = 24 * time.Hour
+	cacheTTL        = 7 * 24 * time.Hour
 )
 
 type cacheStub struct {
@@ -125,7 +125,7 @@ func getCache(key, checksum string, project *domain.Project) (bool, error) {
 		return false, nil
 	}
 
-	// Bust cache if older than 24 hours
+	// Bust cache if expired
 	cutoff := time.Now().Add(-cacheTTL)
 	cachedAt, err := time.Parse(cacheTimeFormat, cached.Timestamp)
 	if err != nil {
