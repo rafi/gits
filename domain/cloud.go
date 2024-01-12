@@ -26,7 +26,7 @@ func (p ProviderSource) GetFilterID() (string, error) {
 		fieldName = "groupID"
 		id = p.Search.GroupID
 	case "bitbucket":
-		fieldName =  "owner"
+		fieldName = "owner"
 		id = p.Search.Owner
 	case "filesystem":
 		fieldName = "path"

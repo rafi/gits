@@ -30,7 +30,7 @@ func main() {
 		StringVarP(&configPath, "config", "c", "", "config file (default is $HOME/.gits.yaml)")
 
 	rootCmd.PersistentFlags().
-		StringVar(&configFile.Color, "color", config.ColorOptionDefault, "color")
+		StringVarP(&configFile.Color, "color", "C", config.ColorOptionDefault, "color")
 
 	rootCmd.PersistentFlags().
 		BoolVarP(&configFile.Settings.Verbose, "verbose", "v", false, "display verbose output")
@@ -49,6 +49,11 @@ func main() {
 
 // setupLogger configures gits logger and sets the verbosity level.
 func setupLogger(cfg config.File) {
+	log.SetFormatter(&log.TextFormatter{
+		DisableTimestamp:       true,
+		DisableLevelTruncation: true,
+		QuoteEmptyFields:       true,
+	})
 	logLevel := log.InfoLevel
 	if cfg.Settings.Verbose {
 		logLevel = log.DebugLevel

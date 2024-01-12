@@ -10,6 +10,10 @@ import (
 	"github.com/rafi/gits/internal/project"
 )
 
+// ExecList displays a list of projects and repositories.
+//
+// Args: (optional)
+//   - project names
 func ExecList(format string, include []string, deps types.RuntimeDeps) error {
 	var lister func(domain.ProjectListKeyed, types.RuntimeDeps) error
 	switch format {

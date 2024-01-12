@@ -1,8 +1,6 @@
 package browse
 
 import (
-	"strings"
-
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/types"
@@ -14,34 +12,35 @@ import (
 //   - repo or sub-project name
 //   - branch name
 func ExecBrowse(args []string, deps types.RuntimeDeps) error {
-	project, err := cli.GetOrSelectProject(args, deps)
-	if err != nil {
-		return err
-	}
-
-	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
-		args = args[:len(args)-1]
-	}
-
-	repo, repoName, err := cli.GetOrSelectRepo(project, args, deps)
+	project, repo, err := cli.ParseArgs(args, false, deps)
 	if err != nil {
 		return err
 	}
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(repo, deps.Theme)
+		return cli.AbortOnRepoState(*repo, deps.Theme)
 	}
 
-	branchName := ""
-	if len(args) > 2 {
-		branchName = args[2]
-	} else if len(args) < 3 {
-		branchName, err = cli.SelectBranch(project.Name, repoName, repo, deps)
+	// Use the project name if provided, and branch too.
+	projName := ""
+	repoFullName := repo.GetNameWithNamespace()
+	branch := ""
+	switch len(args) {
+	case 3:
+		branch = args[2]
+	case 0:
+		projName = project.Name
+	default:
+		projName = args[0]
+	}
+
+	if branch == "" {
+		// Interactively select a branch.
+		branch, err = cli.SelectBranch(projName, *repo, deps)
 		if err != nil {
 			return err
 		}
 	}
-	args = []string{project.Name, repoName, branchName}
-	return ExecBranchOverview(args, deps)
+	return ExecBranchOverview([]string{projName, repoFullName, branch}, deps)
 }

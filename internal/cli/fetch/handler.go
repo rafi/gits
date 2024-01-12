@@ -2,7 +2,6 @@ package fetch
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
@@ -15,29 +14,21 @@ import (
 //   - project name
 //   - repo or sub-project name
 func ExecFetch(args []string, deps types.RuntimeDeps) error {
-	project, err := cli.GetOrSelectProject(args, deps)
+	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
 
-	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
-		args = args[:len(args)-1]
-	}
-
-	// Get specific repo if provided/selected, or all repos in project.
-	repos, err := cli.GetOrSelectRepos(project, args, deps)
-	if err != nil {
-		return err
-	}
-
-	if repos == nil {
+	// Fetch all project's repositories.
+	if repo == nil {
 		var errList []cli.Error
 		fetchProjectRepos(project, deps, &errList)
 		cli.HandlerErrors(errList)
 		return nil
 	}
 
-	output, err := fetchRepo(project, repos[0], deps)
+	// Fetch a single repository.
+	output, err := fetchRepo(project, *repo, deps)
 	fmt.Println(deps.Theme.GitOutput.Render(output))
 	return err
 }

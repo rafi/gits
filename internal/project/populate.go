@@ -16,23 +16,23 @@ import (
 	"github.com/rafi/gits/pkg/providers"
 )
 
-func GetProjects(include []string, deps types.RuntimeDeps) (domain.ProjectListKeyed, error) {
+func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed, error) {
 	projs := domain.ProjectListKeyed{}
 
 	// Support path based project directories.
 	first := ""
-	if len(include) > 0 {
-		first, _ = homedir.Expand(include[0])
+	if len(args) > 0 {
+		first, _ = homedir.Expand(args[0])
 	}
 	if len(first) > 0 && (first == "." || first[0:1] == "/" || first[0:2] == "./" || first[0:2] == "../") {
 		project := newProjectFromDisk(first)
 		deps.Projects = domain.ProjectListKeyed{project.Name: project}
-		include = []string{}
+		args = []string{}
 	}
 
 	// Filter projects and populate each with metadata and state.
 	for name, proj := range deps.Projects {
-		if len(include) > 0 && !slices.Contains(include, name) {
+		if len(args) > 0 && !slices.Contains(args, name) {
 			continue
 		}
 		proj.Name = name

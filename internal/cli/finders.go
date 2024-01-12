@@ -7,13 +7,48 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/pkg/fzf"
 )
 
-// GetOrSelectProject returns a project from the first argument, or
+// ParseArgs parses the arguments and returns the project and repo.
+func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeDeps) (
+	domain.Project, *domain.Repository, error,
+) {
+	project, err := getOrSelectProject(args, deps)
+	if err != nil {
+		return project, nil, err
+	}
+
+	switch {
+	case !skipRepoSelect:
+		repo, err := getOrSelectRepo(project, args, deps)
+		return project, &repo, err
+
+	case len(args) > 1 && strings.HasSuffix(args[1], "/"):
+		repo, err := getOrSelectRepo(project, args, deps)
+		if err != nil {
+			return project, nil, err
+		}
+		return project, &repo, err
+
+	case len(args) < 2:
+		return project, nil, err
+
+	default:
+		repo, found := project.GetRepo(args[1], "")
+		if repo.Name == "" || !found {
+			return project, nil, fmt.Errorf("unable to load repo %q", args[1])
+		}
+		return project, &repo, err
+	}
+}
+
+// getOrSelectProject returns a project from the first argument, or
 // interactively with fzf.
-func GetOrSelectProject(args []string, deps types.RuntimeDeps) (domain.Project, error) {
+func getOrSelectProject(args []string, deps types.RuntimeDeps) (
+	domain.Project, error,
+) {
 	var err error
 	projName := ""
 	if len(args) > 0 {
@@ -21,7 +56,7 @@ func GetOrSelectProject(args []string, deps types.RuntimeDeps) (domain.Project, 
 	} else {
 		projName, err = SelectProject(deps)
 		if projName == "" || err != nil {
-			err = fmt.Errorf("unable to interactively select a project: %w", err)
+			err = fmt.Errorf("unable to select a project: %w", err)
 			return domain.Project{}, err
 		}
 	}
@@ -33,7 +68,7 @@ func GetOrSelectProject(args []string, deps types.RuntimeDeps) (domain.Project, 
 	}
 
 	// Find a sub-project if provided via 2nd argument.
-	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
+	if len(args) > 1 && strings.HasSuffix(args[1], "/") {
 		var found bool
 		p, found = p.GetSubProject(args[1], "")
 		if !found {
@@ -44,55 +79,36 @@ func GetOrSelectProject(args []string, deps types.RuntimeDeps) (domain.Project, 
 	return p, nil
 }
 
-// GetOrSelectRepos logic:
-//   - If no args are provided, select a project and repo.
-//   - If only project name is provided, use all repos in the project.
-//   - If project and repo name are provided, use only that repo.
-func GetOrSelectRepos(project domain.Project, args []string, deps types.RuntimeDeps) ([]domain.Repository, error) {
-	// Use all repos by default, or specific repo if provided via args.
-	repos := []domain.Repository{}
-	switch len(args) {
-	case 2:
-		repo, found := project.GetRepo(args[1], "")
-		if repo.Name == "" || !found {
-			return nil, fmt.Errorf("repo %q not found", args[1])
-		}
-		return repos, nil
-
-	case 1:
-		return nil, nil
-
-	case 0:
-		repo, _, err := GetOrSelectRepo(project, args, deps)
-		if err != nil {
-			err = fmt.Errorf("unable to select repo: %w", err)
-			return nil, err
-		}
-		return []domain.Repository{repo}, nil
-	}
-
-	return nil, fmt.Errorf("invalid arguments: %v", args)
-}
-
-// GetOrSelectRepo returns a repository from the 2nd argument, or interactively.
-func GetOrSelectRepo(project domain.Project, args []string, deps types.RuntimeDeps) (domain.Repository, string, error) {
+// getOrSelectRepo returns a repository from the 2nd argument, or
+// interactively with fzf.
+func getOrSelectRepo(
+	project domain.Project,
+	args []string,
+	deps types.RuntimeDeps,
+) (domain.Repository, error) {
 	var err error
+	rootProject := ""
 	repoName := ""
 	if len(args) > 1 {
-		repoName = args[1]
-	} else {
-		repoName, err = SelectRepo(project, deps)
+		if strings.HasSuffix(args[1], "/") {
+			rootProject = args[0]
+		} else {
+			repoName = args[1]
+		}
+	}
+	if repoName == "" {
+		repoName, err = SelectRepo(rootProject, project, deps)
 		if repoName == "" || err != nil {
-			err = fmt.Errorf("unable to interactively select a repo: %w", err)
-			return domain.Repository{}, "", err
+			err = fmt.Errorf("unable to select a repo: %w", err)
+			return domain.Repository{}, err
 		}
 	}
 
 	repo, found := project.GetRepo(repoName, "")
 	if repo.Name == "" || !found {
-		return repo, "", fmt.Errorf("unable to load repo %q", repoName)
+		return repo, fmt.Errorf("unable to load repo %q", repoName)
 	}
-	return repo, repoName, nil
+	return repo, nil
 }
 
 // SelectProject returns an interactively selected project name.
@@ -105,19 +121,17 @@ func SelectProject(deps types.RuntimeDeps) (string, error) {
 		buffer.WriteString(projectTitle + "\n")
 	}
 
-	// Run fzf with preview to 'list' sub-command.
-	previewCommand := fmt.Sprintf(
-		"--preview=gits --config='%s' --color=always list -o tree {1}",
-		deps.Source,
-	)
-	projName, err := fzf.Run(
-		buffer,
-		"--prompt=project> ",
-		"--nth=1",
-		previewCommand,
-		"--preview-window=right,70%",
-	)
-	if err != nil {
+	// Run fzf with the sub-command 'list' as preview.
+	finder := fzf.New("--nth=1")
+	finder.WithPrompt("project> ")
+
+	previewCmd := "gits -C=always --config='%s' list -o tree {1}"
+	previewCmd = fmt.Sprintf(previewCmd, deps.Source)
+	finder.WithPreview(previewCmd, "")
+
+	projName, err := finder.Run(buffer)
+	if projName == "" || err != nil {
+		err = fmt.Errorf("unable to select a project: %w", err)
 		return "", err
 	}
 	projName = strings.Split(projName, " ")[0]
@@ -125,7 +139,11 @@ func SelectProject(deps types.RuntimeDeps) (string, error) {
 }
 
 // SelectRepo returns an interactively selected repository name.
-func SelectRepo(project domain.Project, deps types.RuntimeDeps) (string, error) {
+func SelectRepo(
+	rootProject string,
+	project domain.Project,
+	deps types.RuntimeDeps,
+) (string, error) {
 	// Collect repo names
 	style := deps.Theme.RepoTitle
 	buffer := bytes.Buffer{}
@@ -134,58 +152,66 @@ func SelectRepo(project domain.Project, deps types.RuntimeDeps) (string, error) 
 		buffer.WriteString(style.Render(repo) + "\n")
 	}
 
-	// Run fzf with preview to hidden 'repo-overview' sub-command.
-	previewCommand := fmt.Sprintf(
-		"--preview=gits --config='%s' --color=always repo-overview '%s' {}",
-		deps.Source,
-		project.Name,
-	)
-	repoName, err := fzf.Run(
-		buffer,
-		fmt.Sprintf("--prompt=[%s] repo> ", project.Name),
-		previewCommand,
-		"--preview-window=right,70%",
-	)
-	if err != nil {
+	// rootProject is empty when a root project is provided.
+	prefix := project.Name
+	if rootProject == "" {
+		prefix = ""
+		rootProject = project.Name
+	}
+
+	// Run fzf with the hidden sub-command 'repo-overview' as preview.
+	finder := fzf.New()
+	finder.WithPrompt(fmt.Sprintf("[%s] repo> ", project.Name))
+
+	previewCmd := "gits -C=always --config='%s' repo-overview '%s' '%s'{}"
+	previewCmd = fmt.Sprintf(previewCmd, deps.Source, rootProject, prefix)
+	finder.WithPreview(previewCmd, "")
+
+	repoName, err := finder.Run(buffer)
+	if repoName == "" || err != nil {
+		err = fmt.Errorf("unable to select a repository: %w", err)
 		return "", err
 	}
 	return repoName, nil
 }
 
 // SelectBranch returns an interactively selected branch name.
-func SelectBranch(projName, repoFullName string, repo domain.Repository, deps types.RuntimeDeps) (string, error) {
+func SelectBranch(
+	projName string,
+	repo domain.Repository,
+	deps types.RuntimeDeps,
+) (string, error) {
 	refs, err := deps.Git.Refs(repo.AbsPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to open repo: %w", err)
 	}
 
-	branchStyle := deps.Theme.BranchIndicator
-	tagStyle := deps.Theme.TagIndicator
+	delimiter := "\t"
+
+	branchLabel := deps.Theme.BranchIndicator.Render("branch") + delimiter
+	tagLabel := deps.Theme.TagIndicator.Render("tag") + delimiter
 
 	buffer := bytes.Buffer{}
 	for _, ref := range refs {
-		ref = strings.Replace(ref, "refs/tags/", tagStyle.Render("tag")+"\t", 1)
-		ref = strings.Replace(ref, "refs/heads/", branchStyle.Render("branch")+"\t", 1)
+		ref = strings.Replace(ref, "refs/tags/", tagLabel, 1)
+		ref = strings.Replace(ref, "refs/heads/", branchLabel, 1)
 		buffer.WriteString(ref + "\n")
 	}
 
-	previewCommand := fmt.Sprintf(
-		"--preview=gits --config='%s' --color=always branch-overview '%s' '%s' {2}",
-		deps.Source,
-		projName,
-		repoFullName,
-	)
-	branch, err := fzf.Run(
-		buffer,
-		fmt.Sprintf("--prompt=[%s/%s] branch> ", projName, repoFullName),
-		"--delimiter=\t",
-		"--nth=2",
-		previewCommand,
-		"--preview-window=right,70%",
-	)
+	repoFullName := repo.GetNameWithNamespace()
+
+	// Run fzf with the hidden sub-command 'branch-overview' as preview.
+	finder := fzf.New("--delimiter="+delimiter, "--nth=2")
+	finder.WithPrompt(fmt.Sprintf("[%s/%s] branch> ", projName, repoFullName))
+
+	previewCmd := "gits -C=always --config='%s' branch-overview '%s' '%s' {2}"
+	previewCmd = fmt.Sprintf(previewCmd, deps.Source, projName, repoFullName)
+	finder.WithPreview(previewCmd, "")
+
+	selected, err := finder.Run(buffer)
 	if err != nil {
 		return "", err
 	}
-	branch = strings.Split(branch, "\t")[1]
-	return branch, nil
+	branchName := strings.Split(selected, delimiter)[1]
+	return branchName, nil
 }

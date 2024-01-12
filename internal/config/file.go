@@ -38,7 +38,7 @@ type deprecations struct {
 func NewConfigFromFile(filePath string, cfg *File) error {
 	if filePath == "" {
 		var err error
-		filePath, err = cfg.findDefaultProvider()
+		filePath, err = cfg.findDefaultPath()
 		if err != nil {
 			return fmt.Errorf("unable to find config file: %w", err)
 		}
@@ -65,8 +65,8 @@ func (f *File) Convert() error {
 	return nil
 }
 
-// findDefaultProvider reads in config file and ENV variables if set.
-func (f File) findDefaultProvider() (string, error) {
+// findDefaultPath reads in config file and ENV variables if set.
+func (f File) findDefaultPath() (string, error) {
 	home, err := homedir.Dir()
 	if err != nil {
 		return "", fmt.Errorf("unable to find home directory: %w", err)
@@ -127,9 +127,9 @@ func (f *File) loadConfig(filePath string) error {
 
 	// Set never/always color toggle.
 	switch f.Color {
-	case colorOptionNever.String():
+	case ColorOptionNever.String():
 		lipgloss.SetColorProfile(termenv.Ascii)
-	case colorOptionAlways.String():
+	case ColorOptionAlways.String():
 		os.Setenv("CLICOLOR_FORCE", "1")
 	}
 	return nil

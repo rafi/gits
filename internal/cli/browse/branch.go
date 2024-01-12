@@ -11,8 +11,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/pkg/fzf"
 	"github.com/rafi/gits/pkg/git"
 )
 
@@ -30,6 +30,7 @@ var (
 // Args:
 //   - project name
 //   - repo name
+//   - branch name (optional)
 func ExecBranchOverview(args []string, deps types.RuntimeDeps) error {
 	// Project
 	if len(args) < 1 {
@@ -47,10 +48,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeDeps) error {
 	repoName := args[1]
 	foundRepo, found := project.GetRepo(repoName, "")
 	if foundRepo.Name == "" || !found {
-		return fmt.Errorf("repo %q not found", repoName)
-	}
-	if foundRepo.Name == "" {
-		return fmt.Errorf("repo %q not found", repoName)
+		return fmt.Errorf("repo %s/%s not found", args[0], repoName)
 	}
 
 	repo, err := deps.Git.Open(foundRepo.AbsPath)

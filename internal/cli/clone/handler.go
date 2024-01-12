@@ -3,7 +3,6 @@ package clone
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -18,29 +17,24 @@ import (
 //   - project name
 //   - repo or sub-project name
 func ExecClone(args []string, deps types.RuntimeDeps) error {
-	project, err := cli.GetOrSelectProject(args, deps)
+	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
 
-	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
-		args = args[:len(args)-1]
-	}
-
-	// Get specific repo if provided/selected, or all repos in project.
-	repos, err := cli.GetOrSelectRepos(project, args, deps)
-	if err != nil {
-		return err
-	}
-
-	if repos == nil {
+	// Clone all project's repositories.
+	if repo == nil {
 		var errList []cli.Error
 		cloneProjectRepos(project, deps, &errList)
-		cli.HandlerErrors(errList)
+		if len(errList) > 0 {
+			msg := fmt.Sprintf("\nThere were %d errors.", len(errList))
+			fmt.Println(deps.Theme.GitOutput.Render(msg))
+		}
 		return nil
 	}
 
-	output, err := cloneRepo(project, repos[0], deps)
+	// Clone a single repository.
+	output, err := cloneRepo(project, *repo, deps)
 	fmt.Println(deps.Theme.GitOutput.Render(output))
 	return err
 }

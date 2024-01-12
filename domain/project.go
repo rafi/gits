@@ -21,7 +21,10 @@ type ProjectListKeyed map[string]Project
 
 func (p Project) GetRepo(name, prefix string) (Repository, bool) {
 	for _, repo := range p.Repos {
-		if prefix+repo.GetName() == name {
+		switch name {
+		case prefix + repo.GetName():
+			fallthrough
+		case repo.GetNameWithNamespace():
 			return repo, true
 		}
 	}

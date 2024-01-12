@@ -2,26 +2,35 @@ package sync
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/rafi/gits/internal/cli/types"
 	"github.com/rafi/gits/internal/project"
 )
 
-func ExecSync(include []string, deps types.RuntimeDeps) error {
-	for _, p := range deps.Projects {
+// ExecSync cleans the cache for the given projects.
+//
+// Args: (optional)
+//   - project names
+func ExecSync(args []string, deps types.RuntimeDeps) error {
+	for name, p := range deps.Projects {
 		if p.Source == nil {
 			continue
 		}
-		if len(include) > 0 && !slices.Contains(include, p.Name) {
+		if len(args) > 0 && !slices.Contains(args, name) {
 			continue
 		}
 		if err := project.CleanCache(p); err != nil {
-			return fmt.Errorf("unable to remove cache: %w", err)
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("unable to remove cache: %w", err)
+			}
+			continue
 		}
+		fmt.Printf("Cleaned %q project cache.\n", name)
 	}
 
-	_, err := project.GetProjects(include, deps)
+	_, err := project.GetProjects(args, deps)
 	if err != nil {
 		return fmt.Errorf("unable to list projects: %w", err)
 	}

@@ -2,12 +2,12 @@ package config
 
 type colorOption int
 
-var ColorOptionDefault = colorOptionAuto.String()
+var ColorOptionDefault = ColorOptionAuto.String()
 
 const (
-	colorOptionAuto colorOption = iota
-	colorOptionAlways
-	colorOptionNever
+	ColorOptionAuto colorOption = iota
+	ColorOptionAlways
+	ColorOptionNever
 )
 
 func (c colorOption) String() string {

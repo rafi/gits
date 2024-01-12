@@ -2,7 +2,6 @@ package checkout
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/erikgeiser/promptkit/selection"
 	log "github.com/sirupsen/logrus"
@@ -19,28 +18,21 @@ import (
 //   - project name
 //   - repo or sub-project name
 func ExecCheckout(args []string, deps types.RuntimeDeps) error {
-	project, err := cli.GetOrSelectProject(args, deps)
+	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
 
-	if len(args) > 1 && strings.Index(args[1], "/") > 0 {
-		args = args[:len(args)-1]
-	}
-
-	// Get specific repo if provided/selected, or all repos in project.
-	repos, err := cli.GetOrSelectRepos(project, args, deps)
-	if err != nil {
-		return err
-	}
-
-	if repos == nil {
+	// Checkout all project's repositories.
+	if repo == nil {
 		var errList []cli.Error
 		checkoutProjectRepos(project, deps, &errList)
 		cli.HandlerErrors(errList)
 		return nil
 	}
-	return checkoutRepo(project, repos[0], deps)
+
+	// Checkout a single repository.
+	return checkoutRepo(project, *repo, deps)
 }
 
 func checkoutProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {

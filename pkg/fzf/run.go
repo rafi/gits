@@ -11,15 +11,11 @@ import (
 
 const fzfBin = "fzf"
 
+type FZF struct {
+	Args []string
+}
+
 var (
-	// sizeEnvVarNames are the names of the envvariables for width/height.
-	sizeEnvVarNames = []string{"FZF_PREVIEW_COLUMNS", "FZF_PREVIEW_LINES"}
-
-	defaultLayoutOpts = []string{
-		"--height=50%",
-		"--reverse",
-	}
-
 	// defaultOpts are the default options passed to fzf.
 	defaultOpts = []string{
 		"--ansi",
@@ -28,17 +24,45 @@ var (
 		"--header-first",
 		"--margin=1,3,0,3",
 	}
+
+	// Unless user has set FZF_DEFAULT_OPTS, we set some sane defaults.
+	defaultLayoutOpts = []string{
+		"--height=50%",
+		"--reverse",
+	}
+
+	// defaultPreviewOpts are the default options for preview window.
+	defaultPreviewOpts = "right,70%"
+
+	// sizeEnvVarNames are the names of the envvariables for width/height.
+	sizeEnvVarNames = []string{"FZF_PREVIEW_COLUMNS", "FZF_PREVIEW_LINES"}
 )
 
+func New(args ...string) *FZF {
+	return &FZF{Args: args}
+}
+
+func (f *FZF) WithPreview(cmd, opts string) {
+	f.Args = append(f.Args, "--preview", cmd)
+	if opts == "" {
+		opts = defaultPreviewOpts
+	}
+	f.Args = append(f.Args, "--preview-window", opts)
+}
+
+func (f *FZF) WithPrompt(label string) {
+	f.Args = append(f.Args, "--prompt", label)
+}
+
 // Run executes fzf with given args and stdin.
-func Run(stdin bytes.Buffer, args ...string) (string, error) {
+func (f *FZF) Run(stdin bytes.Buffer) (string, error) {
 	_, err := exec.LookPath(fzfBin)
 	if err != nil {
 		return "", fmt.Errorf("%s not found in PATH", fzfBin)
 	}
 
 	// Default options
-	args = append(args, defaultOpts...)
+	args := append(f.Args, defaultOpts...)
 	if os.Getenv("FZF_DEFAULT_OPTS") == "" {
 		args = append(args, defaultLayoutOpts...)
 	}

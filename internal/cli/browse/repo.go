@@ -12,8 +12,8 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/pkg/fzf"
 )
 
 const ReadMeFilename = "README.md"
@@ -39,7 +39,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeDeps) error {
 	repoName := args[1]
 	repo, found := project.GetRepo(repoName, "")
 	if repo.Name == "" || !found {
-		return fmt.Errorf("repo %q not found", repoName)
+		return fmt.Errorf("repo %s/%s not found", args[0], repoName)
 	}
 
 	// Abort if repository is not cloned or has errors.
@@ -49,12 +49,19 @@ func ExecRepoOverview(args []string, deps types.RuntimeDeps) error {
 
 	// Attempt to read README file.
 	readmePath := filepath.Join(repo.AbsPath, ReadMeFilename)
+	readme, err := renderReadme(readmePath, deps)
+	fmt.Println(readme)
+	return err
+}
+
+// renderReadme renders a file as markdown.
+func renderReadme(readmePath string, deps types.RuntimeDeps) (string, error) {
 	readmeBytes, err := os.ReadFile(readmePath)
 	if os.IsNotExist(err) {
-		return fmt.Errorf("Repository does not have a %q file", ReadMeFilename)
+		return "", fmt.Errorf("Repository does not have a %q file", ReadMeFilename)
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Fzf sets environment variables to detect width/height, see man fzf.
@@ -72,7 +79,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeDeps) error {
 		glamour.WithStandardStyle(background),
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	headerStyle := deps.Theme.PreviewHeader.Copy().PaddingLeft(2)
@@ -83,11 +90,5 @@ func ExecRepoOverview(args []string, deps types.RuntimeDeps) error {
 	nicePath := cli.Path(readmePath, deps.HomeDir)
 	fmt.Println(headerStyle.Render(nicePath))
 
-	// Render README as markdown.
-	out, err := mkd.Render(string(readmeBytes))
-	if err != nil {
-		return err
-	}
-	fmt.Println(out)
-	return nil
+	return mkd.Render(string(readmeBytes))
 }

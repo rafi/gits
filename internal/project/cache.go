@@ -54,6 +54,8 @@ func CleanCache(project domain.Project) error {
 		if err != nil {
 			return fmt.Errorf("failed to remove cache file: %w", err)
 		}
+	} else {
+		return err
 	}
 	return nil
 }
