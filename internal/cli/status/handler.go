@@ -74,11 +74,9 @@ func statusProject(project domain.Project, deps types.RuntimeDeps, errList *[]cl
 }
 
 func statusRepo(repo domain.Repository, deps types.RuntimeDeps) (string, error) {
-	switch repo.State {
-	case domain.RepoStateError:
-		return "", fmt.Errorf("not a git repository")
-	case domain.RepoStateNoLocal:
-		return "", fmt.Errorf("not cloned")
+	// Abort if repository is not cloned or has errors.
+	if repo.State != domain.RepoStateOK {
+		return "", cli.AbortOnRepoState(repo, deps.Theme)
 	}
 
 	version, err := deps.Git.Describe(repo.AbsPath)

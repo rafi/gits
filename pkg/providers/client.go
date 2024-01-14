@@ -36,7 +36,7 @@ func NewGitProvider(providerName, token string) (gitProvider, error) {
 	}
 }
 
-func findFirstEnvVar(keys []string) string {
+func getFirstEnvValue(keys []string) string {
 	for _, key := range keys {
 		if os.Getenv(key) != "" {
 			return os.Getenv(key)

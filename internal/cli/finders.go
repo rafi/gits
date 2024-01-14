@@ -15,32 +15,32 @@ import (
 func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeDeps) (
 	domain.Project, *domain.Repository, error,
 ) {
-	project, err := getOrSelectProject(args, deps)
+	proj, err := getOrSelectProject(args, deps)
 	if err != nil {
-		return project, nil, err
+		return proj, nil, err
 	}
 
 	switch {
 	case !skipRepoSelect:
-		repo, err := getOrSelectRepo(project, args, deps)
-		return project, &repo, err
+		repo, err := getOrSelectRepo(proj, args, deps)
+		return proj, &repo, err
 
 	case len(args) > 1 && strings.HasSuffix(args[1], "/"):
-		repo, err := getOrSelectRepo(project, args, deps)
+		repo, err := getOrSelectRepo(proj, args, deps)
 		if err != nil {
-			return project, nil, err
+			return proj, nil, err
 		}
-		return project, &repo, err
+		return proj, &repo, err
 
 	case len(args) < 2:
-		return project, nil, err
+		return proj, nil, err
 
 	default:
-		repo, found := project.GetRepo(args[1], "")
+		repo, found := proj.GetRepo(args[1], "")
 		if repo.Name == "" || !found {
-			return project, nil, fmt.Errorf("unable to load repo %q", args[1])
+			return proj, nil, fmt.Errorf("unable to load repo %q", args[1])
 		}
-		return project, &repo, err
+		return proj, &repo, err
 	}
 }
 

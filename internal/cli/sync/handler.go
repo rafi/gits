@@ -15,7 +15,7 @@ import (
 //   - project names
 func ExecSync(args []string, deps types.RuntimeDeps) error {
 	for name, p := range deps.Projects {
-		if p.Source == nil {
+		if p.Source == nil || p.Source.Search == "" {
 			continue
 		}
 		if len(args) > 0 && !slices.Contains(args, name) {

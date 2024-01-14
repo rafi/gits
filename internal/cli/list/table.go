@@ -98,7 +98,10 @@ func makeTableProjects(projects domain.ProjectListKeyed, single, wide bool, home
 				}
 				subProjs[subProj.Name] = subProj
 			}
-			makeTableProjects(subProjs, single, wide, homeDir, tableRows)
+			err := makeTableProjects(subProjs, single, wide, homeDir, tableRows)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

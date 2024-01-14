@@ -23,7 +23,7 @@ func newGitLabProvider(token string) (*gitLabProvider, error) {
 	var err error
 	provider := &gitLabProvider{sourceType: ProviderGitLab}
 	if token == "" {
-		token = findFirstEnvVar(gitLabTokenEnvVarNames)
+		token = getFirstEnvValue(gitLabTokenEnvVarNames)
 	}
 	if token == "" {
 		return provider, fmt.Errorf("token is required for %s", provider.sourceType)

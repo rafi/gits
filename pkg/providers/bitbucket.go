@@ -20,7 +20,7 @@ type bitbucketProvider struct {
 func newBitbucketProvider(token string) (*bitbucketProvider, error) {
 	provider := &bitbucketProvider{sourceType: ProviderBitbucket}
 	if token == "" {
-		token = findFirstEnvVar(bitbucketTokenEnvVarNames)
+		token = getFirstEnvValue(bitbucketTokenEnvVarNames)
 	}
 	if token == "" {
 		return provider, fmt.Errorf("token is required for %s", provider.sourceType)

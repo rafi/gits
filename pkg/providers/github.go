@@ -11,7 +11,10 @@ import (
 	"github.com/rafi/gits/pkg/git"
 )
 
-var gitHubTokenEnvVarNames = []string{"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"}
+var gitHubTokenEnvVarNames = []string{
+	"GITHUB_TOKEN",
+	"HOMEBREW_GITHUB_API_TOKEN",
+}
 
 type gitHubProvider struct {
 	client     *githubv4.Client
@@ -21,7 +24,7 @@ type gitHubProvider struct {
 func newGitHubProvider(token string) (*gitHubProvider, error) {
 	provider := &gitHubProvider{sourceType: ProviderGitHub}
 	if token == "" {
-		token = findFirstEnvVar(gitHubTokenEnvVarNames)
+		token = getFirstEnvValue(gitHubTokenEnvVarNames)
 	}
 	if token == "" {
 		return provider, fmt.Errorf("token is required for %s", provider.sourceType)
@@ -102,7 +105,7 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 		})
 	}
 
-	// TODO: pagination
+	// TODO: pagination for more than 100 repositories
 
 	return repos, ownerID, nil
 }

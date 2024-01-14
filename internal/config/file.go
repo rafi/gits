@@ -96,15 +96,19 @@ func (f *File) loadConfig(filePath string) error {
 	f.Filename = filePath
 	provider := file.Provider(filePath)
 	fileExt := filepath.Ext(filePath)
+	var err error
 	switch fileExt {
 	case ".json":
-		f.client.Load(provider, json.Parser())
+		err = f.client.Load(provider, json.Parser())
 	case ".toml":
-		f.client.Load(provider, toml.Parser())
+		err = f.client.Load(provider, toml.Parser())
 	case ".yaml", ".yml":
-		f.client.Load(provider, yaml.Parser())
+		err = f.client.Load(provider, yaml.Parser())
 	default:
 		return fmt.Errorf("unsupported config file format: %s", fileExt)
+	}
+	if err != nil {
+		return err
 	}
 
 	koanfConf := koanf.UnmarshalConf{Tag: "json"}

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -40,12 +39,10 @@ func newProjectCache(project domain.Project, checksum string) cacheStub {
 }
 
 func CleanCache(project domain.Project) error {
-	id, err := project.Source.GetFilterID()
-	if id == "" {
-		return fmt.Errorf("project %q error: %w", project.Name, err)
+	if err := project.Source.Validate(); err != nil {
+		return err
 	}
-	cacheKey := makeCacheKey(project.Source.Type, id)
-	cachePath, err := cacheFilePath(cacheKey)
+	cachePath, err := cacheFilePath(project.Source.UniqueKey())
 	if err != nil {
 		return err
 	}
@@ -58,10 +55,6 @@ func CleanCache(project domain.Project) error {
 		return err
 	}
 	return nil
-}
-
-func makeCacheKey(sourceType, id string) string {
-	return fmt.Sprintf("%s-%s", sourceType, strings.ReplaceAll(id, "/", "%"))
 }
 
 func md5sum(filePath string) (string, error) {

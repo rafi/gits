@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
+	"sort"
 
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
@@ -16,6 +16,7 @@ import (
 	"github.com/rafi/gits/pkg/providers"
 )
 
+// GetProjects returns a list of populated projects filtered by name or path.
 func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed, error) {
 	projs := domain.ProjectListKeyed{}
 
@@ -25,7 +26,7 @@ func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed
 		first, _ = homedir.Expand(args[0])
 	}
 	if len(first) > 0 && (first == "." || first[0:1] == "/" || first[0:2] == "./" || first[0:2] == "../") {
-		project := newProjectFromDisk(first)
+		project := newFilesystemProject(first)
 		deps.Projects = domain.ProjectListKeyed{project.Name: project}
 		args = []string{}
 	}
@@ -44,6 +45,7 @@ func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed
 	return projs, nil
 }
 
+// GetProject returns a project by name or path.
 func GetProject(name string, deps types.RuntimeDeps) (domain.Project, error) {
 	list, err := GetProjects([]string{name}, deps)
 	if err != nil {
@@ -52,14 +54,17 @@ func GetProject(name string, deps types.RuntimeDeps) (domain.Project, error) {
 	return list[name], nil
 }
 
-func newProjectFromDisk(path string) domain.Project {
+func newFilesystemProject(path string) domain.Project {
 	return domain.Project{
-		Name:   filepath.Base(path),
-		Path:   path,
-		Source: &domain.ProviderSource{Type: string(providers.ProviderFilesystem)},
+		Name: filepath.Base(path),
+		Path: path,
+		Source: &domain.ProviderSource{
+			Type: string(providers.ProviderFilesystem),
+		},
 	}
 }
 
+// populateProject populates a project with repositories, metadata and state.
 func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 	filesystemType := string(providers.ProviderFilesystem)
 	emptySource := (project.Source == nil || project.Source.Type == "")
@@ -78,17 +83,15 @@ func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 	case emptySource && len(project.Repos) == 0:
 		// Default source type of a project _with_ path is "filesystem".
 		if project.Source == nil {
-			project.Source = &domain.ProviderSource{
-				Search: domain.SearchQuery{},
-			}
+			project.Source = &domain.ProviderSource{}
 		}
 		project.Source.Type = filesystemType
 	}
 
 	if project.Source != nil {
 		// Default search path for "filesystem" is the project path.
-		if project.Source.Search.Path == "" && project.Source.Type == filesystemType {
-			project.Source.Search.Path = project.Path
+		if project.Source.Search == "" && project.Source.Type == filesystemType {
+			project.Source.Search = project.Path
 		}
 
 		// Populate repos from source.
@@ -99,7 +102,13 @@ func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 		}
 	}
 
+	// Load any remote sources, and check repositories state.
 	computeState(project, deps.Git)
+
+	// Filter by user include/exclude config values.
+	if err := project.Filter(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -109,18 +118,18 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 		err         error
 		hasCache    bool
 		shouldCache = deps.Settings.Cache == nil || *deps.Settings.Cache
+		source      = project.Source
 	)
 
-	if project.Source.Type == string(providers.ProviderFilesystem) {
+	if source.Type == string(providers.ProviderFilesystem) {
 		shouldCache = false
 	}
 
 	// Grab source filter and concat a cache key.
-	id, err := project.Source.GetFilterID()
-	if id == "" {
-		return fmt.Errorf("project %q error: %w", project.Name, err)
+	if err := source.Validate(); err != nil {
+		return fmt.Errorf("incorrect config for project %q: %w", project.Name, err)
 	}
-	cacheKey := makeCacheKey(project.Source.Type, id)
+	cacheKey := project.Source.UniqueKey()
 	cacheChecksum, err := md5sum(deps.Source)
 	if err != nil {
 		return fmt.Errorf("failed to get cache checksum: %w", err)
@@ -132,18 +141,23 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 		}
 	}
 	if !hasCache {
-		c, err := providers.NewGitProvider(project.Source.Type, "")
+		c, err := providers.NewGitProvider(source.Type, "")
 		if err != nil {
 			return fmt.Errorf("failed to create provider: %w", err)
 		}
 
-		if project.Source.Type == string(providers.ProviderFilesystem) {
-			log.Debugf("Searching for repos at %s…", id)
+		if source.Type == string(providers.ProviderFilesystem) {
+			log.Debugf("Searching for repos at %s…", source.Search)
 		} else {
-			log.Debugf("Fetching %s repos from %s…", project.Source.Type, id)
+			log.Debugf("Fetching %s repos from %s…", source.Type, source.Search)
 		}
-		if err := c.LoadRepos(id, deps.Git, project); err != nil {
-			return fmt.Errorf("failed to load repos: %w", err)
+		if err := c.LoadRepos(source.Search, deps.Git, project); err != nil {
+			return fmt.Errorf(
+				"Failed to load repos for %q project (%s): %w"+
+					project.Name,
+				source.Type,
+				err,
+			)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to find all projects: %w", err)
@@ -199,7 +213,7 @@ func computeState(project *domain.Project, git git.Git) {
 			continue
 		}
 
-		r.AbsPath, err = getRepoAbsPath(*project, *r)
+		r.AbsPath, err = project.GetRepoAbsPath(*r)
 		if err != nil {
 			r.State = domain.RepoStateError
 			r.Reason = err.Error()
@@ -227,28 +241,12 @@ func computeState(project *domain.Project, git git.Git) {
 		}
 
 	}
-}
 
-// getRepoAbsPath returns an absolute path of a repo directory.
-func getRepoAbsPath(project domain.Project, repo domain.Repository) (string, error) {
-	path := filepath.Clean(project.AbsPath)
-	if len(repo.Dir) == 0 {
-		lastSlash := strings.LastIndex(repo.Src, "/")
-		if lastSlash == -1 {
-			return "", fmt.Errorf("unable to get repo path %s", repo.Src)
-		}
-		name := repo.Src[lastSlash+1:]
-		name = strings.TrimSuffix(name, filepath.Ext(name))
-		return filepath.Join(path, name), nil
-	}
-	expanded, err := homedir.Expand(repo.Dir)
-	if err != nil {
-		return "", fmt.Errorf("unable to expand path: %w", err)
-	}
-	if string(expanded[0]) == "/" {
-		path = filepath.Clean(expanded)
-	} else {
-		path = filepath.Join(path, expanded)
-	}
-	return path, nil
+	// Sort sub-projects and repositories alphabetically.
+	sort.SliceStable(project.SubProjects, func(i, j int) bool {
+		return project.SubProjects[i].Name < project.SubProjects[j].Name
+	})
+	sort.SliceStable(project.Repos, func(i, j int) bool {
+		return project.Repos[i].Name < project.Repos[j].Name
+	})
 }

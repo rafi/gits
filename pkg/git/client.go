@@ -37,7 +37,9 @@ func (g Git) Clone(remote string, path string) (string, error) {
 
 	basePath := filepath.Dir(path)
 	if _, err := os.Stat(basePath); os.IsNotExist(err) {
-		os.MkdirAll(basePath, os.ModePerm)
+		if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
+			return "", err
+		}
 		log.Debugf("Created directory %s", basePath)
 	}
 

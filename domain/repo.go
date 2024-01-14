@@ -2,6 +2,7 @@ package domain
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -62,4 +63,15 @@ func (r Repository) GetSource() string {
 	default:
 		return r.Reason
 	}
+}
+
+func (r Repository) ContainedIn(paths []string) bool {
+	keys := []string{
+		r.GetName(),
+		r.Namespace,
+		r.GetNameWithNamespace(),
+	}
+	return slices.ContainsFunc(paths, func(exclude string) bool {
+		return slices.Index(keys, exclude) > -1
+	})
 }

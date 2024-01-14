@@ -1,6 +1,13 @@
 package domain
 
-import "strings"
+import (
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/mitchellh/go-homedir"
+)
 
 // Project represents a single project that can have many child projects,
 // while each project can have many repositories.
@@ -14,11 +21,14 @@ type Project struct {
 	AbsPath     string          `json:"-"`
 	Repos       []Repository    `json:"repos,omitempty"`
 	SubProjects []Project       `json:"subprojects,omitempty"`
+	Include     []string        `json:"include,omitempty"`
+	Exclude     []string        `json:"exclude,omitempty"`
 }
 
 // ProjectList is a list of projects with keys.
 type ProjectListKeyed map[string]Project
 
+// GetRepo returns a repository by name and initial prefix.
 func (p Project) GetRepo(name, prefix string) (Repository, bool) {
 	for _, repo := range p.Repos {
 		switch name {
@@ -37,6 +47,7 @@ func (p Project) GetRepo(name, prefix string) (Repository, bool) {
 	return Repository{}, false
 }
 
+// GetSubProject returns a sub-project by name and initial prefix.
 func (p Project) GetSubProject(name, prefix string) (Project, bool) {
 	name = strings.Trim(name, "/")
 
@@ -54,6 +65,7 @@ func (p Project) GetSubProject(name, prefix string) (Project, bool) {
 	return Project{}, false
 }
 
+// GetAllRepos returns a list of all repositories in the project.
 func (p Project) GetAllRepos(prefix ...string) []Repository {
 	var repos []Repository
 	if len(prefix) == 0 {
@@ -67,6 +79,7 @@ func (p Project) GetAllRepos(prefix ...string) []Repository {
 	return repos
 }
 
+// ListReposWithNamespace returns a list of repository names with namespace.
 func (p Project) ListReposWithNamespace(prefix ...string) []string {
 	var names []string
 	if len(prefix) == 0 {
@@ -79,5 +92,57 @@ func (p Project) ListReposWithNamespace(prefix ...string) []string {
 		subPrefix := prefix[0] + subProj.Name + "/"
 		names = append(names, subProj.ListReposWithNamespace(subPrefix)...)
 	}
+
+	// Sort sub-projects and repositories alphabetically.
+	sort.Strings(names)
 	return names
+}
+
+// GetRepoAbsPath returns an absolute path of one of its repositories.
+func (p Project) GetRepoAbsPath(repo Repository) (string, error) {
+	path := filepath.Clean(p.AbsPath)
+	if len(repo.Dir) == 0 {
+		lastSlash := strings.LastIndex(repo.Src, "/")
+		if lastSlash == -1 {
+			return "", fmt.Errorf("unable to get repo path %s", repo.Src)
+		}
+		name := repo.Src[lastSlash+1:]
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+		return filepath.Join(path, name), nil
+	}
+	expanded, err := homedir.Expand(repo.Dir)
+	if err != nil {
+		return "", fmt.Errorf("unable to expand path: %w", err)
+	}
+	if string(expanded[0]) == "/" {
+		path = filepath.Clean(expanded)
+	} else {
+		path = filepath.Join(path, expanded)
+	}
+	return path, nil
+}
+
+// Filter filters the project repositories by user include/exclude filters.
+func (p *Project) Filter() error {
+	repos := []Repository{}
+	for _, repo := range p.Repos {
+		// Disregard excluded repositories.
+		if repo.ContainedIn(p.Exclude) {
+			continue
+		}
+		// If include list is provided, it is explicit.
+		if len(p.Include) > 0 && !repo.ContainedIn(p.Include) {
+			continue
+		}
+		repos = append(repos, repo)
+	}
+	p.Repos = repos
+
+	// Recurse into subprojects.
+	for _, subProject := range p.SubProjects {
+		if err := subProject.Filter(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
