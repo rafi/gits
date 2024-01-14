@@ -18,20 +18,16 @@ import (
 
 // GetProjects returns a list of populated projects filtered by name or path.
 func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed, error) {
-	projs := domain.ProjectListKeyed{}
-
 	// Support path based project directories.
-	first := ""
-	if len(args) > 0 {
-		first, _ = homedir.Expand(args[0])
-	}
-	if len(first) > 0 && (first == "." || first[0:1] == "/" || first[0:2] == "./" || first[0:2] == "../") {
-		project := newFilesystemProject(first)
+	if len(args) > 0 && isPath(args[0]) {
+		path := filepath.Clean(args[0])
+		project := newFilesystemProject(path)
 		deps.Projects = domain.ProjectListKeyed{project.Name: project}
-		args = []string{}
+		args[0] = project.Name
 	}
 
 	// Filter projects and populate each with metadata and state.
+	projs := domain.ProjectListKeyed{}
 	for name, proj := range deps.Projects {
 		if len(args) > 0 && !slices.Contains(args, name) {
 			continue
@@ -51,9 +47,26 @@ func GetProject(name string, deps types.RuntimeDeps) (domain.Project, error) {
 	if err != nil {
 		return domain.Project{}, err
 	}
-	return list[name], nil
+	// Path based names won't match with the argument, so don't use list[name].
+	for _, proj := range list {
+		return proj, nil
+	}
+	return domain.Project{}, fmt.Errorf("project not found: %s", name)
 }
 
+// isPath checks if a string is a path.
+func isPath(path string) bool {
+	path, _ = homedir.Expand(path)
+	if len(path) == 0 {
+		return false
+	}
+	if path == "." || path[0:1] == "/" || path[0:2] == "./" || path[0:2] == "../" {
+		return true
+	}
+	return false
+}
+
+// newFilesystemProject creates a project from an abslute path.
 func newFilesystemProject(path string) domain.Project {
 	return domain.Project{
 		Name: filepath.Base(path),
