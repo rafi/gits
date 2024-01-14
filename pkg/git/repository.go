@@ -1,11 +1,15 @@
 package git
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
+
+var ErrNoUpstream = errors.New("no Upstream Tracking branch found")
 
 type Repository struct {
 	client *git.Repository
@@ -84,6 +88,49 @@ func (r *Repository) Checkout(branch string) error {
 		return err
 	}
 	return w.Checkout(opts)
+}
+
+func (r *Repository) Pull(remote, branch string) error {
+	w, err := r.client.Worktree()
+	if err != nil {
+		return err
+	}
+
+	opts := &git.PullOptions{}
+
+	if remote != "" {
+		opts.RemoteName = remote
+	}
+
+	if branch != "" {
+		branchRef := plumbing.NewBranchReferenceName(branch)
+		opts.ReferenceName = branchRef
+	}
+
+	return w.Pull(opts)
+}
+
+func (r *Repository) GetUpstream(branch string) (upstream plumbing.ReferenceName, err error) {
+	local, err := r.client.Branch(branch)
+	if err != nil {
+		return "", fmt.Errorf("Unable to get branch: %w", err)
+	}
+	if local.Remote == "" {
+		return "", ErrNoUpstream
+	}
+
+	remote, err := r.client.Remote(local.Remote)
+	if err != nil {
+		return "", fmt.Errorf("Unable to get remote: %w", err)
+	}
+
+	for _, f := range remote.Config().Fetch {
+		if f.Match(local.Merge) {
+			return f.Dst(local.Merge), nil
+		}
+	}
+
+	return "", ErrNoUpstream
 }
 
 func (r *Repository) stripRemoteFromBranch(branch string) (string, error) {

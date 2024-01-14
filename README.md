@@ -20,11 +20,14 @@ Usage: `gits [command] <project>`
 
 Available Commands:
 
+- `browse` —   Browse branches and tags
+- `cd` —       Get repository path
 - `checkout` — Traverse repositories and optionally checkout branch
 - `clone` —    Clone all repositories for specified project(s)
 - `fetch` —    Fetch and prune from all remotes
 - `help` —     Help about any command
 - `list` —     List all projects or their repositories
+- `pull` —     Pull repositories
 - `status` —   Shows Git repositories short status
 - `sync` —     Sync caches
 - `version` —  Shows current version
@@ -41,9 +44,9 @@ Examples:
 ```bash
 gits           # list all commands
 gits list      # list all projects
-gits list foo  # list all 'foo' repositories
+gits list foo  # list all project 'foo' repositories
 
-gits status foo     # show status for 'foo' repositories
+gits status foo     # show status for project 'foo' repositories
 gits status ~/code  # show status for all repositories at path
 gits status .       # show status for all repositories at current path
 ```
