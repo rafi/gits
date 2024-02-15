@@ -8,7 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecClone clones project repositories, or a specific repo.
@@ -16,7 +16,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecClone(args []string, deps types.RuntimeDeps) error {
+func ExecClone(args []string, deps types.RuntimeCLI) error {
 	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func ExecClone(args []string, deps types.RuntimeDeps) error {
 	return err
 }
 
-func cloneProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+func cloneProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
 	errorStyle := deps.Theme.Error.Copy()
 
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
@@ -71,11 +71,11 @@ func cloneProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *
 	}
 }
 
-func cloneRepo(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) (string, error) {
+func cloneRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) (string, error) {
 	maxLen := cli.GetMaxLen(project)
 	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
 		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
+		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
 		Width(maxLen).
 		Render()
 

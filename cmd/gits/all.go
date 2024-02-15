@@ -15,7 +15,7 @@ import (
 	"github.com/rafi/gits/internal/cli/pull"
 	"github.com/rafi/gits/internal/cli/status"
 	"github.com/rafi/gits/internal/cli/sync"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -32,7 +32,6 @@ func init() {
 		PersistentFlags().
 		StringVarP(&listOutput, "output", "o", listOutput, "output style (json, name, table, tree, wide)")
 
-	// Gits commands.
 	rootCmd.AddCommand(branchOverviewCmd)
 	rootCmd.AddCommand(browseCmd)
 	rootCmd.AddCommand(cdCmd)
@@ -102,7 +101,7 @@ var listCmd = &cobra.Command{
 	Aliases:           []string{"ls"},
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeDeps) error {
+	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
 		// Run with output style.
 		return list.ExecList(listOutput, args, deps)
 	}),

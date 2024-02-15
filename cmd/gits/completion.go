@@ -6,10 +6,22 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/cache"
+	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/git"
 )
+
+func completionDeps() (deps types.Runtime, err error) {
+	cacheClient, err := cache.NewCacheClient("file")
+	if err != nil {
+		return deps, err
+	}
+	return types.Runtime{
+		Cache:    cacheClient,
+		Projects: configFile.Projects,
+	}, nil
+}
 
 // completeProject returns a list of project names for shell completion.
 func completeProject(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -32,10 +44,12 @@ func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) (
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	proj, err := project.GetProject(args[0], types.RuntimeDeps{
-		Projects: configFile.Projects,
-		Source:   configFile.Filename,
-	})
+	deps, err := completionDeps()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	proj, err := loader.GetProject(args[0], deps)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -63,11 +77,13 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
+	deps, err := completionDeps()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
 	// Get project
-	proj, err := project.GetProject(args[0], types.RuntimeDeps{
-		Projects: configFile.Projects,
-		Source:   configFile.Filename,
-	})
+	proj, err := loader.GetProject(args[0], deps)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

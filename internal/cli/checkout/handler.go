@@ -8,7 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/git"
 )
 
@@ -17,7 +17,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecCheckout(args []string, deps types.RuntimeDeps) error {
+func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
@@ -35,7 +35,7 @@ func ExecCheckout(args []string, deps types.RuntimeDeps) error {
 	return checkoutRepo(project, *repo, deps)
 }
 
-func checkoutProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
 	errorStyle := deps.Theme.Error.Copy()
 
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
@@ -58,11 +58,11 @@ func checkoutProjectRepos(project domain.Project, deps types.RuntimeDeps, errLis
 	}
 }
 
-func checkoutRepo(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) error {
+func checkoutRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
 	repoDir := cli.Path(repo.AbsPath, deps.HomeDir)
 	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
 		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
+		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
 		Render()
 
 	// Abort if repository is not cloned or has errors.
@@ -86,7 +86,7 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 }
 
 // promptRepo prompts the user to select a branch to checkout.
-func promptRepo(repoTitle string, repoPath string, gitRepo git.Repository, deps types.RuntimeDeps) (string, error) {
+func promptRepo(repoTitle string, repoPath string, gitRepo git.Repository, deps types.RuntimeCLI) (string, error) {
 	current, err := gitRepo.CurrentBranch()
 	if err != nil {
 		return "", fmt.Errorf("unable to get branch: %w", err)

@@ -5,7 +5,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecCD returns the a repository path.
@@ -13,7 +13,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecCD(args []string, deps types.RuntimeDeps) error {
+func ExecCD(args []string, deps types.RuntimeCLI) error {
 	_, repo, err := cli.ParseArgs(args, false, deps)
 	if err != nil {
 		return err

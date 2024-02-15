@@ -6,13 +6,13 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/fzf"
 )
 
 // ParseArgs parses the arguments and returns the project and repo.
-func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeDeps) (
+func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
 	domain.Project, *domain.Repository, error,
 ) {
 	proj, err := getOrSelectProject(args, deps)
@@ -46,7 +46,7 @@ func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeDeps) (
 
 // getOrSelectProject returns a project from the first argument, or
 // interactively with fzf.
-func getOrSelectProject(args []string, deps types.RuntimeDeps) (
+func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 	domain.Project, error,
 ) {
 	var err error
@@ -62,7 +62,7 @@ func getOrSelectProject(args []string, deps types.RuntimeDeps) (
 	}
 
 	// Find project by name.
-	p, err := project.GetProject(projName, deps)
+	p, err := loader.GetProject(projName, deps.Runtime)
 	if err != nil {
 		return p, fmt.Errorf("unable to load project %q: %w", projName, err)
 	}
@@ -84,7 +84,7 @@ func getOrSelectProject(args []string, deps types.RuntimeDeps) (
 func getOrSelectRepo(
 	project domain.Project,
 	args []string,
-	deps types.RuntimeDeps,
+	deps types.RuntimeCLI,
 ) (domain.Repository, error) {
 	var err error
 	rootProject := ""
@@ -112,7 +112,7 @@ func getOrSelectRepo(
 }
 
 // SelectProject returns an interactively selected project name.
-func SelectProject(deps types.RuntimeDeps) (string, error) {
+func SelectProject(deps types.RuntimeCLI) (string, error) {
 	// Collect project names
 	buffer := bytes.Buffer{}
 	for name, project := range deps.Projects {
@@ -126,7 +126,7 @@ func SelectProject(deps types.RuntimeDeps) (string, error) {
 	finder.WithPrompt("project> ")
 
 	previewCmd := "gits -C=always --config='%s' list -o tree {1}"
-	previewCmd = fmt.Sprintf(previewCmd, deps.Source)
+	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath)
 	finder.WithPreview(previewCmd, "")
 
 	projName, err := finder.Run(buffer)
@@ -142,7 +142,7 @@ func SelectProject(deps types.RuntimeDeps) (string, error) {
 func SelectRepo(
 	rootProject string,
 	project domain.Project,
-	deps types.RuntimeDeps,
+	deps types.RuntimeCLI,
 ) (string, error) {
 	// Collect repo names
 	style := deps.Theme.RepoTitle
@@ -164,7 +164,7 @@ func SelectRepo(
 	finder.WithPrompt(fmt.Sprintf("[%s] repo> ", project.Name))
 
 	previewCmd := "gits -C=always --config='%s' repo-overview '%s' '%s'{}"
-	previewCmd = fmt.Sprintf(previewCmd, deps.Source, rootProject, prefix)
+	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath, rootProject, prefix)
 	finder.WithPreview(previewCmd, "")
 
 	repoName, err := finder.Run(buffer)
@@ -179,7 +179,7 @@ func SelectRepo(
 func SelectBranch(
 	projName string,
 	repo domain.Repository,
-	deps types.RuntimeDeps,
+	deps types.RuntimeCLI,
 ) (string, error) {
 	refs, err := deps.Git.Refs(repo.AbsPath)
 	if err != nil {
@@ -205,7 +205,7 @@ func SelectBranch(
 	finder.WithPrompt(fmt.Sprintf("[%s/%s] branch> ", projName, repoFullName))
 
 	previewCmd := "gits -C=always --config='%s' branch-overview '%s' '%s' {2}"
-	previewCmd = fmt.Sprintf(previewCmd, deps.Source, projName, repoFullName)
+	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath, projName, repoFullName)
 	finder.WithPreview(previewCmd, "")
 
 	selected, err := finder.Run(buffer)

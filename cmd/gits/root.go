@@ -5,8 +5,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/config"
+	"github.com/rafi/gits/internal/cache"
+	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/git"
 )
 
@@ -64,28 +65,39 @@ func setupLogger(cfg config.File) {
 }
 
 // runWithDeps execute a command with dependencies.
-func runWithDeps(f func([]string, types.RuntimeDeps) error) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
+func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		// Setup runtime dependencies.
+		gitClient, err := git.NewGit()
+		if err != nil {
+			return err
+		}
+		cacheClient, err := cache.NewCacheClient("file")
+		if err != nil {
+			return err
+		}
 		homeDir, err := homedir.Dir()
 		if err != nil {
 			return err
 		}
-		gitClient, err := git.NewGit()
-		if err != nil {
-			log.Fatal(err)
-		}
-		theme := types.NewThemeDefault()
+
+		// Setup CLI theme.
+		theme := config.NewThemeDefault()
 		if err := theme.ParseConfig(configFile.Settings.Theme); err != nil {
-			log.Fatal(err)
+			return err
 		}
 
-		return f(args, types.RuntimeDeps{
-			Settings: configFile.Settings,
-			Git:      gitClient,
-			Theme:    theme,
-			HomeDir:  homeDir,
-			Projects: configFile.Projects,
-			Source:   configFile.Filename,
+		// Run command with dependencies.
+		return f(args, types.RuntimeCLI{
+			Theme:   theme,
+			HomeDir: homeDir,
+			Runtime: types.Runtime{
+				Projects:   configFile.Projects,
+				Settings:   configFile.Settings,
+				ConfigPath: configFile.Filename,
+				Git:        gitClient,
+				Cache:      cacheClient,
+			},
 		})
 	}
 }

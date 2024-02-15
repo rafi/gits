@@ -1,4 +1,4 @@
-package project
+package loader
 
 import (
 	"fmt"
@@ -11,13 +11,13 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/git"
 	"github.com/rafi/gits/pkg/providers"
 )
 
 // GetProjects returns a list of populated projects filtered by name or path.
-func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed, error) {
+func GetProjects(args []string, deps types.Runtime) (domain.ProjectListKeyed, error) {
 	// Support path based project directories.
 	if len(args) > 0 && isPath(args[0]) {
 		path := filepath.Clean(args[0])
@@ -42,7 +42,7 @@ func GetProjects(args []string, deps types.RuntimeDeps) (domain.ProjectListKeyed
 }
 
 // GetProject returns a project by name or path.
-func GetProject(name string, deps types.RuntimeDeps) (domain.Project, error) {
+func GetProject(name string, deps types.Runtime) (domain.Project, error) {
 	list, err := GetProjects([]string{name}, deps)
 	if err != nil {
 		return domain.Project{}, err
@@ -78,7 +78,7 @@ func newFilesystemProject(path string) domain.Project {
 }
 
 // populateProject populates a project with repositories, metadata and state.
-func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
+func populateProject(project *domain.Project, deps types.Runtime) error {
 	filesystemType := string(providers.ProviderFilesystem)
 	emptySource := (project.Source == nil || project.Source.Type == "")
 
@@ -126,7 +126,7 @@ func populateProject(project *domain.Project, deps types.RuntimeDeps) error {
 }
 
 // getSource populates project repos from a provider source.
-func getSource(project *domain.Project, deps types.RuntimeDeps) error {
+func getSource(project *domain.Project, deps types.Runtime) error {
 	var (
 		err         error
 		hasCache    bool
@@ -143,13 +143,9 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 		return fmt.Errorf("incorrect config for project %q: %w", project.Name, err)
 	}
 	cacheKey := project.Source.UniqueKey()
-	cacheChecksum, err := md5sum(deps.Source)
-	if err != nil {
-		return fmt.Errorf("failed to get cache checksum: %w", err)
-	}
-
 	if shouldCache {
-		if hasCache, err = getCache(cacheKey, cacheChecksum, project); err != nil {
+		hasCache, err = deps.Cache.Get(cacheKey, deps.ConfigPath, project)
+		if err != nil {
 			return fmt.Errorf("failed to get cache: %w", err)
 		}
 	}
@@ -180,7 +176,8 @@ func getSource(project *domain.Project, deps types.RuntimeDeps) error {
 		}
 
 		if shouldCache {
-			if err := saveCache(cacheKey, cacheChecksum, *project); err != nil {
+			err := deps.Cache.Save(cacheKey, deps.ConfigPath, *project)
+			if err != nil {
 				return fmt.Errorf("failed to save cache: %w", err)
 			}
 		}

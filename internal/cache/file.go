@@ -1,4 +1,4 @@
-package project
+package cache
 
 import (
 	"crypto/md5"
@@ -22,39 +22,18 @@ const (
 	cacheTTL        = 7 * 24 * time.Hour
 )
 
-type cacheStub struct {
+type File struct {
 	Version   string         `json:"version"`
 	Timestamp string         `json:"timestamp"`
-	MD5       string         `json:"md5"`
+	Checksum  string         `json:"checksum"`
 	Project   domain.Project `json:"project"`
 }
 
-func newProjectCache(project domain.Project, checksum string) cacheStub {
-	return cacheStub{
-		Version:   version.GetMajorMinor(),
-		Timestamp: time.Now().Format(cacheTimeFormat),
-		MD5:       checksum,
-		Project:   project,
+func newCacheFile() (Cacher, error) {
+	cf := &File{
+		Version: version.GetMajorMinor(),
 	}
-}
-
-func CleanCache(project domain.Project) error {
-	if err := project.Source.Validate(); err != nil {
-		return err
-	}
-	cachePath, err := cacheFilePath(project.Source.UniqueKey())
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(cachePath); err == nil {
-		err := os.Remove(cachePath)
-		if err != nil {
-			return fmt.Errorf("failed to remove cache file: %w", err)
-		}
-	} else {
-		return err
-	}
-	return nil
+	return cf, nil
 }
 
 func md5sum(filePath string) (string, error) {
@@ -85,7 +64,7 @@ func cacheFilePath(key string) (string, error) {
 	return path, nil
 }
 
-func getCache(key, checksum string, project *domain.Project) (bool, error) {
+func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 	path, err := cacheFilePath(key)
 	if err != nil {
 		return false, fmt.Errorf("failed to get cache file path: %w", err)
@@ -106,23 +85,26 @@ func getCache(key, checksum string, project *domain.Project) (bool, error) {
 	}
 
 	// Parse the JSON content
-	var cached cacheStub
-	err = json.Unmarshal(content, &cached)
+	err = json.Unmarshal(content, cf)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse cache file: %w", err)
 	}
 
 	// Bust cache if version or checksum mismatch
-	if cached.Version != version.GetMajorMinor() {
+	if cf.Version != version.GetMajorMinor() {
 		return false, nil
 	}
-	if cached.MD5 != checksum {
+	checksum, err := md5sum(source)
+	if err != nil {
+		return false, fmt.Errorf("failed to get %q checksum: %w", source, err)
+	}
+	if cf.Checksum != checksum {
 		return false, nil
 	}
 
 	// Bust cache if expired
 	cutoff := time.Now().Add(-cacheTTL)
-	cachedAt, err := time.Parse(cacheTimeFormat, cached.Timestamp)
+	cachedAt, err := time.Parse(cacheTimeFormat, cf.Timestamp)
 	if err != nil {
 		log.Warnf("failed to parse cache timestamp: %v", err)
 		return false, nil
@@ -130,11 +112,11 @@ func getCache(key, checksum string, project *domain.Project) (bool, error) {
 	if cachedAt.Before(cutoff) {
 		return false, nil
 	}
-	*project = cached.Project
+	*project = cf.Project
 	return true, nil
 }
 
-func saveCache(key, checksum string, project domain.Project) error {
+func (cf *File) Save(key, source string, project domain.Project) error {
 	path, err := cacheFilePath(key)
 	if err != nil {
 		return fmt.Errorf("failed to get cache file path: %w", err)
@@ -148,8 +130,14 @@ func saveCache(key, checksum string, project domain.Project) error {
 	}
 
 	var cacheRaw []byte
-	cache := newProjectCache(project, checksum)
-	cacheRaw, err = json.Marshal(cache)
+	cf.Timestamp = time.Now().Format(cacheTimeFormat)
+	cf.Project = project
+	cf.Checksum, err = md5sum(source)
+	if err != nil {
+		return fmt.Errorf("failed to get %q checksum: %w", source, err)
+	}
+
+	cacheRaw, err = json.Marshal(cf)
 	if err != nil {
 		return fmt.Errorf("failed to parse cache file: %w", err)
 	}
@@ -163,6 +151,25 @@ func saveCache(key, checksum string, project domain.Project) error {
 	_, err = io.WriteString(fp, string(cacheRaw))
 	if err != nil {
 		return fmt.Errorf("failed to read cache file: %w", err)
+	}
+	return nil
+}
+
+func (cf *File) Flush(project domain.Project) error {
+	if err := project.Source.Validate(); err != nil {
+		return err
+	}
+	cachePath, err := cacheFilePath(project.Source.UniqueKey())
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(cachePath); err == nil {
+		err := os.Remove(cachePath)
+		if err != nil {
+			return fmt.Errorf("failed to remove cache file: %w", err)
+		}
+	} else {
+		return err
 	}
 	return nil
 }

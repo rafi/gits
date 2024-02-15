@@ -5,17 +5,17 @@ import (
 	"path/filepath"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 )
 
-func listNameProjects(projects domain.ProjectListKeyed, _ types.RuntimeDeps) error {
+func listNameProjects(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
 	for _, proj := range projects {
 		fmt.Println(proj.Name)
 	}
 	return nil
 }
 
-func listNameRepos(projects domain.ProjectListKeyed, _ types.RuntimeDeps) error {
+func listNameRepos(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
 	for _, proj := range projects {
 		makeName(proj)
 	}

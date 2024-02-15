@@ -19,8 +19,8 @@ steps:
     - name: cache
       path: /tmp/cache
 
-- name: test-golang1.21
-  image: golang:1.21
+- name: test-golang1.22
+  image: golang:1.22
   pull: always
   environment:
     CGO_ENABLED: 0
@@ -74,7 +74,7 @@ steps:
       path: /tmp/cache
 
 - name: build-all-binary
-  image: golang:1.21
+  image: golang:1.22
   pull: always
   commands:
   - make VERSION=${DRONE_TAG} -j2

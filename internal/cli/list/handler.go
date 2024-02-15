@@ -6,16 +6,16 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecList displays a list of projects and repositories.
 //
 // Args: (optional)
 //   - project names
-func ExecList(format string, include []string, deps types.RuntimeDeps) error {
-	var lister func(domain.ProjectListKeyed, types.RuntimeDeps) error
+func ExecList(format string, include []string, deps types.RuntimeCLI) error {
+	var lister func(domain.ProjectListKeyed, types.RuntimeCLI) error
 	switch format {
 	case "json":
 		lister = listJSON
@@ -35,7 +35,7 @@ func ExecList(format string, include []string, deps types.RuntimeDeps) error {
 		return fmt.Errorf("unknown output format: %s", format)
 	}
 
-	projects, err := project.GetProjects(include, deps)
+	projects, err := loader.GetProjects(include, deps.Runtime)
 	if err != nil {
 		return err
 	}

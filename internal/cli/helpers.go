@@ -8,7 +8,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/cli/config"
+)
+
+const (
+	LeftMargin  = 2
+	RightMargin = 2
 )
 
 type Error struct {
@@ -27,9 +32,17 @@ func HandlerErrors(list []Error) {
 	}
 }
 
+func GetTheme(themeSettings domain.Theme) (config.Theme, error) {
+	theme := config.NewThemeDefault()
+	if err := theme.ParseConfig(themeSettings); err != nil {
+		return theme, err
+	}
+	return theme, nil
+}
+
 // AbortOnRepoState prints an error message and aborts if the repository is in
 // an error state.
-func AbortOnRepoState(repo domain.Repository, theme types.Theme) error {
+func AbortOnRepoState(repo domain.Repository, theme config.Theme) error {
 	path := repo.AbsPath
 	fmt.Printf(" %s", path)
 	switch repo.State {
@@ -43,7 +56,7 @@ func AbortOnRepoState(repo domain.Repository, theme types.Theme) error {
 }
 
 // ProjectTitleWithBullet returns a formatted project title.
-func ProjectTitleWithBullet(project domain.Project, theme types.Theme) string {
+func ProjectTitleWithBullet(project domain.Project, theme config.Theme) string {
 	return fmt.Sprintf(
 		"%s %s",
 		theme.Bullet.Render("::"),
@@ -52,7 +65,7 @@ func ProjectTitleWithBullet(project domain.Project, theme types.Theme) string {
 }
 
 // ProjectTitle returns a formatted project title.
-func ProjectTitle(project domain.Project, theme types.Theme) string {
+func ProjectTitle(project domain.Project, theme config.Theme) string {
 	sourceName := getSourceType(project)
 	if sourceName != "" {
 		sourceName = theme.Provider.Render(" [" + sourceName + "]")
@@ -71,7 +84,7 @@ func ProjectTitle(project domain.Project, theme types.Theme) string {
 }
 
 // ProjectTreeTitle returns a formatted project title for tree display.
-func ProjectTreeTitle(project domain.Project, homeDir string, theme types.Theme) string {
+func ProjectTreeTitle(project domain.Project, homeDir string, theme config.Theme) string {
 	title := theme.ProjectTitle.Render(project.Name)
 	sourceName := getSourceType(project)
 	if sourceName != "" {

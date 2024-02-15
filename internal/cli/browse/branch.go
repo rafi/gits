@@ -10,8 +10,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/fzf"
 	"github.com/rafi/gits/pkg/git"
 )
@@ -31,12 +31,12 @@ var (
 //   - project name
 //   - repo name
 //   - branch name (optional)
-func ExecBranchOverview(args []string, deps types.RuntimeDeps) error {
+func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	// Project
 	if len(args) < 1 {
 		return fmt.Errorf("missing project name")
 	}
-	project, err := project.GetProject(args[0], deps)
+	project, err := loader.GetProject(args[0], deps.Runtime)
 	if err != nil {
 		return fmt.Errorf("unable to load project %q: %w", args[0], err)
 	}
@@ -132,7 +132,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeDeps) error {
 	doc := strings.Builder{}
 
 	// Header
-	headerStyle := deps.Theme.PreviewHeader.Copy()
+	headerStyle := theme.PreviewHeader.Copy()
 	if width > 0 {
 		headerStyle = headerStyle.Align(lipgloss.Center).Width(width - 2)
 	}
@@ -159,7 +159,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeDeps) error {
 	return nil
 }
 
-func renderBranchDiffList(repo git.Repository, repoPath, subjectBranch string, remotes []string, deps types.RuntimeDeps) (string, error) {
+func renderBranchDiffList(repo git.Repository, repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) (string, error) {
 	doc := strings.Builder{}
 	branches := map[string]string{}
 	for _, remote := range remotes {

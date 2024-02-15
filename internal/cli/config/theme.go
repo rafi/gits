@@ -1,4 +1,4 @@
-package types
+package config
 
 import (
 	"fmt"
@@ -7,11 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rafi/gits/domain"
-)
-
-const (
-	LeftMargin  = 2
-	RightMargin = 2
 )
 
 type Theme struct {

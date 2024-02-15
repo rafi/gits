@@ -11,8 +11,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/fzf"
 )
 
@@ -22,12 +22,12 @@ const ReadMeFilename = "README.md"
 // Args:
 //   - project name
 //   - repo name
-func ExecRepoOverview(args []string, deps types.RuntimeDeps) error {
+func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 	// Validate and load project.
 	if len(args) < 1 {
 		return fmt.Errorf("missing project name")
 	}
-	project, err := project.GetProject(args[0], deps)
+	project, err := loader.GetProject(args[0], deps.Runtime)
 	if err != nil {
 		return fmt.Errorf("unable to load project %q: %w", args[0], err)
 	}
@@ -55,7 +55,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeDeps) error {
 }
 
 // renderReadme renders a file as markdown.
-func renderReadme(readmePath string, deps types.RuntimeDeps) (string, error) {
+func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 	readmeBytes, err := os.ReadFile(readmePath)
 	if os.IsNotExist(err) {
 		return "", fmt.Errorf("Repository does not have a %q file", ReadMeFilename)

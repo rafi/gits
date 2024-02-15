@@ -5,7 +5,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecFetch runs fetch on project repositories, or on a specific repo.
@@ -13,7 +13,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecFetch(args []string, deps types.RuntimeDeps) error {
+func ExecFetch(args []string, deps types.RuntimeCLI) error {
 	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
@@ -33,7 +33,7 @@ func ExecFetch(args []string, deps types.RuntimeDeps) error {
 	return err
 }
 
-func fetchProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+func fetchProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
 	errorStyle := deps.Theme.Error.Copy().PaddingLeft(1)
 
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
@@ -56,11 +56,11 @@ func fetchProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *
 	}
 }
 
-func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) (string, error) {
+func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) (string, error) {
 	maxLen := cli.GetMaxLen(project)
 	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
 		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
+		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
 		Width(maxLen).
 		Render()
 

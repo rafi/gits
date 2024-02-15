@@ -1,9 +1,27 @@
 package domain
 
 type Settings struct {
-	Cache   *bool `json:"cache,omitempty"`
-	Theme   Theme `json:"theme"`
-	Verbose bool  `json:"verbose,omitempty"`
+	Cache   *bool  `json:"cache,omitempty"`
+	Finder  Finder `json:"finder"`
+	Icons   Icons  `json:"icons"`
+	Theme   Theme  `json:"theme"`
+	Verbose bool   `json:"verbose,omitempty"`
+}
+
+type Finder struct {
+	Binary string   `json:"binary"`
+	Args   []string `json:"args,omitempty"`
+	Extra  []string `json:"extra,omitempty"`
+}
+
+type Icons struct {
+	Modified  string `json:"modified,omitempty"`
+	Untracked string `json:"untracked,omitempty"`
+	DiffError string `json:"diffError,omitempty"`
+	DiffClean string `json:"diffClean,omitempty"`
+	Ahead     string `json:"ahead,omitempty"`
+	Behind    string `json:"behind,omitempty"`
+	NA        string `json:"na,omitempty"`
 }
 
 type Style struct {

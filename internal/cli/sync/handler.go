@@ -5,15 +5,15 @@ import (
 	"os"
 	"slices"
 
-	"github.com/rafi/gits/internal/cli/types"
-	"github.com/rafi/gits/internal/project"
+	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecSync cleans the cache for the given projects.
 //
 // Args: (optional)
 //   - project names
-func ExecSync(args []string, deps types.RuntimeDeps) error {
+func ExecSync(args []string, deps types.RuntimeCLI) error {
 	for name, p := range deps.Projects {
 		if p.Source == nil || p.Source.Search == "" {
 			continue
@@ -21,7 +21,7 @@ func ExecSync(args []string, deps types.RuntimeDeps) error {
 		if len(args) > 0 && !slices.Contains(args, name) {
 			continue
 		}
-		if err := project.CleanCache(p); err != nil {
+		if err := deps.Cache.Flush(p); err != nil {
 			if !os.IsNotExist(err) {
 				return fmt.Errorf("unable to remove cache: %w", err)
 			}
@@ -30,7 +30,7 @@ func ExecSync(args []string, deps types.RuntimeDeps) error {
 		fmt.Printf("Cleaned %q project cache.\n", name)
 	}
 
-	_, err := project.GetProjects(args, deps)
+	_, err := loader.GetProjects(args, deps.Runtime)
 	if err != nil {
 		return fmt.Errorf("unable to list projects: %w", err)
 	}

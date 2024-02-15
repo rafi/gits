@@ -7,7 +7,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecStatus displays an icon based status of all repositories.
@@ -16,7 +16,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecStatus(args []string, deps types.RuntimeDeps) error {
+func ExecStatus(args []string, deps types.RuntimeCLI) error {
 	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
@@ -37,15 +37,15 @@ func ExecStatus(args []string, deps types.RuntimeDeps) error {
 	return err
 }
 
-func getRepoStyle(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) lipgloss.Style {
+func getRepoStyle(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) lipgloss.Style {
 	return cli.RepoTitle(project, repo, deps.HomeDir).
 		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(types.LeftMargin).
-		MarginRight(types.RightMargin).
+		MarginLeft(cli.LeftMargin).
+		MarginRight(cli.RightMargin).
 		Align(lipgloss.Right)
 }
 
-func statusProject(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+func statusProject(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 	maxLen := cli.GetMaxLen(project)
 	errorStyle := deps.Theme.Error.Copy().PaddingLeft(14)
@@ -73,7 +73,7 @@ func statusProject(project domain.Project, deps types.RuntimeDeps, errList *[]cl
 	}
 }
 
-func statusRepo(repo domain.Repository, deps types.RuntimeDeps) (string, error) {
+func statusRepo(repo domain.Repository, deps types.RuntimeCLI) (string, error) {
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
 		return "", cli.AbortOnRepoState(repo, deps.Theme)

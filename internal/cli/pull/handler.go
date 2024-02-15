@@ -5,7 +5,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/types"
+	"github.com/rafi/gits/internal/types"
 )
 
 // ExecPull runs pull --no-ff on project repositories, or on a specific repo.
@@ -13,7 +13,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo
-func ExecPull(args []string, deps types.RuntimeDeps) error {
+func ExecPull(args []string, deps types.RuntimeCLI) error {
 	project, repo, err := cli.ParseArgs(args, false, deps)
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func ExecPull(args []string, deps types.RuntimeDeps) error {
 	return pullRepo(project, *repo, deps)
 }
 
-func pullProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[]cli.Error) {
+func pullProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
 	errorStyle := deps.Theme.Error.Copy().PaddingLeft(1)
 
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
@@ -53,10 +53,10 @@ func pullProjectRepos(project domain.Project, deps types.RuntimeDeps, errList *[
 	}
 }
 
-func pullRepo(project domain.Project, repo domain.Repository, deps types.RuntimeDeps) error {
+func pullRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
 	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
 		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(types.LeftMargin).MarginRight(types.RightMargin).
+		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
 		Render()
 
 	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
