@@ -123,7 +123,7 @@ func (p Project) GetRepoAbsPath(repo Repository) (string, error) {
 }
 
 // Filter filters the project repositories by user include/exclude filters.
-func (p *Project) Filter() error {
+func (p *Project) Filter() {
 	repos := []Repository{}
 	for _, repo := range p.Repos {
 		// Disregard excluded repositories.
@@ -140,9 +140,6 @@ func (p *Project) Filter() error {
 
 	// Recurse into subprojects.
 	for _, subProject := range p.SubProjects {
-		if err := subProject.Filter(); err != nil {
-			return err
-		}
+		subProject.Filter()
 	}
-	return nil
 }

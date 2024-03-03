@@ -52,18 +52,16 @@ func (c *filesystemProvider) LoadRepos(path string, gitClient git.Git, project *
 		Unsorted:            false,
 		FollowSymbolicLinks: false,
 		Callback: func(path string, de *godirwalk.Dirent) error {
-			if de.IsDir() {
-				_, err := os.Stat(filepath.Join(path, ".git"))
-				if !os.IsNotExist(err) {
-					repo, err := NewFilesystemRepo(path, gitClient)
-					if err != nil {
-						return err
-					}
-					project.Repos = append(project.Repos, repo)
-					return filepath.SkipDir
-				}
+			if !de.IsDir() || !gitClient.IsRepo(path) {
+				return nil
 			}
-			return nil
+			// TODO: create subprojects in nested directories
+			repo, err := NewFilesystemRepo(path, gitClient)
+			if err != nil {
+				return err
+			}
+			project.Repos = append(project.Repos, repo)
+			return filepath.SkipDir
 		},
 		ErrorCallback: func(path string, err error) godirwalk.ErrorAction {
 			_, err = fmt.Fprintf(os.Stderr, "ERROR during directory %s scan: %s\n", path, err)

@@ -67,7 +67,7 @@ func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 	// Find project by name.
 	p, err := loader.GetProject(projName, deps.Runtime)
 	if err != nil {
-		return p, fmt.Errorf("unable to load project %q: %w", projName, err)
+		return p, fmt.Errorf("unable to load project: %w", err)
 	}
 
 	// Find a sub-project if provided via 2nd argument.
@@ -109,7 +109,7 @@ func getOrSelectRepo(
 
 	repo, found := project.GetRepo(repoName, "")
 	if repo.Name == "" || !found {
-		return repo, fmt.Errorf("unable to load repo %q", repoName)
+		return repo, fmt.Errorf("repo %q not found", repoName)
 	}
 	return repo, nil
 }

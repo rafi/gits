@@ -51,7 +51,7 @@ func GetProject(name string, deps types.Runtime) (domain.Project, error) {
 	for _, proj := range list {
 		return proj, nil
 	}
-	return domain.Project{}, fmt.Errorf("project not found: %s", name)
+	return domain.Project{}, fmt.Errorf("%q not found", name)
 }
 
 // isPath checks if a string is a path.
@@ -119,9 +119,7 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 	computeState(project, deps.Git)
 
 	// Filter by user include/exclude config values.
-	if err := project.Filter(); err != nil {
-		return err
-	}
+	project.Filter()
 	return nil
 }
 
@@ -167,9 +165,6 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 				source.Type,
 				err,
 			)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to find all projects: %w", err)
 		}
 		if len(project.Repos) == 0 {
 			return fmt.Errorf("no repositories found for project %q", project.Name)

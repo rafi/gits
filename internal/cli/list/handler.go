@@ -32,7 +32,7 @@ func ExecList(format string, include []string, deps types.RuntimeCLI) error {
 			lister = listNameProjects
 		}
 	default:
-		return fmt.Errorf("unknown output format: %s", format)
+		return fmt.Errorf("unknown output format %q", format)
 	}
 
 	projects, err := loader.GetProjects(include, deps.Runtime)

@@ -113,7 +113,7 @@ func (r *Repository) Pull(remote, branch string) error {
 func (r *Repository) GetUpstream(branch string) (upstream plumbing.ReferenceName, err error) {
 	local, err := r.client.Branch(branch)
 	if err != nil {
-		return "", fmt.Errorf("Unable to get branch: %w", err)
+		return "", fmt.Errorf("unable to get branch: %w", err)
 	}
 	if local.Remote == "" {
 		return "", ErrNoUpstream
@@ -121,7 +121,7 @@ func (r *Repository) GetUpstream(branch string) (upstream plumbing.ReferenceName
 
 	remote, err := r.client.Remote(local.Remote)
 	if err != nil {
-		return "", fmt.Errorf("Unable to get remote: %w", err)
+		return "", fmt.Errorf("unable to get remote: %w", err)
 	}
 
 	for _, f := range remote.Config().Fetch {

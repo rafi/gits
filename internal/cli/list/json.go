@@ -11,7 +11,7 @@ import (
 func listJSON(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
 	raw, err := json.Marshal(projects)
 	if err != nil {
-		return fmt.Errorf("unable to marshal json: %w", err)
+		return err
 	}
 	fmt.Println(string(raw))
 	return nil

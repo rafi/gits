@@ -24,8 +24,10 @@ type Error struct {
 
 // HandlerErrors prints a list of errors.
 func HandlerErrors(list []Error) {
-	if len(list) > 0 {
-		fmt.Print("\nErrors:\n")
+	errCount := len(list)
+	if errCount > 0 {
+		title := "error" + strings.Repeat("s", min(1, errCount))
+		fmt.Printf("\n%d %s:\n", errCount, title)
 		for _, err := range list {
 			fmt.Printf("  - %s (%s): %s\n", err.Title, err.Dir, err.Message)
 		}
@@ -51,7 +53,7 @@ func AbortOnRepoState(repo domain.Repository, theme config.Theme) error {
 	case domain.RepoStateNoLocal:
 		fmt.Printf(" %s", theme.Error.Render("Not cloned"))
 	}
-	fmt.Printf("\n")
+	fmt.Println()
 	return nil
 }
 

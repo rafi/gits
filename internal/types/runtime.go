@@ -10,10 +10,10 @@ import (
 // Runtime is the runtime dependencies for the application.
 type Runtime struct {
 	Projects   domain.ProjectListKeyed
-	Settings   domain.Settings
+	Cache      cache.Cacher
 	ConfigPath string
 	Git        git.Git
-	Cache      cache.Cacher
+	Settings   domain.Settings
 }
 
 // RuntimeCLI is the runtime dependencies for the CLI client.
