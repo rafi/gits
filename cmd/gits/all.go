@@ -12,6 +12,7 @@ import (
 	"github.com/rafi/gits/internal/cli/clone"
 	"github.com/rafi/gits/internal/cli/fetch"
 	"github.com/rafi/gits/internal/cli/list"
+	"github.com/rafi/gits/internal/cli/orphan"
 	"github.com/rafi/gits/internal/cli/pull"
 	"github.com/rafi/gits/internal/cli/status"
 	"github.com/rafi/gits/internal/cli/sync"
@@ -39,6 +40,7 @@ func init() {
 	rootCmd.AddCommand(cloneCmd)
 	rootCmd.AddCommand(fetchCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(orphanCmd)
 	rootCmd.AddCommand(pullCmd)
 	rootCmd.AddCommand(repoOverviewCmd)
 	rootCmd.AddCommand(statusCmd)
@@ -105,6 +107,14 @@ var listCmd = &cobra.Command{
 		// Run with output style.
 		return list.ExecList(listOutput, args, deps)
 	}),
+}
+
+var orphanCmd = &cobra.Command{
+	Use:               "orphan [project] [repo]",
+	Short:             "Finds orphan repository",
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProjectRepo,
+	RunE:              runWithDeps(orphan.ExecOrphan),
 }
 
 var pullCmd = &cobra.Command{
