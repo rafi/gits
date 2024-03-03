@@ -30,9 +30,7 @@ type File struct {
 }
 
 func newCacheFile() (Cacher, error) {
-	cf := &File{
-		Version: version.GetMajorMinor(),
-	}
+	cf := &File{}
 	return cf, nil
 }
 
@@ -71,6 +69,7 @@ func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 	}
 	fp, err := os.Open(path)
 	if os.IsNotExist(err) {
+		log.Debug("cache file not found")
 		return false, nil
 	}
 	if err != nil && !os.IsNotExist(err) {
@@ -92,6 +91,11 @@ func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 
 	// Bust cache if version or checksum mismatch
 	if cf.Version != version.GetMajorMinor() {
+		log.Debugf(
+			"version mismatch %s != %s. busting cache.",
+			cf.Version,
+			version.GetMajorMinor(),
+		)
 		return false, nil
 	}
 	checksum, err := md5sum(source)
@@ -99,6 +103,7 @@ func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 		return false, fmt.Errorf("failed to get %q checksum: %w", source, err)
 	}
 	if cf.Checksum != checksum {
+		log.Debug("checksum mismatch. busting cache.")
 		return false, nil
 	}
 
@@ -110,6 +115,7 @@ func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 		return false, nil
 	}
 	if cachedAt.Before(cutoff) {
+		log.Debug("cache expired")
 		return false, nil
 	}
 	*project = cf.Project
@@ -132,6 +138,7 @@ func (cf *File) Save(key, source string, project domain.Project) error {
 	var cacheRaw []byte
 	cf.Timestamp = time.Now().Format(cacheTimeFormat)
 	cf.Project = project
+	cf.Version = version.GetMajorMinor()
 	cf.Checksum, err = md5sum(source)
 	if err != nil {
 		return fmt.Errorf("failed to get %q checksum: %w", source, err)
