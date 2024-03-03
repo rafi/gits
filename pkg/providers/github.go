@@ -3,8 +3,10 @@ package providers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/shurcooL/githubv4"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 
 	"github.com/rafi/gits/domain"
@@ -43,6 +45,9 @@ func (c *gitHubProvider) LoadRepos(ownerName string, _ git.Git, project *domain.
 	if err != nil {
 		return err
 	}
+	if len(project.Repos) == 0 {
+		return fmt.Errorf("no repositories found")
+	}
 	return nil
 }
 
@@ -65,47 +70,62 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 					} `graphql:"... on Repository"`
 				}
 			}
+			PageInfo struct {
+				EndCursor   githubv4.String
+				HasNextPage bool
+			}
 			RepositoryCount githubv4.Int
-		} `graphql:"search(first: $count, query: $searchQuery, type: REPOSITORY)"`
+		} `graphql:"search(first: $count, after: $cursor, query: $query, type: REPOSITORY)"`
 	}
 
-	variables := map[string]interface{}{
-		"searchQuery": githubv4.String(
+	searchQuery := map[string]interface{}{
+		"query": githubv4.String(
 			fmt.Sprintf(`org:%s`, githubv4.String(ownerName)),
 		),
 		"count": githubv4.Int(100),
+		// Null as first argument to get first page.
+		"cursor": (*githubv4.String)(nil),
 	}
 
-	repos := []domain.Repository{}
 	ownerID := ""
-
+	repos := []domain.Repository{}
 	ctx := context.Background()
-	err := c.client.Query(ctx, &q, variables)
-	if err != nil {
-		return repos, ownerID, err
-	}
+	pageNum := 0
+	for {
+		pageNum++
+		log.Infof("Fetching GitHub repositories for %q (%d)…", ownerName, pageNum)
 
-	if len(q.Search.Edges) == 0 || q.Search.RepositoryCount == 0 {
-		return repos, ownerID, fmt.Errorf("no repositories found")
-	}
-
-	ownerID = string(q.Search.Edges[0].Node.Repository.Owner.ID)
-	for _, edge := range q.Search.Edges {
-		repo := edge.Node.Repository
-		if repo.IsArchived {
-			continue
+		err := c.client.Query(ctx, &q, searchQuery)
+		if err != nil {
+			return repos, ownerID, err
 		}
-		repos = append(repos, domain.Repository{
-			ID:        string(repo.ID),
-			Name:      string(repo.Name),
-			Namespace: string(repo.Owner.Login),
-			Src:       string(repo.SSHURL),
-			URL:       string(repo.URL),
-			Desc:      string(repo.Description),
-		})
+
+		if len(q.Search.Edges) == 0 || q.Search.RepositoryCount == 0 {
+			break
+		}
+		if ownerID == "" {
+			ownerID = string(q.Search.Edges[0].Node.Repository.Owner.ID)
+		}
+
+		for _, edge := range q.Search.Edges {
+			repo := edge.Node.Repository
+			if repo.IsArchived {
+				continue
+			}
+			repos = append(repos, domain.Repository{
+				ID:        string(repo.ID),
+				Name:      string(repo.Name),
+				Namespace: string(repo.Owner.Login),
+				Src:       string(repo.SSHURL),
+				URL:       string(repo.URL),
+				Desc:      string(repo.Description),
+			})
+		}
+		if !q.Search.PageInfo.HasNextPage {
+			break
+		}
+		searchQuery["cursor"] = githubv4.NewString(q.Search.PageInfo.EndCursor)
+		time.Sleep(time.Millisecond * 100)
 	}
-
-	// TODO: pagination for more than 100 repositories
-
 	return repos, ownerID, nil
 }

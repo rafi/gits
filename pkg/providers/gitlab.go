@@ -78,7 +78,7 @@ func (c *gitLabProvider) fetchSubGroups(groupID string) ([]domain.Project, error
 	pageNum := 0
 	for {
 		pageNum++
-		log.Infof("Fetching gitlab subgroups from %s (%d)…", groupID, pageNum)
+		log.Infof("Fetching GitLab subgroups from %s (%d)…", groupID, pageNum)
 
 		gs, resp, err := c.client.Groups.ListSubGroups(groupID, opt, options...)
 		if err != nil {
@@ -110,7 +110,7 @@ func (c *gitLabProvider) fetchGroupProjects(groupID string) ([]domain.Repository
 	pageNum := 0
 	for {
 		pageNum++
-		log.Infof("Fetching gitlab projects from %s (%d)…", groupID, pageNum)
+		log.Infof("Fetching GitLab projects from %s (%d)…", groupID, pageNum)
 		ps, resp, err := c.client.Groups.ListGroupProjects(groupID, opt, options...)
 		if err != nil {
 			return nil, fmt.Errorf("unable to list projects: %w", err)
