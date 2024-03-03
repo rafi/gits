@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/internal/cli/add"
 	"github.com/rafi/gits/internal/cli/browse"
 	"github.com/rafi/gits/internal/cli/cd"
 	"github.com/rafi/gits/internal/cli/checkout"
@@ -33,6 +34,7 @@ func init() {
 		PersistentFlags().
 		StringVarP(&listOutput, "output", "o", listOutput, "output style (json, name, table, tree, wide)")
 
+	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(branchOverviewCmd)
 	rootCmd.AddCommand(browseCmd)
 	rootCmd.AddCommand(cdCmd)
@@ -46,6 +48,14 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(versionCmd)
+}
+
+var addCmd = &cobra.Command{
+	Use:               "add [project] [repo]",
+	Short:             "Add repository to a project",
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProject,
+	RunE:              runWithDeps(add.ExecAdd),
 }
 
 var branchOverviewCmd = &cobra.Command{

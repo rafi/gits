@@ -22,6 +22,7 @@ require (
 	github.com/xanzy/go-gitlab v0.95.2
 	github.com/xlab/treeprint v1.2.0
 	golang.org/x/oauth2 v0.15.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -91,5 +92,4 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
