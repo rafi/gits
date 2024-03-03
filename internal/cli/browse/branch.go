@@ -80,7 +80,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	}
 
 	if width == 0 {
-		// FIXME:
+		// TODO: improve
 		width = 80
 	}
 

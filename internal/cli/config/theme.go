@@ -124,7 +124,7 @@ func NewThemeDefault() Theme {
 		// Status
 		Modified:  lipgloss.NewStyle().Foreground(lipgloss.Color("169")).Width(3).Align(lipgloss.Right),
 		Untracked: lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Width(3).Align(lipgloss.Right),
-		Diff:      lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Width(5).Align(lipgloss.Right),
+		Diff:      lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Align(lipgloss.Right),
 		Error:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 
 		// List table

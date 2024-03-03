@@ -62,7 +62,6 @@ type Theme struct {
 	Error     Style `json:"error,omitempty"`
 
 	// Table
-	// TableBorder      Style `json:"tableBorder,omitempty"` FIXME:
 	TableBorderStyle Style `json:"tableBorderStyle,omitempty"`
 	TableHeader      Style `json:"tableHeader,omitempty"`
 	TableRowEven     Style `json:"tableRowEven,omitempty"`

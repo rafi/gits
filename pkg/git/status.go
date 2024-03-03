@@ -76,14 +76,15 @@ func (g Git) Describe(path string) (string, error) {
 func (g Git) Diff(path, branch, target string) (int, int, error) {
 	args := []string{"rev-list", "--left-right", branch + "..." + target}
 	output, _ := g.Exec(path, args)
+	outputStr := cleanOutput(output)
 
-	if len(output) == 0 {
+	if len(outputStr) == 0 {
 		return 0, 0, nil
 	}
 
 	behind := 0
 	ahead := 0
-	for _, rev := range strings.Split(string(output), "\n") {
+	for _, rev := range strings.Split(outputStr, "\n") {
 		if rev == "" {
 			continue
 		}

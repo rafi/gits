@@ -135,9 +135,6 @@ func GetMaxLen(project domain.Project) int {
 			maxLen = i
 		}
 	}
-	if maxLen > 30 {
-		maxLen = 30
-	}
 	return maxLen
 }
 
