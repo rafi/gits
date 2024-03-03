@@ -75,6 +75,9 @@ gits status ~/code  # show status for all repositories at path
 gits status .       # show status for all repositories at current path
 ```
 
+To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your shell
+`~/.bashrc` or `~/.zshrc`, and use `cdgit` to navigate to a repository.
+
 ## Config
 
 Configuration file must be present at `~/.gits.yaml` or `$XDG_CONFIG_HOME/gits/.git.yaml`.
