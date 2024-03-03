@@ -21,18 +21,21 @@ func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
 	}
 
 	switch {
-	case !skipRepoSelect:
-		repo, err := getOrSelectRepo(proj, args, deps)
-		return proj, &repo, err
 
-	case len(args) > 1 && strings.HasSuffix(args[1], "/"):
+	// Always select a repo.
+	case !skipRepoSelect:
+		fallthrough
+
+	// 2nd argument provided, and it is NOT a sub-project.
+	case len(args) > 1 && !strings.HasSuffix(args[1], "/"):
 		repo, err := getOrSelectRepo(proj, args, deps)
 		if err != nil {
 			return proj, nil, err
 		}
 		return proj, &repo, err
 
-	case len(args) < 2:
+	// Skip repo selection, or no 2nd argument provided.
+	case len(args) < 2 || skipRepoSelect:
 		return proj, nil, err
 
 	default:

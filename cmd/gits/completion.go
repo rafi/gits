@@ -18,8 +18,9 @@ func completionDeps() (deps types.Runtime, err error) {
 		return deps, err
 	}
 	return types.Runtime{
-		Cache:    cacheClient,
-		Projects: configFile.Projects,
+		Cache:      cacheClient,
+		Projects:   configFile.Projects,
+		ConfigPath: configFile.Filename,
 	}, nil
 }
 
