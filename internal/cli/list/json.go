@@ -8,6 +8,7 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
+// listJSON outputs projects as JSON.
 func listJSON(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
 	raw, err := json.Marshal(projects)
 	if err != nil {

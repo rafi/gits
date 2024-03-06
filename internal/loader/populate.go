@@ -142,7 +142,10 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 	}
 	cacheKey := project.Source.UniqueKey()
 	if shouldCache {
-		hasCache, err = deps.Cache.Get(cacheKey, deps.ConfigPath, project)
+		if err := project.CalculateHash(); err != nil {
+			return err
+		}
+		hasCache, err = deps.Cache.Get(cacheKey, project)
 		if err != nil {
 			return fmt.Errorf("failed to get cache: %w", err)
 		}
@@ -171,7 +174,7 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 		}
 
 		if shouldCache {
-			err := deps.Cache.Save(cacheKey, deps.ConfigPath, *project)
+			err := deps.Cache.Save(cacheKey, *project)
 			if err != nil {
 				return fmt.Errorf("failed to save cache: %w", err)
 			}

@@ -14,7 +14,7 @@ import (
 //
 // Args: (optional)
 //   - project names
-func ExecList(format string, include []string, deps types.RuntimeCLI) error {
+func ExecList(format string, args []string, deps types.RuntimeCLI) error {
 	var lister func(domain.ProjectListKeyed, types.RuntimeCLI) error
 	switch format {
 	case "json":
@@ -26,7 +26,7 @@ func ExecList(format string, include []string, deps types.RuntimeCLI) error {
 	case "tree":
 		lister = listTree
 	case "name":
-		if len(include) > 0 {
+		if len(args) > 0 {
 			lister = listNameRepos
 		} else {
 			lister = listNameProjects
@@ -35,7 +35,7 @@ func ExecList(format string, include []string, deps types.RuntimeCLI) error {
 		return fmt.Errorf("unknown output format %q", format)
 	}
 
-	projects, err := loader.GetProjects(include, deps.Runtime)
+	projects, err := loader.GetProjects(args, deps.Runtime)
 	if err != nil {
 		return err
 	}

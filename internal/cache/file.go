@@ -1,8 +1,6 @@
 package cache
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,20 +32,6 @@ func newCacheFile() (Cacher, error) {
 	return cf, nil
 }
 
-func md5sum(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
 func cacheFilePath(key string) (string, error) {
 	var err error
 	path := os.Getenv("XDG_CACHE_HOME")
@@ -62,7 +46,7 @@ func cacheFilePath(key string) (string, error) {
 	return path, nil
 }
 
-func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
+func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	path, err := cacheFilePath(key)
 	if err != nil {
 		return false, fmt.Errorf("failed to get cache file path: %w", err)
@@ -98,11 +82,7 @@ func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 		)
 		return false, nil
 	}
-	checksum, err := md5sum(source)
-	if err != nil {
-		return false, fmt.Errorf("failed to get %q checksum: %w", source, err)
-	}
-	if cf.Checksum != checksum {
+	if cf.Checksum != project.Hash {
 		log.Debug("checksum mismatch. busting cache.")
 		return false, nil
 	}
@@ -122,7 +102,7 @@ func (cf *File) Get(key, source string, project *domain.Project) (bool, error) {
 	return true, nil
 }
 
-func (cf *File) Save(key, source string, project domain.Project) error {
+func (cf *File) Save(key string, project domain.Project) error {
 	path, err := cacheFilePath(key)
 	if err != nil {
 		return fmt.Errorf("failed to get cache file path: %w", err)
@@ -139,10 +119,7 @@ func (cf *File) Save(key, source string, project domain.Project) error {
 	cf.Timestamp = time.Now().Format(cacheTimeFormat)
 	cf.Project = project
 	cf.Version = version.GetMajorMinor()
-	cf.Checksum, err = md5sum(source)
-	if err != nil {
-		return fmt.Errorf("failed to get %q checksum: %w", source, err)
-	}
+	cf.Checksum = project.Hash
 
 	cacheRaw, err = json.Marshal(cf)
 	if err != nil {

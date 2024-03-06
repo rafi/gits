@@ -13,8 +13,8 @@ const (
 )
 
 type Cacher interface {
-	Get(key, source string, project *domain.Project) (bool, error)
-	Save(key, source string, project domain.Project) error
+	Get(key string, project *domain.Project) (bool, error)
+	Save(key string, project domain.Project) error
 	Flush(project domain.Project) error
 }
 

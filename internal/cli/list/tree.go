@@ -13,7 +13,7 @@ import (
 // listTree lists projects and repos as a nested tree.
 func listTree(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	tree := makeTree(projects, deps)
-	fmt.Println(tree.String())
+	fmt.Print(tree.String())
 	return nil
 }
 

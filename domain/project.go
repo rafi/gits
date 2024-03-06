@@ -1,6 +1,9 @@
 package domain
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -18,6 +21,7 @@ type Project struct {
 	Name        string          `json:"name"`
 	Path        string          `json:"path"`
 	Desc        string          `json:"desc,omitempty"`
+	Hash        string          `json:"-"`
 	AbsPath     string          `json:"-"`
 	Repos       []Repository    `json:"repos,omitempty"`
 	SubProjects []Project       `json:"subprojects,omitempty"`
@@ -142,4 +146,14 @@ func (p *Project) Filter() {
 	for _, subProject := range p.SubProjects {
 		subProject.Filter()
 	}
+}
+
+func (p *Project) CalculateHash() error {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	hash := md5.Sum(data)
+	p.Hash = hex.EncodeToString(hash[:])
+	return nil
 }
