@@ -24,7 +24,7 @@ import (
 const (
 	appName  = "gits"
 	appShort = "gits is a tool for managing multiple Git repositories"
-	appLong  = `Fast CLI Git manager for multiple repositories with GitHub/GitLab/Bitbucket support`
+	appLong  = `Fast CLI Git manager for multiple repositories grouped by projects, with GitHub/GitLab/Bitbucket support.`
 )
 
 var listOutput = "table"
@@ -84,7 +84,7 @@ var cdCmd = &cobra.Command{
 
 var checkoutCmd = &cobra.Command{
 	Use:               "checkout [project] [repo]",
-	Short:             "Checkout branch from multiple repositories, or single",
+	Short:             "Traverse repositories and optionally checkout branch",
 	Aliases:           []string{"ck"},
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,

@@ -9,12 +9,14 @@
 - [Features](#features)
 - [Install](#install)
 - [Usage](#usage)
-- [Config](#config)
+- [Configuration](#configuration)
 - [Config Examples](#config-examples)
 
 <!-- vim-markdown-toc -->
 
 ## Features
+
+Use as a git clone manager, and while developing on multiple git repositories.
 
 - [x] GitHub/GitLab/Bitbucket/filesystem support with cache
 - [x] Interactive browsing of projects/repositories/branches/tags
@@ -44,6 +46,7 @@ Usage: `gits [command] <project>`
 
 Available Commands:
 
+- `add` —      Add repository to a project
 - `browse` —   Browse branches and tags
 - `cd` —       Get repository path
 - `checkout` — Traverse repositories and optionally checkout branch
@@ -51,9 +54,10 @@ Available Commands:
 - `fetch` —    Fetch and prune from all remotes
 - `help` —     Help about any command
 - `list` —     List all projects or their repositories
+- `orphan` —   Finds orphan repository
 - `pull` —     Pull repositories
 - `status` —   Shows Git repositories short status
-- `sync` —     Update caches
+- `sync` —     Synchronize project caches
 - `version` —  Shows current version
 
 `gits` is configured by a YAML file. See [examples](#config-examples). `gits`
@@ -78,9 +82,12 @@ gits status .       # show status for all repositories at current path
 To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your shell
 `~/.bashrc` or `~/.zshrc`, and use `cdgit` to navigate to a repository.
 
-## Config
+## Configuration
 
-Configuration file must be present at `~/.gits.yaml` or `$XDG_CONFIG_HOME/gits/.git.yaml`.
+Configuration file must be present at `~/.gits.yaml` or `$XDG_CONFIG_HOME/gits/.gits.yaml`.
+
+> [!WARNING]
+> Each project in config file can either have a `source` or `repos` key, not both.
 
 The structure of the config file is as follows:
 
@@ -106,6 +113,8 @@ anotherproject:
 
 ## Config Examples
 
+Each project in the following example is defined differently:
+
 ```yaml
 ---
 # ~/.gits.yaml
@@ -116,13 +125,13 @@ mygithub:
     type: github
     search: rafi
 
-# GitLab source, note that `path` is optional.
+# GitLab source, note that `path` and `desc` are optional.
 work:
   path: ~/code/work
   desc: My work GitLab projects
   source:
     type: gitlab
-    search: "12345678"   # Make sure GitLab group id is quoted
+    search: "12345678"  # Make sure GitLab group id is quoted
 
 # Bitbucket source.
 mybitbucket:

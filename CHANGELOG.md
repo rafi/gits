@@ -1,12 +1,28 @@
 # Change-log
 
 - - -
-## [v0.9.0](https://github.com/rafi/gits/compare/v0.5.0...v0.9.0) / 2024-02-15
+## [v0.10.0](https://github.com/rafi/gits/compare/v0.9.0...v0.10.0) - 2024-03-20
 
+### Features
+
+- introduce 'add' command
+- introduce 'orphan' command
 ### Bug Fixes
 
-- path based argument as project name
-- disregard archived/empty repositories
+- implement github repository pagination
+- completion and repository selection
+- bust cache only when struct changes
+- cache version mismatch
+- repo name selection when defined with path only
+
+### Misc
+
+- improve error handling
+- document 'gits cd' usage
+
+- - -
+
+## [v0.9.0](https://github.com/rafi/gits/compare/v0.5.0...v0.9.0) / 2024-02-15
 
 ### Features
 
@@ -16,6 +32,11 @@
 - 2nd argument can be a sub-project path
 - adjust cache expiration to 1 week
 - nicer layout for fzf
+
+### Bug Fixes
+
+- path based argument as project name
+- disregard archived/empty repositories
 
 ### Misc
 
