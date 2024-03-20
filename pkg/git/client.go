@@ -87,6 +87,16 @@ func (g Git) Fetch(path string) (string, error) {
 	return cleanOutput(output), nil
 }
 
+// Pull fetches from remote and merges the current branch.
+func (g Git) Pull(path string) (string, error) {
+	args := []string{"pull", "--ff-only", "--stat", "--no-verbose"}
+	output, err := g.Exec(path, args)
+	if err != nil {
+		return "", fmt.Errorf("error during pull: %w", err)
+	}
+	return cleanOutput(output), nil
+}
+
 func (g Git) Log(path, ref string) (string, error) {
 	args := []string{
 		"log",
@@ -152,5 +162,6 @@ func (g Git) Exec(path string, args []string) ([]byte, error) {
 }
 
 func cleanOutput(output []byte) string {
-	return strings.TrimSuffix(string(output), "\n")
+	b := strings.TrimSpace(string(output))
+	return strings.TrimSuffix(string(b), "\n")
 }

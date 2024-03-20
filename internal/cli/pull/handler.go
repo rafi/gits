@@ -84,7 +84,10 @@ func pullRepo(project domain.Project, repo domain.Repository, deps types.Runtime
 
 	fmt.Printf(" %s <- %s", currentBranch, upstream.Short())
 
-	err = gitRepo.Pull("", "")
-	fmt.Println()
+	out, err := deps.Git.Pull(repo.AbsPath)
+	fmt.Print(deps.Theme.GitOutput.Render(out))
+	if err != nil {
+		fmt.Print(deps.Theme.Error.Render(err.Error()))
+	}
 	return err
 }

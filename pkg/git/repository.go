@@ -15,6 +15,10 @@ type Repository struct {
 	client *git.Repository
 }
 
+func (r *Repository) Client() *git.Repository {
+	return r.client
+}
+
 func (r *Repository) Branches() ([]string, error) {
 	branches := []string{}
 	refs, err := r.client.References()
@@ -88,26 +92,6 @@ func (r *Repository) Checkout(branch string) error {
 		return err
 	}
 	return w.Checkout(opts)
-}
-
-func (r *Repository) Pull(remote, branch string) error {
-	w, err := r.client.Worktree()
-	if err != nil {
-		return err
-	}
-
-	opts := &git.PullOptions{}
-
-	if remote != "" {
-		opts.RemoteName = remote
-	}
-
-	if branch != "" {
-		branchRef := plumbing.NewBranchReferenceName(branch)
-		opts.ReferenceName = branchRef
-	}
-
-	return w.Pull(opts)
 }
 
 func (r *Repository) GetUpstream(branch string) (upstream plumbing.ReferenceName, err error) {
