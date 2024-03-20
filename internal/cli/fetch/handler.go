@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/rafi/gits/domain"
@@ -19,58 +20,61 @@ func ExecFetch(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	// Fetch all project's repositories.
-	if repo == nil {
-		var errList []cli.Error
-		fetchProjectRepos(project, deps, &errList)
-		cli.HandlerErrors(errList)
-		return nil
+	if repo != nil {
+		// Fetch a single repository.
+		return fetchRepo(project, *repo, deps)
 	}
 
-	// Fetch a single repository.
-	output, err := fetchRepo(project, *repo, deps)
-	fmt.Println(deps.Theme.GitOutput.Render(output))
-	return err
+	// Fetch all project's repositories.
+	errs := fetchProjectRepos(project, deps)
+	if len(errs) > 0 {
+		cli.RenderErrors(errs, true)
+		return errors.New("fetch completed with errors")
+	}
+	return nil
 }
 
-func fetchProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
-	errorStyle := deps.Theme.Error.Copy().PaddingLeft(1)
-
+func fetchProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
+	errList := make([]error, 0)
 	for _, repo := range project.Repos {
-		output, err := fetchRepo(project, repo, deps)
+		err := fetchRepo(project, repo, deps)
 		if err != nil {
-			*errList = append(*errList, cli.Error{
-				Message: fmt.Sprint(err),
-				Title:   repo.GetName(),
-				Dir:     repo.AbsPath,
-			})
-			output = errorStyle.Render(err.Error())
+			errList = append(errList, err)
 		}
-		fmt.Println(deps.Theme.GitOutput.Render(output))
 	}
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		fetchProjectRepos(subProject, deps, errList)
+		errs := fetchProjectRepos(subProject, deps)
+		errList = append(errList, errs...)
 	}
+	return errList
 }
 
-func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) (string, error) {
+func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
 	maxLen := cli.GetMaxLen(project)
-	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
-		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
-		Width(maxLen).
-		Render()
+	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir, deps.Theme).
+		Width(maxLen)
 
 	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
-	fmt.Printf("%s %s ", repoTitle, repoPath)
+	if repoTitle.Value() == repoPath {
+		fmt.Printf("%s ", repoTitle)
+	} else {
+		fmt.Printf("%s %s ", repoTitle, repoPath)
+	}
+	defer fmt.Println()
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return "", cli.AbortOnRepoState(repo, deps.Theme)
+		return cli.AbortOnRepoState(repo, deps.Theme.Error)
 	}
 
-	return deps.Git.Fetch(repo.AbsPath)
+	out, err := deps.Git.Fetch(repo.AbsPath)
+	fmt.Print(deps.Theme.GitOutput.Render(out))
+	if err != nil {
+		fmt.Print(deps.Theme.Error.Render(err.Error()))
+		return cli.RepoError(err, repo)
+	}
+	return nil
 }

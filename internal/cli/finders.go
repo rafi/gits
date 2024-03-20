@@ -63,13 +63,13 @@ func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 		}
 	}
 	if projName == "" {
-		return domain.Project{}, errors.New("no project selected")
+		return domain.Project{}, types.NewWarning("no project selected")
 	}
 
 	// Find project by name.
 	p, err := loader.GetProject(projName, deps.Runtime)
 	if err != nil {
-		return p, fmt.Errorf("unable to load project: %w", err)
+		return p, types.NewWarning("unable to load project: %s", err)
 	}
 
 	// Find a sub-project if provided via 2nd argument.
@@ -77,7 +77,7 @@ func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 		var found bool
 		p, found = p.GetSubProject(args[1], "")
 		if !found {
-			return p, fmt.Errorf("project %q not found", args[1])
+			return p, types.NewWarning("project %q not found", args[1])
 		}
 		p.Name = args[1]
 	}

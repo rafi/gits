@@ -163,5 +163,5 @@ func (g Git) Exec(path string, args []string) ([]byte, error) {
 
 func cleanOutput(output []byte) string {
 	b := strings.TrimSpace(string(output))
-	return strings.TrimSuffix(string(b), "\n")
+	return strings.TrimSuffix(b, "\n")
 }

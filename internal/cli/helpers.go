@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/types"
 )
 
 const (
@@ -16,23 +18,10 @@ const (
 	RightMargin = 2
 )
 
-type Error struct {
-	Message string
-	Title   string
-	Dir     string
-}
-
-// HandlerErrors prints a list of errors.
-func HandlerErrors(list []Error) {
-	errCount := len(list)
-	if errCount > 0 {
-		title := "error" + strings.Repeat("s", min(1, errCount))
-		fmt.Printf("\n%d %s:\n", errCount, title)
-		for _, err := range list {
-			fmt.Printf("  - %s (%s): %s\n", err.Title, err.Dir, err.Message)
-		}
-	}
-}
+var (
+	ErrNotRepository = fmt.Errorf("not a repository")
+	ErrNotCloned     = fmt.Errorf("not cloned")
+)
 
 func GetTheme(themeSettings domain.Theme) (config.Theme, error) {
 	theme := config.NewThemeDefault()
@@ -44,17 +33,48 @@ func GetTheme(themeSettings domain.Theme) (config.Theme, error) {
 
 // AbortOnRepoState prints an error message and aborts if the repository is in
 // an error state.
-func AbortOnRepoState(repo domain.Repository, theme config.Theme) error {
-	path := repo.AbsPath
-	fmt.Printf(" %s", path)
+func AbortOnRepoState(repo domain.Repository, style lipgloss.Style) error {
+	var err error
 	switch repo.State {
 	case domain.RepoStateError:
-		fmt.Printf(" %s", theme.Error.Render("Not a Git repository"))
+		err = ErrNotRepository
 	case domain.RepoStateNoLocal:
-		fmt.Printf(" %s", theme.Error.Render("Not cloned"))
+		err = ErrNotCloned
+	default:
+		err = errors.New(string(repo.State))
 	}
-	fmt.Println()
-	return nil
+	fmt.Print(style.Render(err.Error()))
+	return RepoError(err, repo)
+}
+
+func RepoError(err error, repo domain.Repository) types.Warning {
+	return types.Warning{
+		Title:  repo.GetName(),
+		Reason: err.Error(),
+		Dir:    repo.AbsPath,
+	}
+}
+
+func RenderErrors(errs []error, excludeWarnings bool) {
+	if len(errs) == 0 {
+		return
+	}
+	out := []string{}
+	count := 0
+	for _, err := range errs {
+		if excludeWarnings {
+			// nolint:errorlint
+			if e, ok := err.(*types.Warning); ok && e.Type == types.WarningType {
+				continue
+			}
+		}
+		count++
+		out = append(out, fmt.Sprintf("  - %s", err))
+	}
+	title := "error" + strings.Repeat("s", min(1, count-1))
+	out = append([]string{"", fmt.Sprintf("%d %s:", count, title), ""}, out...)
+	out = append(out, "")
+	fmt.Println(strings.Join(out, "\n"))
 }
 
 // ProjectTitleWithBullet returns a formatted project title.
@@ -102,15 +122,17 @@ func ProjectTreeTitle(project domain.Project, homeDir string, theme config.Theme
 }
 
 // RepoTitle returns a formatted repository title.
-func RepoTitle(project domain.Project, repo domain.Repository, homeDir string) lipgloss.Style {
+func RepoTitle(project domain.Project, repo domain.Repository, homeDir string, theme config.Theme) lipgloss.Style {
 	repoPath := repo.Dir
 	if repoPath == "" {
 		repoPath = repo.AbsPath
 	}
 	repoPath = strings.TrimPrefix(repoPath, project.AbsPath+"/")
 	repoPath = Path(repoPath, homeDir)
-	t := lipgloss.NewStyle()
-	return t.SetString(repoPath)
+	return theme.RepoTitle.Copy().
+		MarginLeft(LeftMargin).
+		MarginRight(RightMargin).
+		SetString(repoPath)
 }
 
 // Path returns a clean path with ~ for home directory.
@@ -143,5 +165,5 @@ func getSourceType(p domain.Project) string {
 	if p.Source == nil {
 		return ""
 	}
-	return string(p.Source.Type)
+	return p.Source.Type
 }

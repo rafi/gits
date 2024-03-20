@@ -3,8 +3,6 @@ package list
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
@@ -40,8 +38,11 @@ func ExecList(format string, args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 	if len(projects) == 0 {
-		log.Warn("no projects found")
-		return nil
+		return types.NewWarning(
+			`No projects found.
+Either your %q is empty, or you misspelled the project name.`,
+			deps.ConfigPath,
+		)
 	}
 	return lister(projects, deps)
 }

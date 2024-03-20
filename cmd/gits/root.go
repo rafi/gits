@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -88,7 +90,7 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 		}
 
 		// Run command with dependencies.
-		return f(args, types.RuntimeCLI{
+		cmdErr := f(args, types.RuntimeCLI{
 			Theme:   theme,
 			HomeDir: homeDir,
 			Runtime: types.Runtime{
@@ -99,5 +101,12 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 				Cache:      cacheClient,
 			},
 		})
+
+		// Display a subtle user warning.
+		if errors.As(cmdErr, &types.Warning{}) {
+			log.Warn(cmdErr.Error())
+			return nil
+		}
+		return cmdErr
 	}
 }

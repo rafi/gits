@@ -52,16 +52,16 @@ func (c *bitbucketProvider) fetchRepos(ownerName string) ([]domain.Repository, s
 
 	ownerID := ownerName
 	if len(result.Items) > 0 {
-		ownerID = string(result.Items[0].Owner["uuid"].(string))
+		ownerID = result.Items[0].Owner["uuid"].(string)
 	}
 
 	repos := []domain.Repository{}
 	for _, item := range result.Items {
 		repo := domain.Repository{
-			ID:        string(item.Uuid),
-			Name:      string(item.Slug),
+			ID:        item.Uuid,
+			Name:      item.Slug,
 			Namespace: ownerName,
-			Desc:      string(item.Description),
+			Desc:      item.Description,
 		}
 
 		links := item.Links["clone"].([]interface{})

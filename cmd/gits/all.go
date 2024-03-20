@@ -109,7 +109,7 @@ var fetchCmd = &cobra.Command{
 
 var listCmd = &cobra.Command{
 	Use:               "list [project]...",
-	Short:             "List all projects or their repositories",
+	Short:             "List project repositories",
 	Aliases:           []string{"ls"},
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,

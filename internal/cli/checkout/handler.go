@@ -1,6 +1,7 @@
 package checkout
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/erikgeiser/promptkit/selection"
@@ -23,51 +24,48 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	// Checkout all project's repositories.
-	if repo == nil {
-		var errList []cli.Error
-		checkoutProjectRepos(project, deps, &errList)
-		cli.HandlerErrors(errList)
-		return nil
+	if repo != nil {
+		// Checkout a single repository.
+		return checkoutRepo(project, *repo, deps)
 	}
 
-	// Checkout a single repository.
-	return checkoutRepo(project, *repo, deps)
+	// Checkout all project's repositories.
+	errs := checkoutProjectRepos(project, deps)
+	if len(errs) > 0 {
+		cli.RenderErrors(errs, true)
+		return errors.New("checkout completed with errors")
+	}
+	return nil
 }
 
-func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
-	errorStyle := deps.Theme.Error.Copy()
-
+func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
+	errList := make([]error, 0)
 	for _, repo := range project.Repos {
 		err := checkoutRepo(project, repo, deps)
 		if err != nil {
-			*errList = append(*errList, cli.Error{
-				Message: fmt.Sprint(err),
-				Title:   repo.GetName(),
-				Dir:     repo.AbsPath,
-			})
-			fmt.Println(errorStyle.Render(err.Error()))
+			errList = append(errList, err)
 		}
 	}
 
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		checkoutProjectRepos(subProject, deps, errList)
+		errs := checkoutProjectRepos(subProject, deps)
+		errList = append(errList, errs...)
 	}
+	return errList
 }
 
 func checkoutRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
-	repoDir := cli.Path(repo.AbsPath, deps.HomeDir)
-	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
-		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
+	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir, deps.Theme).
 		Render()
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(repo, deps.Theme)
+		fmt.Print(repoTitle)
+		defer fmt.Println()
+		return cli.AbortOnRepoState(repo, deps.Theme.Error)
 	}
 
 	gitRepo, err := deps.Git.Open(repo.AbsPath)
@@ -75,18 +73,24 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 		return err
 	}
 
-	branch, err := promptRepo(repoTitle, repoDir, gitRepo, deps)
+	branch, err := promptRepo(repoTitle, gitRepo, deps)
 	if err != nil {
 		return err
 	}
-	if branch != "" {
-		return gitRepo.Checkout(branch)
+	if branch == "" {
+		return nil
+	}
+
+	err = gitRepo.Checkout(branch)
+	if err != nil {
+		fmt.Print(deps.Theme.Error.Render(err.Error()))
+		return cli.RepoError(err, repo)
 	}
 	return nil
 }
 
 // promptRepo prompts the user to select a branch to checkout.
-func promptRepo(repoTitle string, repoPath string, gitRepo git.Repository, deps types.RuntimeCLI) (string, error) {
+func promptRepo(repoTitle string, gitRepo git.Repository, deps types.RuntimeCLI) (string, error) {
 	current, err := gitRepo.CurrentBranch()
 	if err != nil {
 		return "", fmt.Errorf("unable to get branch: %w", err)
@@ -104,7 +108,7 @@ func promptRepo(repoTitle string, repoPath string, gitRepo git.Repository, deps 
 	sp.FilterPlaceholder = "Select branch to checkout"
 	sp.PageSize = 10
 	sp.FinalChoiceStyle = func(choice *selection.Choice[string]) string {
-		s := fmt.Sprintf("%s> ", repoPath)
+		s := fmt.Sprintf("%s ", repoTitle)
 		if choice.Value == current {
 			return s + choice.Value
 		}

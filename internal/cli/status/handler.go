@@ -1,6 +1,7 @@
 package status
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
@@ -22,61 +23,54 @@ func ExecStatus(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	// Display status for all project's repositories.
-	if repo == nil {
-		var errList []cli.Error
-		statusProject(project, deps, &errList)
-		cli.HandlerErrors(errList)
-		return nil
+	if repo != nil {
+		// Display status for a single repository.
+		title := cli.RepoTitle(project, *repo, deps.HomeDir, deps.Theme).Align(lipgloss.Right)
+		fmt.Printf("%s ", title)
+		return statusRepo(*repo, deps)
 	}
 
-	// Display status for a single repository.
-	fmt.Printf("%s ", getRepoStyle(project, *repo, deps).Render())
-	output, err := statusRepo(*repo, deps)
-	fmt.Println(deps.Theme.GitOutput.Render(output))
-	return err
+	// Display status for all project's repositories.
+	errs := statusProject(project, deps)
+	if len(errs) > 0 {
+		cli.RenderErrors(errs, true)
+		return errors.New("status completed with errors")
+	}
+	return nil
 }
 
-func getRepoStyle(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) lipgloss.Style {
-	return cli.RepoTitle(project, repo, deps.HomeDir).
-		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(cli.LeftMargin).
-		MarginRight(cli.RightMargin).
-		Align(lipgloss.Right)
-}
-
-func statusProject(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
+func statusProject(project domain.Project, deps types.RuntimeCLI) []error {
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 	maxLen := cli.GetMaxLen(project)
-	errorStyle := deps.Theme.Error.Copy().PaddingLeft(14)
 
+	errList := make([]error, 0)
 	for _, repo := range project.Repos {
-		repoTitle := getRepoStyle(project, repo, deps).
+		repoTitle := cli.RepoTitle(project, repo, deps.HomeDir, deps.Theme).
 			Width(maxLen).
+			Align(lipgloss.Right).
 			Render()
 
 		fmt.Printf("%s ", repoTitle)
-		output, err := statusRepo(repo, deps)
+		err := statusRepo(repo, deps)
 		if err != nil {
-			*errList = append(*errList, cli.Error{
-				Message: fmt.Sprint(err),
-				Title:   repo.GetName(),
-				Dir:     repo.AbsPath,
-			})
-			output = errorStyle.Render(err.Error())
+			errList = append(errList, err)
 		}
-		fmt.Println(output)
 	}
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		statusProject(subProject, deps, errList)
+		errs := statusProject(subProject, deps)
+		errList = append(errList, errs...)
 	}
+	return errList
 }
 
-func statusRepo(repo domain.Repository, deps types.RuntimeCLI) (string, error) {
+func statusRepo(repo domain.Repository, deps types.RuntimeCLI) error {
+	defer fmt.Println()
+
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return "", cli.AbortOnRepoState(repo, deps.Theme)
+		errStyle := deps.Theme.Error.Copy().PaddingLeft(8)
+		return cli.AbortOnRepoState(repo, errStyle)
 	}
 
 	version, err := deps.Git.Describe(repo.AbsPath)
@@ -87,13 +81,13 @@ func statusRepo(repo domain.Repository, deps types.RuntimeCLI) (string, error) {
 	var count int
 	modified := ""
 	if count, err = deps.Git.Modified(repo.AbsPath); err != nil {
-		return "", err
+		return cli.RepoError(err, repo)
 	} else if count > 0 {
 		modified = fmt.Sprintf("≠%d", count)
 	}
 	untracked := ""
 	if count, err = deps.Git.Untracked(repo.AbsPath); err != nil {
-		return "", err
+		return cli.RepoError(err, repo)
 	} else if count > 0 {
 		untracked = fmt.Sprintf("?%d", count)
 	}
@@ -131,11 +125,12 @@ func statusRepo(repo domain.Repository, deps types.RuntimeCLI) (string, error) {
 		currentRef = "N/A"
 	}
 
-	return fmt.Sprintf("%s %s %s %s %s",
+	fmt.Printf("%s %s %s %s %s",
 		deps.Theme.Modified.Render(modified),
 		deps.Theme.Untracked.Render(untracked),
 		deps.Theme.Diff.Render(diff),
 		version,
 		currentRef,
-	), nil
+	)
+	return nil
 }

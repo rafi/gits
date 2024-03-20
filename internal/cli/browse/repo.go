@@ -44,7 +44,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(repo, deps.Theme)
+		return cli.AbortOnRepoState(repo, deps.Theme.Error)
 	}
 
 	// Attempt to read README file.
@@ -58,7 +58,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 	readmeBytes, err := os.ReadFile(readmePath)
 	if os.IsNotExist(err) {
-		return "", fmt.Errorf("Repository does not have a %q file", ReadMeFilename)
+		return "", fmt.Errorf("repository does not have a %q file", ReadMeFilename)
 	}
 	if err != nil {
 		return "", err

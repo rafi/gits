@@ -17,7 +17,7 @@ type filesystemProvider struct {
 	sourceType Provider
 }
 
-func newFilesystemProvider() (*filesystemProvider, error) {
+func newFilesystemProvider() (*filesystemProvider, error) { // nolint:unparam
 	provider := &filesystemProvider{
 		sourceType: ProviderFilesystem,
 	}

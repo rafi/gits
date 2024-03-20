@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/rafi/gits/domain"
@@ -8,86 +9,84 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// ExecPull runs pull --no-ff on project repositories, or on a specific repo.
+// ExecPull runs pull --ff-only on project repositories, or on a specific repo.
 //
 // Args: (optional)
 //   - project name
 //   - repo
 func ExecPull(args []string, deps types.RuntimeCLI) error {
-	project, repo, err := cli.ParseArgs(args, false, deps)
+	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
 
-	// Fetch all project's repositories.
-	if repo == nil {
-		var errList []cli.Error
-		pullProjectRepos(project, deps, &errList)
-		cli.HandlerErrors(errList)
-		return nil
+	if repo != nil {
+		// Pull a single repository.
+		return pullRepo(project, *repo, deps)
 	}
 
-	return pullRepo(project, *repo, deps)
+	// Pull all project's repositories.
+	errs := pullProjectRepos(project, deps)
+	if len(errs) > 0 {
+		cli.RenderErrors(errs, true)
+		return errors.New("pull completed with errors")
+	}
+	return nil
 }
 
-func pullProjectRepos(project domain.Project, deps types.RuntimeCLI, errList *[]cli.Error) {
-	errorStyle := deps.Theme.Error.Copy().PaddingLeft(1)
-
+func pullProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
+	errList := make([]error, 0)
 	for _, repo := range project.Repos {
 		err := pullRepo(project, repo, deps)
 		if err != nil {
-			*errList = append(*errList, cli.Error{
-				Message: fmt.Sprint(err),
-				Title:   repo.GetName(),
-				Dir:     repo.AbsPath,
-			})
-			errorMsg := errorStyle.Render(err.Error())
-			fmt.Println(deps.Theme.GitOutput.Render(errorMsg))
+			errList = append(errList, err)
 		}
 	}
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		pullProjectRepos(subProject, deps, errList)
+		errs := pullProjectRepos(subProject, deps)
+		errList = append(errList, errs...)
 	}
+	return errList
 }
 
 func pullRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
-	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir).
-		Inherit(deps.Theme.RepoTitle).
-		MarginLeft(cli.LeftMargin).MarginRight(cli.RightMargin).
-		Render()
+	maxLen := cli.GetMaxLen(project)
+	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir, deps.Theme).
+		Width(maxLen)
 
-	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
-	fmt.Printf("%s %s ", repoTitle, repoPath)
+	fmt.Printf("%s ", repoTitle)
+	defer fmt.Println()
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(repo, deps.Theme)
+		return cli.AbortOnRepoState(repo, deps.Theme.Error)
 	}
 
 	gitRepo, err := deps.Git.Open(repo.AbsPath)
 	if err != nil {
-		return err
+		return cli.RepoError(err, repo)
 	}
 
 	currentBranch, err := gitRepo.CurrentBranch()
 	if err != nil {
-		return err
+		return cli.RepoError(err, repo)
 	}
 
 	upstream, err := gitRepo.GetUpstream(currentBranch)
 	if err != nil {
-		return err
+		return cli.RepoError(err, repo)
 	}
 
-	fmt.Printf(" %s <- %s", currentBranch, upstream.Short())
+	fmt.Printf("[%s <- %s] ", currentBranch, upstream.Short())
 
 	out, err := deps.Git.Pull(repo.AbsPath)
 	fmt.Print(deps.Theme.GitOutput.Render(out))
 	if err != nil {
 		fmt.Print(deps.Theme.Error.Render(err.Error()))
+		return cli.RepoError(err, repo)
 	}
-	return err
+	return nil
 }
