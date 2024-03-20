@@ -40,7 +40,7 @@ func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
 
 	default:
 		repo, found := proj.GetRepo(args[1], "")
-		if repo.Name == "" || !found {
+		if !found {
 			return proj, nil, fmt.Errorf("unable to load repo %q", args[1])
 		}
 		return proj, &repo, err
@@ -58,10 +58,12 @@ func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 		projName = args[0]
 	} else {
 		projName, err = SelectProject(deps)
-		if projName == "" || err != nil {
-			err = fmt.Errorf("unable to select a project: %w", err)
+		if err != nil {
 			return domain.Project{}, err
 		}
+	}
+	if projName == "" {
+		return domain.Project{}, errors.New("no project selected")
 	}
 
 	// Find project by name.
@@ -108,7 +110,7 @@ func getOrSelectRepo(
 	}
 
 	repo, found := project.GetRepo(repoName, "")
-	if repo.Name == "" || !found {
+	if !found {
 		return repo, fmt.Errorf("repo %q not found", repoName)
 	}
 	return repo, nil
@@ -134,7 +136,6 @@ func SelectProject(deps types.RuntimeCLI) (string, error) {
 
 	projName, err := finder.Run(buffer)
 	if projName == "" || err != nil {
-		err = fmt.Errorf("unable to select a project: %w", err)
 		return "", err
 	}
 	projName = strings.Split(projName, " ")[0]

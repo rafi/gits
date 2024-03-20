@@ -38,7 +38,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 	}
 	repoName := args[1]
 	repo, found := project.GetRepo(repoName, "")
-	if repo.Name == "" || !found {
+	if !found {
 		return fmt.Errorf("repo %s/%s not found", args[0], repoName)
 	}
 

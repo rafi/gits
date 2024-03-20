@@ -92,7 +92,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 	// Get repo
 	repoName := args[1]
 	repo, found := proj.GetRepo(repoName, "")
-	if repo.Name == "" || !found {
+	if !found {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
