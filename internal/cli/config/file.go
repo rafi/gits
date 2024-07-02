@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/knadh/koanf/parsers/json"
@@ -127,6 +128,10 @@ func (f *File) loadConfig(filePath string) error {
 	// Parse special key 'settings'.
 	if err := f.client.UnmarshalWithConf("settings", &f.Settings, koanfConf); err != nil {
 		return fmt.Errorf("unable to parse config file: %w", err)
+	}
+
+	if f.Settings.WorkerCount == 0 {
+		f.Settings.WorkerCount = max(runtime.NumCPU()/2, 2)
 	}
 
 	// Set never/always color toggle.

@@ -2,6 +2,9 @@ package fetch
 
 import (
 	"fmt"
+	"sync"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
@@ -21,7 +24,9 @@ func ExecFetch(args []string, deps types.RuntimeCLI) error {
 
 	if repo != nil {
 		// Fetch a single repository.
-		return fetchRepo(project, *repo, deps)
+		resp := fetchRepo(project, *repo, deps)
+		fmt.Println(resp)
+		return err
 	}
 
 	// Fetch all project's repositories.
@@ -32,16 +37,49 @@ func ExecFetch(args []string, deps types.RuntimeCLI) error {
 	return nil
 }
 
+type FetchResponse struct {
+	repoPath   string
+	output     string
+	title      lipgloss.Style
+	error      error
+	errorStyle lipgloss.Style
+}
+
+func (r FetchResponse) String() string {
+	if r.error != nil {
+		return fmt.Sprintf("%s %s", r.title, r.errorStyle.Render(r.error.Error()))
+	}
+
+	if r.title.Value() == r.repoPath {
+		return fmt.Sprintf("%s %s", r.title, r.output)
+	}
+	return fmt.Sprintf("%s %s %s", r.title, r.repoPath, r.output)
+}
+
 func fetchProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
 	errList := make([]error, 0)
-	for _, repo := range project.Repos {
-		err := fetchRepo(project, repo, deps)
-		if err != nil {
-			errList = append(errList, err)
+	maxLen := cli.GetMaxLen(project)
+
+	var wg sync.WaitGroup
+	for idx, repo := range project.Repos {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp := fetchRepo(project, repo, deps)
+			resp.title.Width(maxLen)
+			fmt.Println(resp)
+			if resp.error != nil {
+				errList = append(errList, resp.error)
+			}
+		}()
+		if idx > 0 && idx%deps.Settings.WorkerCount == 0 {
+			wg.Wait()
 		}
 	}
+	wg.Wait()
+
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
 		errs := fetchProjectRepos(subProject, deps)
@@ -50,29 +88,25 @@ func fetchProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
 	return errList
 }
 
-func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
-	maxLen := cli.GetMaxLen(project)
-	repoTitle := cli.RepoTitle(project, repo, deps.HomeDir, deps.Theme).
-		Width(maxLen)
-
-	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
-	if repoTitle.Value() == repoPath {
-		fmt.Printf("%s ", repoTitle)
-	} else {
-		fmt.Printf("%s %s ", repoTitle, repoPath)
+func fetchRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) FetchResponse {
+	resp := FetchResponse{
+		title:      cli.RepoTitle(repo, project.AbsPath, deps.HomeDir, deps.Theme),
+		repoPath:   cli.Path(repo.AbsPath, deps.HomeDir),
+		errorStyle: deps.Theme.Error,
 	}
-	defer fmt.Println()
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(repo, deps.Theme.Error)
+		resp.error = cli.AbortOnRepoState(repo, deps.Theme.Error)
+		return resp
 	}
 
-	out, err := deps.Git.Fetch(repo.AbsPath)
-	fmt.Print(deps.Theme.GitOutput.Render(out))
+	var err error
+	resp.output, err = deps.Git.Fetch(repo.AbsPath)
 	if err != nil {
-		fmt.Print(deps.Theme.Error.Render(err.Error()))
-		return cli.RepoError(err, repo)
+		resp.error = cli.RepoError(err, repo)
+		return resp
 	}
-	return nil
+	resp.output = deps.Theme.GitOutput.Render(resp.output)
+	return resp
 }

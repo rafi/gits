@@ -1,11 +1,12 @@
 package domain
 
 type Settings struct {
-	Cache   *bool  `json:"cache,omitempty"`
-	Finder  Finder `json:"finder"`
-	Icons   Icons  `json:"icons"`
-	Theme   Theme  `json:"theme"`
-	Verbose bool   `json:"verbose,omitempty"`
+	Cache       *bool  `json:"cache,omitempty"`
+	Finder      Finder `json:"finder"`
+	Icons       Icons  `json:"icons"`
+	Theme       Theme  `json:"theme"`
+	Verbose     bool   `json:"verbose,omitempty"`
+	WorkerCount int    `json:"workerCount,omitempty"`
 }
 
 type Finder struct {
