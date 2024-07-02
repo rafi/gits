@@ -1,7 +1,6 @@
 package status
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
@@ -33,8 +32,7 @@ func ExecStatus(args []string, deps types.RuntimeCLI) error {
 	// Display status for all project's repositories.
 	errs := statusProject(project, deps)
 	if len(errs) > 0 {
-		cli.RenderErrors(errs, true)
-		return errors.New("status completed with errors")
+		return cli.RenderErrors(errs, true)
 	}
 	return nil
 }

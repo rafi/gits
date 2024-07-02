@@ -1,7 +1,6 @@
 package pull
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/rafi/gits/domain"
@@ -28,8 +27,7 @@ func ExecPull(args []string, deps types.RuntimeCLI) error {
 	// Pull all project's repositories.
 	errs := pullProjectRepos(project, deps)
 	if len(errs) > 0 {
-		cli.RenderErrors(errs, true)
-		return errors.New("pull completed with errors")
+		return cli.RenderErrors(errs, true)
 	}
 	return nil
 }

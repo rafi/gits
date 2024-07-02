@@ -1,7 +1,6 @@
 package clone
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -31,8 +30,7 @@ func ExecClone(args []string, deps types.RuntimeCLI) error {
 	// Clone all project's repositories.
 	errs := cloneProjectRepos(project, deps)
 	if len(errs) > 0 {
-		cli.RenderErrors(errs, true)
-		return errors.New("clone completed with errors")
+		return cli.RenderErrors(errs, true)
 	}
 	return nil
 }

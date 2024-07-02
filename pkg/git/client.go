@@ -46,7 +46,7 @@ func (g Git) Clone(remote string, path string) (string, error) {
 	args := []string{"clone", remote, path}
 	output, err := g.Exec(basePath, args)
 	if err != nil {
-		return "", fmt.Errorf("unable to clone: %w", err)
+		return "", fmt.Errorf("unable to clone: %s %w", output, err)
 	}
 	return cleanOutput(output), nil
 }

@@ -55,10 +55,7 @@ func RepoError(err error, repo domain.Repository) types.Warning {
 	}
 }
 
-func RenderErrors(errs []error, excludeWarnings bool) {
-	if len(errs) == 0 {
-		return
-	}
+func RenderErrors(errs []error, excludeWarnings bool) error {
 	out := []string{}
 	count := 0
 	for _, err := range errs {
@@ -71,10 +68,14 @@ func RenderErrors(errs []error, excludeWarnings bool) {
 		count++
 		out = append(out, fmt.Sprintf("  - %s", err))
 	}
+	if count < 1 {
+		return nil
+	}
 	title := "error" + strings.Repeat("s", min(1, count-1))
 	out = append([]string{"", fmt.Sprintf("%d %s:", count, title), ""}, out...)
 	out = append(out, "")
 	fmt.Println(strings.Join(out, "\n"))
+	return errors.New("completed with errors")
 }
 
 // ProjectTitleWithBullet returns a formatted project title.

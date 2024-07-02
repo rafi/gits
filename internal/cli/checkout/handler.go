@@ -1,7 +1,6 @@
 package checkout
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/erikgeiser/promptkit/selection"
@@ -32,8 +31,7 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 	// Checkout all project's repositories.
 	errs := checkoutProjectRepos(project, deps)
 	if len(errs) > 0 {
-		cli.RenderErrors(errs, true)
-		return errors.New("checkout completed with errors")
+		return cli.RenderErrors(errs, true)
 	}
 	return nil
 }

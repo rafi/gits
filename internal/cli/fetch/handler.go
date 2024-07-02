@@ -1,7 +1,6 @@
 package fetch
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/rafi/gits/domain"
@@ -28,8 +27,7 @@ func ExecFetch(args []string, deps types.RuntimeCLI) error {
 	// Fetch all project's repositories.
 	errs := fetchProjectRepos(project, deps)
 	if len(errs) > 0 {
-		cli.RenderErrors(errs, true)
-		return errors.New("fetch completed with errors")
+		return cli.RenderErrors(errs, true)
 	}
 	return nil
 }
