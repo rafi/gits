@@ -1,12 +1,13 @@
 # Change-log
 
 - - -
-## [v0.10.0](https://github.com/rafi/gits/compare/v0.9.0...v0.10.0) - 2024-03-20
+## [v0.10.0](https://github.com/rafi/gits/compare/v0.9.0...v0.10.0) / 2024-03-20
 
 ### Features
 
 - introduce 'add' command
 - introduce 'orphan' command
+
 ### Bug Fixes
 
 - implement github repository pagination

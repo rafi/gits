@@ -77,6 +77,7 @@ steps:
   image: golang:1.22
   pull: always
   commands:
+  - make VERSION=${DRONE_TAG} info
   - make VERSION=${DRONE_TAG} -j2
   environment:
     CGO_ENABLED: 0
