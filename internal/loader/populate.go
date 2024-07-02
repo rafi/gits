@@ -87,7 +87,11 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 		// Process repos individually if project doesn't have a path.
 		var err error
 		for repoIdx, repo := range project.Repos {
-			project.Repos[repoIdx], err = providers.NewFilesystemRepo(repo.Dir, deps.Git)
+			project.Repos[repoIdx], err = providers.NewFilesystemRepo(
+				repo.Dir,
+				repo.Src,
+				deps.Git,
+			)
 			if err != nil {
 				return err
 			}

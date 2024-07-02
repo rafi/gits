@@ -123,12 +123,12 @@ func ProjectTreeTitle(project domain.Project, homeDir string, theme config.Theme
 }
 
 // RepoTitle returns a formatted repository title.
-func RepoTitle(project domain.Project, repo domain.Repository, homeDir string, theme config.Theme) lipgloss.Style {
+func RepoTitle(repo domain.Repository, basePath string, homeDir string, theme config.Theme) lipgloss.Style {
 	repoPath := repo.Dir
 	if repoPath == "" {
 		repoPath = repo.AbsPath
 	}
-	repoPath = strings.TrimPrefix(repoPath, project.AbsPath+"/")
+	repoPath = strings.TrimPrefix(repoPath, basePath+"/")
 	repoPath = Path(repoPath, homeDir)
 	return theme.RepoTitle.Copy().
 		MarginLeft(LeftMargin).

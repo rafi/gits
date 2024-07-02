@@ -24,7 +24,7 @@ func ExecStatus(args []string, deps types.RuntimeCLI) error {
 
 	if repo != nil {
 		// Display status for a single repository.
-		title := cli.RepoTitle(project, *repo, deps.HomeDir, deps.Theme).Align(lipgloss.Right)
+		title := cli.RepoTitle(*repo, project.AbsPath, deps.HomeDir, deps.Theme).Align(lipgloss.Right)
 		fmt.Printf("%s ", title)
 		return statusRepo(*repo, deps)
 	}
@@ -43,7 +43,7 @@ func statusProject(project domain.Project, deps types.RuntimeCLI) []error {
 
 	errList := make([]error, 0)
 	for _, repo := range project.Repos {
-		repoTitle := cli.RepoTitle(project, repo, deps.HomeDir, deps.Theme).
+		repoTitle := cli.RepoTitle(repo, project.AbsPath, deps.HomeDir, deps.Theme).
 			Width(maxLen).
 			Align(lipgloss.Right).
 			Render()

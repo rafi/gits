@@ -77,7 +77,7 @@ func findOrphanedRepos(project domain.Project, gitClient git.Git) ([]domain.Repo
 			}
 			// Add unknown repository to the list.
 			if _, known := knownRepos[path]; !known {
-				repo, err := providers.NewFilesystemRepo(path, gitClient)
+				repo, err := providers.NewFilesystemRepo(path, "", gitClient)
 				if err != nil {
 					return err
 				}
