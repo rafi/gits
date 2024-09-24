@@ -1,0 +1,32 @@
+name: Gits release workflow
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Git tags
+        run: git fetch --force --prune --tags
+
+      - name: Build and Release
+        run: |
+          docker run \
+            --rm \
+            --privileged \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $(pwd)/sysroot:/sysroot \
+            -v $(pwd):/go/src/${PKG_NAME} \
+            -w /go/src/${PKG_NAME} \
+            -e CGO_ENABLED=0 \
+            -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            ghcr.io/goreleaser/goreleaser-cross:v${GO_VERSION} \
+            release --clean

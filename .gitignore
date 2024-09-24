@@ -3,4 +3,5 @@ Thumbs.db
 Desktop.ini
 /bin/
 /.cache/
+/dist/
 /vendor/

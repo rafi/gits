@@ -11,7 +11,6 @@ linters:
     - gci
     - gofumpt
     - gosec
-    - scopelint
   enable:
     - gosimple
     - misspell

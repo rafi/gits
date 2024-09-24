@@ -132,7 +132,7 @@ func (cf *File) Save(key string, project domain.Project) error {
 	}
 	defer fp.Close()
 
-	_, err = io.WriteString(fp, string(cacheRaw))
+	_, err = fp.Write(cacheRaw)
 	if err != nil {
 		return fmt.Errorf("failed to read cache file: %w", err)
 	}
