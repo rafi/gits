@@ -1,6 +1,23 @@
 # Change-log
 
 - - -
+## v0.11.0 - 2024-09-24
+
+### Bug Fixes
+
+- **(repo)** use 'src' as remote - (4306ec4) - Rafael Bodill
+
+### Miscellaneous Chores
+
+- **(ci)** replace drone with git actions - (d83676e) - Rafael Bodill
+- **(deps)** update vulnerable packages - (934de7d) - Rafael Bodill
+
+### Performance Improvements
+
+- clone, fetch and pull in parallel - (3452ff8) - Rafael Bodill
+
+- - -
+
 ## [v0.10.0](https://github.com/rafi/gits/compare/v0.9.0...v0.10.0) / 2024-03-20
 
 ### Features

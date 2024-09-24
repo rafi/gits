@@ -82,7 +82,7 @@ func (f File) findDefaultPath() (string, error) {
 		filepath.Join(xdgConfigHome, "gits", "config"),
 	}
 	for _, configPath := range configDirectories {
-		for _, configExt := range []string{".json", ".yaml", ".toml"} {
+		for _, configExt := range []string{".json", ".yaml", ".yml", ".toml"} {
 			if _, err := os.Stat(configPath + configExt); !os.IsNotExist(err) {
 				return configPath + configExt, nil
 			}

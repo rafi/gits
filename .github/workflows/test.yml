@@ -2,9 +2,9 @@ name: Gits test workflow
 
 on:
   push:
-    branches: ["master", "next"]
+    branches: ["master"]
   pull_request:
-    branches: ["master", "next"]
+    branches: ["master"]
 
 jobs:
   test:

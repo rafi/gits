@@ -5,6 +5,9 @@ on:
     tags:
       - "*"
 
+env:
+  GO_VERSION: "1.22"
+
 jobs:
   release:
     name: Release
