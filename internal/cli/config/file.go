@@ -67,7 +67,7 @@ func (f *File) Convert() error {
 }
 
 // findDefaultPath reads in config file and ENV variables if set.
-func (f File) findDefaultPath() (string, error) {
+func (f *File) findDefaultPath() (string, error) {
 	home, err := homedir.Dir()
 	if err != nil {
 		return "", fmt.Errorf("unable to find home directory: %w", err)

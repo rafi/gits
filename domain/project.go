@@ -33,7 +33,7 @@ type Project struct {
 type ProjectListKeyed map[string]Project
 
 // GetRepo returns a repository by name and initial prefix.
-func (p Project) GetRepo(name, prefix string) (Repository, bool) {
+func (p *Project) GetRepo(name, prefix string) (Repository, bool) {
 	for _, repo := range p.Repos {
 		switch name {
 		case prefix + repo.GetName():
@@ -52,11 +52,11 @@ func (p Project) GetRepo(name, prefix string) (Repository, bool) {
 }
 
 // GetSubProject returns a sub-project by name and initial prefix.
-func (p Project) GetSubProject(name, prefix string) (Project, bool) {
+func (p *Project) GetSubProject(name, prefix string) (Project, bool) {
 	name = strings.Trim(name, "/")
 
 	if name+"/" == prefix {
-		return p, true
+		return *p, true
 	}
 
 	for _, subProj := range p.SubProjects {
@@ -70,7 +70,7 @@ func (p Project) GetSubProject(name, prefix string) (Project, bool) {
 }
 
 // GetAllRepos returns a list of all repositories in the project.
-func (p Project) GetAllRepos(prefix ...string) []Repository {
+func (p *Project) GetAllRepos(prefix ...string) []Repository {
 	var repos []Repository
 	if len(prefix) == 0 {
 		prefix = []string{""}
@@ -84,7 +84,7 @@ func (p Project) GetAllRepos(prefix ...string) []Repository {
 }
 
 // ListReposWithNamespace returns a list of repository names with namespace.
-func (p Project) ListReposWithNamespace(prefix ...string) []string {
+func (p *Project) ListReposWithNamespace(prefix ...string) []string {
 	var names []string
 	if len(prefix) == 0 {
 		prefix = []string{""}
@@ -103,7 +103,7 @@ func (p Project) ListReposWithNamespace(prefix ...string) []string {
 }
 
 // GetRepoAbsPath returns an absolute path of one of its repositories.
-func (p Project) GetRepoAbsPath(repo Repository) (string, error) {
+func (p *Project) GetRepoAbsPath(repo Repository) (string, error) {
 	path := filepath.Clean(p.AbsPath)
 	if len(repo.Dir) == 0 {
 		lastSlash := strings.LastIndex(repo.Src, "/")

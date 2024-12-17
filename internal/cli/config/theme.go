@@ -140,7 +140,7 @@ func NewThemeDefault() Theme {
 	return theme
 }
 
-func (t Theme) TableRowStyle(row, _ int) lipgloss.Style {
+func (t *Theme) TableRowStyle(row, _ int) lipgloss.Style {
 	var s lipgloss.Style
 	switch {
 	case row == 0:

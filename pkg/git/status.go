@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func (g Git) CurrentBranch(path string) (string, error) {
+func (g *Git) CurrentBranch(path string) (string, error) {
 	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
 	abbrRef, err := g.Exec(path, args)
 	if err != nil {
@@ -16,7 +16,7 @@ func (g Git) CurrentBranch(path string) (string, error) {
 	return cleanOutput(abbrRef), nil
 }
 
-func (g Git) UpstreamBranch(path string) (string, error) {
+func (g *Git) UpstreamBranch(path string) (string, error) {
 	args := []string{"rev-parse", "--abbrev-ref", "@{upstream}"}
 	abbrRefUpstream, _ := g.Exec(path, args)
 	upstream := cleanOutput(abbrRefUpstream)
@@ -24,7 +24,7 @@ func (g Git) UpstreamBranch(path string) (string, error) {
 }
 
 // GitModified returns the number of modified files
-func (g Git) Modified(path string) (int, error) {
+func (g *Git) Modified(path string) (int, error) {
 	args := []string{"diff", "--shortstat"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -43,7 +43,7 @@ func (g Git) Modified(path string) (int, error) {
 }
 
 // Untracked returns the number of untracked files
-func (g Git) Untracked(path string) (int, error) {
+func (g *Git) Untracked(path string) (int, error) {
 	args := []string{"ls-files", "--others", "--exclude-standard"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -53,7 +53,7 @@ func (g Git) Untracked(path string) (int, error) {
 }
 
 // CurrentPosition returns a short log description of HEAD
-func (g Git) CurrentPosition(path string) (string, error) {
+func (g *Git) CurrentPosition(path string) (string, error) {
 	args := []string{"log", "-1", "--color=always", "--format=%C(auto)%D %C(242)(%aN %ar)%Creset"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -63,7 +63,7 @@ func (g Git) CurrentPosition(path string) (string, error) {
 }
 
 // Describe generates a version description based on tags and hash
-func (g Git) Describe(path string) (string, error) {
+func (g *Git) Describe(path string) (string, error) {
 	args := []string{"describe", "--tags", "--always"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -73,7 +73,7 @@ func (g Git) Describe(path string) (string, error) {
 }
 
 // Diff returns a formatted string of ahead/behind counts
-func (g Git) Diff(path, branch, target string) (int, int, error) {
+func (g *Git) Diff(path, branch, target string) (int, int, error) {
 	args := []string{"rev-list", "--left-right", branch + "..." + target}
 	output, _ := g.Exec(path, args)
 	outputStr := cleanOutput(output)

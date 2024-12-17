@@ -30,7 +30,7 @@ func NewGit() (g Git, err error) {
 }
 
 // Clone clones repository to filesystem.
-func (g Git) Clone(remote string, path string) (string, error) {
+func (g *Git) Clone(remote string, path string) (string, error) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return "", fmt.Errorf("directory already exists")
 	}
@@ -61,14 +61,14 @@ func (g *Git) Open(path string) (repo Repository, err error) {
 }
 
 // IsRepo checks if the directory is a git repository.
-func (g Git) IsRepo(path string) bool {
+func (g *Git) IsRepo(path string) bool {
 	_, err := git.PlainOpen(path)
 	return err == nil
 }
 
 // Remote expand the URL of the current remote, taking into account any
 // "url.<base>.insteadOf" config setting.
-func (g Git) Remote(path string) (string, error) {
+func (g *Git) Remote(path string) (string, error) {
 	args := []string{"ls-remote", "--get-url"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -78,7 +78,7 @@ func (g Git) Remote(path string) (string, error) {
 }
 
 // Fetch fetches all remotes, tags and prunes deleted branches.
-func (g Git) Fetch(path string) (string, error) {
+func (g *Git) Fetch(path string) (string, error) {
 	args := []string{"fetch", "--all", "--tags", "--prune", "--force"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -88,7 +88,7 @@ func (g Git) Fetch(path string) (string, error) {
 }
 
 // Pull fetches from remote and merges the current branch.
-func (g Git) Pull(path string) (string, error) {
+func (g *Git) Pull(path string) (string, error) {
 	args := []string{"pull", "--ff-only", "--stat", "--no-verbose"}
 	output, err := g.Exec(path, args)
 	if err != nil {
@@ -97,7 +97,7 @@ func (g Git) Pull(path string) (string, error) {
 	return cleanOutput(output), nil
 }
 
-func (g Git) Log(path, ref string) (string, error) {
+func (g *Git) Log(path, ref string) (string, error) {
 	args := []string{
 		"log",
 		"-15",
@@ -116,7 +116,7 @@ func (g Git) Log(path, ref string) (string, error) {
 	return cleanOutput(output), nil
 }
 
-func (g Git) CommitDates(path, branch string, days int) ([]string, error) {
+func (g *Git) CommitDates(path, branch string, days int) ([]string, error) {
 	args := []string{
 		"log",
 		"--format=format:%ad",
@@ -131,7 +131,7 @@ func (g Git) CommitDates(path, branch string, days int) ([]string, error) {
 	return strings.Split(cleanOutput(output), "\n"), nil
 }
 
-func (g Git) Refs(path string) ([]string, error) {
+func (g *Git) Refs(path string) ([]string, error) {
 	args := []string{
 		"for-each-ref",
 		"--format=%(refname)",
@@ -147,7 +147,7 @@ func (g Git) Refs(path string) ([]string, error) {
 }
 
 // Exec executes git command-line with provided arguments.
-func (g Git) Exec(path string, args []string) ([]byte, error) {
+func (g *Git) Exec(path string, args []string) ([]byte, error) {
 	var (
 		cmdOut []byte
 		err    error
