@@ -1,7 +1,18 @@
 # Change-log
 
 - - -
-## v0.11.0 - 2024-09-24
+
+## [v0.11.1](https://github.com/rafi/gits/compare/v0.11.0...v0.11.1) - 2024-12-17
+
+### Miscellaneous Chores
+
+- **(ci)** use proper actions - (d58ad33) - Rafael Bodill
+- align pointer receivers - (b566bda) - Rafael Bodill
+- use go 1.23 and update dependencies - (f78e266) - Rafael Bodill
+
+- - -
+
+## [v0.11.0](https://github.com/rafi/gits/compare/v0.10.0...v0.11.0) - 2024-09-24
 
 ### Bug Fixes
 
