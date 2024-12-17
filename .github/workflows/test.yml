@@ -1,25 +1,25 @@
-name: Gits test workflow
+name: tests
 
 on:
   push:
-    branches: ["master"]
+    branches: ["master", "next"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "next"]
 
 jobs:
   test:
-    name: test
+    name: Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
-      - name: Unit-tests
-        run: make test-unit
+          go-version-file: ./go.mod
+      - name: go test
+        run: go test ./...
 
   golangci:
-    name: lint
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -1,12 +1,8 @@
-name: Gits release workflow
-
+name: release
 on:
   push:
     tags:
-      - "*"
-
-env:
-  GO_VERSION: "1.22"
+      - "v*.*.*"
 
 jobs:
   release:
@@ -17,19 +13,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
       - name: Fetch Git tags
         run: git fetch --force --prune --tags
 
       - name: Build and Release
-        run: |
-          docker run \
-            --rm \
-            --privileged \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $(pwd)/sysroot:/sysroot \
-            -v $(pwd):/go/src/${PKG_NAME} \
-            -w /go/src/${PKG_NAME} \
-            -e CGO_ENABLED=0 \
-            -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
-            ghcr.io/goreleaser/goreleaser-cross:v${GO_VERSION} \
-            release --clean
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

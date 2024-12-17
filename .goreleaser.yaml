@@ -8,9 +8,9 @@ before:
     - go mod tidy
 
 builds:
-  - env:
+  - main: ./cmd/gits
+    env:
       - CGO_ENABLED=0
-    main: ./cmd/gits
     goos:
       - linux
       - darwin
@@ -18,8 +18,7 @@ builds:
 archives:
   - format: tar.gz
     name_template: >-
-      {{ .ProjectName }}_
-      {{- title .Os }}_
+      {{ .ProjectName }}-{{- .Os }}-
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
