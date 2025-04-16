@@ -32,7 +32,7 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	errorStyle := deps.Theme.Error.Copy().
+	errorStyle := deps.Theme.Error.
 		MarginLeft(cli.LeftMargin)
 
 	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))

@@ -82,7 +82,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 		return "", err
 	}
 
-	headerStyle := deps.Theme.PreviewHeader.Copy().PaddingLeft(2)
+	headerStyle := deps.Theme.PreviewHeader.PaddingLeft(2)
 	if width > 0 {
 		headerStyle = headerStyle.Align(lipgloss.Center).Width(width - 2)
 	}

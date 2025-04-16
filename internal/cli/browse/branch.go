@@ -89,14 +89,14 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	chartWidth := 0
 	chartSidePadding := 2
 
-	branchCurrentStyle := theme.BranchCurrent.Copy().
+	branchCurrentStyle := theme.BranchCurrent.
 		Align(lipgloss.Left)
 
-	panelLeftStyle := theme.Normal.Copy().
+	panelLeftStyle := theme.Normal.
 		// Border(lipgloss.NormalBorder()).
 		Align(lipgloss.Left)
 
-	chartStyle := theme.ChartDates.Copy().
+	chartStyle := theme.ChartDates.
 		// Border(lipgloss.NormalBorder()).
 		Padding(0, chartSidePadding).
 		Align(lipgloss.Left)
@@ -132,7 +132,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	doc := strings.Builder{}
 
 	// Header
-	headerStyle := theme.PreviewHeader.Copy()
+	headerStyle := theme.PreviewHeader
 	if width > 0 {
 		headerStyle = headerStyle.Align(lipgloss.Center).Width(width - 2)
 	}
@@ -197,7 +197,7 @@ func renderBranchDiffList(repo git.Repository, repoPath, subjectBranch string, r
 
 		doc.WriteString(
 			fmt.Sprintf("%s %s/%s\n",
-				theme.Diff.Copy().Width(20).Align(lipgloss.Right).Render(state),
+				theme.Diff.Width(20).Align(lipgloss.Right).Render(state),
 				theme.RemoteName.Render(remoteName),
 				theme.BranchName.Render(branchName),
 			))

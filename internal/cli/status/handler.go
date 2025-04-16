@@ -67,7 +67,7 @@ func statusRepo(repo domain.Repository, deps types.RuntimeCLI) error {
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		errStyle := deps.Theme.Error.Copy().PaddingLeft(8)
+		errStyle := deps.Theme.Error.PaddingLeft(8)
 		return cli.AbortOnRepoState(repo, errStyle)
 	}
 

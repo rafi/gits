@@ -150,6 +150,6 @@ func (t *Theme) TableRowStyle(row, _ int) lipgloss.Style {
 	default:
 		s = t.TableRowOdd
 	}
-	s.Copy().Margin(0, 1)
+	s.Margin(0, 1)
 	return s
 }

@@ -130,7 +130,7 @@ func RepoTitle(repo domain.Repository, basePath string, homeDir string, theme co
 	}
 	repoPath = strings.TrimPrefix(repoPath, basePath+"/")
 	repoPath = Path(repoPath, homeDir)
-	return theme.RepoTitle.Copy().
+	return theme.RepoTitle.
 		MarginLeft(LeftMargin).
 		MarginRight(RightMargin).
 		SetString(repoPath)
