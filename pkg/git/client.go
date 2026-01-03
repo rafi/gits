@@ -7,9 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/transport/client"
-	"github.com/go-git/go-git/v5/plumbing/transport/file"
+	"github.com/go-git/go-git/v6"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -19,8 +17,6 @@ type Git struct {
 
 // NewGit returns a new Git client.
 func NewGit() (g Git, err error) {
-	client.InstallProtocol("file", file.DefaultClient)
-
 	// Find executable path.
 	g.bin, err = exec.LookPath("git")
 	if err != nil {

@@ -29,7 +29,11 @@ func newBitbucketProvider(token string) (*bitbucketProvider, error) {
 	if len(userLogin) != 2 {
 		return provider, fmt.Errorf("token is invalid for %s", provider.sourceType)
 	}
-	provider.client = bitbucket.NewBasicAuth(userLogin[0], userLogin[1])
+	var err error
+	provider.client, err = bitbucket.NewBasicAuth(userLogin[0], userLogin[1])
+	if err != nil {
+		return provider, fmt.Errorf("bitbucket auth failed: %w", err)
+	}
 	provider.client.LimitPages = 1
 	return provider, nil
 }

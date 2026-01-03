@@ -87,7 +87,7 @@ func (c *gitLabProvider) fetchSubGroups(groupID string) ([]domain.Project, error
 
 		for _, g := range gs {
 			groups = append(groups, domain.Project{
-				ID:   strconv.Itoa(g.ID),
+				ID:   strconv.FormatInt(g.ID, 10),
 				Name: g.Path,
 			})
 		}
@@ -122,7 +122,7 @@ func (c *gitLabProvider) fetchGroupProjects(groupID string) ([]domain.Repository
 				continue
 			}
 			projects = append(projects, domain.Repository{
-				ID:        strconv.Itoa(p.ID),
+				ID:        strconv.FormatInt(p.ID, 10),
 				Name:      p.Path,
 				Namespace: strings.TrimPrefix(p.Namespace.FullPath, p.Path+"/"),
 				Src:       p.SSHURLToRepo,
