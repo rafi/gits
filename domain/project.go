@@ -29,7 +29,7 @@ type Project struct {
 	Exclude     []string        `json:"exclude,omitempty"`
 }
 
-// ProjectList is a list of projects with keys.
+// ProjectListKeyed is a list of projects with name keys.
 type ProjectListKeyed map[string]Project
 
 // GetRepo returns a repository by name and initial prefix.

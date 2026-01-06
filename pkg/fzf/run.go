@@ -2,6 +2,7 @@ package fzf
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,7 +70,7 @@ func (f *FZF) Run(stdin bytes.Buffer) (string, error) {
 
 	// Run shell command with stdin
 	var cmdOut, cmdErr bytes.Buffer
-	fzf := exec.Command(fzfBin, args...)
+	fzf := exec.CommandContext(context.TODO(), fzfBin, args...)
 	fzf.Stdin = &stdin
 	fzf.Stdout = &cmdOut
 	fzf.Stderr = os.Stderr

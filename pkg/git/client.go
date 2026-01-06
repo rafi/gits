@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -150,7 +151,7 @@ func (g *Git) Exec(path string, args []string) ([]byte, error) {
 	)
 	args = append([]string{"-C", path}, args...)
 
-	cmd := exec.Command(g.bin, args...)
+	cmd := exec.CommandContext(context.TODO(), g.bin, args...)
 	if cmdOut, err = cmd.CombinedOutput(); err != nil {
 		return cmdOut, err
 	}
