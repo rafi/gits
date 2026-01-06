@@ -2,6 +2,27 @@
 
 - - -
 
+## v0.11.2 - 2026-01-06
+
+### Features
+
+- (**contrib**) introduce cdgit for fish shell - (19c96c6) - Rafael Bodill
+
+### Bug Fixes
+
+- (**exec**) use alternate command with context - (90cbb18) - Rafael Bodill
+
+### Miscellaneous Chores
+
+- (**ci**) update golangci.yml for version 2 - (2e41ed4) - Rafael Bodill
+- (**ci**) update actions - (31b41f2) - Rafael Bodill
+- (**deps**) fix deprecations - (e311a0c) - Rafael Bodill
+- (**deps**) update packages - (db0d821) - Rafael Bodill
+- upgrade deps - (d6d46a3) - Rafael Bodill
+- upgrade go-git - (b7c9341) - Rafael Bodill
+
+- - -
+
 ## [v0.11.1](https://github.com/rafi/gits/compare/v0.11.0...v0.11.1) - 2024-12-17
 
 ### Miscellaneous Chores
