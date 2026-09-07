@@ -24,7 +24,7 @@ import (
 const (
 	appName  = "gits"
 	appShort = "gits is a tool for managing multiple Git repositories"
-	appLong  = `Fast CLI Git manager for multiple repositories grouped by projects, with GitHub/GitLab/Bitbucket support.`
+	appLong  = `Fast CLI Git manager for repositories grouped into gits projects, with GitHub/GitLab/Bitbucket support.`
 )
 
 var listOutput = "table"
@@ -51,9 +51,9 @@ func init() {
 }
 
 var addCmd = &cobra.Command{
-	Use:               "add [project] [repo]",
-	Short:             "Add repository to a project",
-	Args:              cobra.MaximumNArgs(2),
+	Use:               "add [project] [repo-or-pattern]...",
+	Short:             "Add repositories to a gits project",
+	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,
 	RunE:              runWithDeps(add.ExecAdd),
 }
@@ -109,7 +109,7 @@ var fetchCmd = &cobra.Command{
 
 var listCmd = &cobra.Command{
 	Use:               "list [project]...",
-	Short:             "List project repositories",
+	Short:             "List gits projects and their repositories",
 	Aliases:           []string{"ls"},
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,
@@ -153,7 +153,7 @@ var statusCmd = &cobra.Command{
 
 var syncCmd = &cobra.Command{
 	Use:               "sync [project]...",
-	Short:             "Synchronize project caches",
+	Short:             "Synchronize gits project caches",
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,
 	RunE:              runWithDeps(sync.ExecSync),

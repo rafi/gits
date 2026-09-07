@@ -3,28 +3,62 @@ package add
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// load loads a yaml file into an abstract node.
-func load(filePath string) (yaml.Node, error) {
+// load loads a YAML file into an abstract node. If no config exists, it
+// initializes an empty mapping at the default path without writing it until
+// the add operation succeeds.
+func load(filePath, homeDir string) (yaml.Node, string, bool, error) {
 	var node yaml.Node
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return node, err
+	if filePath == "" {
+		filePath = filepath.Join(homeDir, ".gits.yaml")
 	}
-	err = yaml.Unmarshal(data, &node)
-	return node, err
+
+	data, err := os.ReadFile(filePath)
+	created := false
+	initializedEmpty := false
+	switch {
+	case os.IsNotExist(err):
+		data = []byte("{}\n")
+		created = true
+		initializedEmpty = true
+	case err != nil:
+		return node, filePath, false, err
+	case len(strings.TrimSpace(string(data))) == 0:
+		data = []byte("{}\n")
+		initializedEmpty = true
+	}
+
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return node, filePath, false, err
+	}
+	if len(node.Content) == 0 || node.Content[0].Kind != yaml.MappingNode {
+		return node, filePath, false, fmt.Errorf("config root must be a YAML mapping")
+	}
+	if initializedEmpty {
+		node.Content[0].Style = 0
+	}
+	return node, filePath, created, nil
 }
 
 // save saves a yaml node into a file.
 func save(filePath string, node yaml.Node) error {
-	tmpFile, err := os.CreateTemp("", "gits")
+	configDir := filepath.Dir(filePath)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(configDir, ".gits-*")
 	if err != nil {
 		return err
 	}
+	tmpPath := tmpFile.Name()
 	defer tmpFile.Close()
+	defer os.Remove(tmpPath)
 
 	enc := yaml.NewEncoder(tmpFile)
 	enc.SetIndent(2)
@@ -39,7 +73,7 @@ func save(filePath string, node yaml.Node) error {
 		return err
 	}
 
-	return os.Rename(tmpFile.Name(), filePath)
+	return os.Rename(tmpPath, filePath)
 }
 
 // appendProject appends a project node to the root node.
