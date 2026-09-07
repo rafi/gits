@@ -67,6 +67,11 @@ help: ## Display this help.
 # ------------------------------------------------------------------------------
 #  build
 
+.PHONY: build
+build: ## Build the binary for the current platform.
+	@mkdir -p bin
+	go build -o bin/$(BINNAME) $(GOFLAGS) -trimpath -tags '$(TAGS)' -ldflags '$(LDFLAGS)' ./cmd/gits
+
 # Concat all release paths. (e.g. bin/release/gits-darwin-amd64, etc.)
 ALL_TARGETS := $(foreach plat,$(PLATFORMS),$(foreach arch,$(ARCHES),\
 	$(BINDIR)/$(BINNAME)-$(plat)-$(arch)))
