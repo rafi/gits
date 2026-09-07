@@ -51,9 +51,9 @@ func init() {
 }
 
 var addCmd = &cobra.Command{
-	Use:               "add [project] [repo]",
-	Short:             "Add repository to a project",
-	Args:              cobra.MaximumNArgs(2),
+	Use:               "add [project] [repo-or-pattern]...",
+	Short:             "Add repositories to a project",
+	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,
 	RunE:              runWithDeps(add.ExecAdd),
 }

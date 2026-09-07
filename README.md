@@ -79,6 +79,19 @@ gits status ~/code  # show status for all repositories at path
 gits status .       # show status for all repositories at current path
 ```
 
+The `add` command can add the current repository, clone and add a remote
+repository, or add multiple local repositories matched by a glob:
+
+```bash
+gits add acme
+gits add acme https://github.com/acme/api.git
+gits add acme 'backend*'
+```
+
+Quote glob patterns so `gits` can expand them consistently. Matching paths that
+are not Git repositories are ignored, and repositories already mapped to the
+project are skipped.
+
 To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your shell
 `~/.bashrc` or `~/.zshrc`, and use `cdgit` to navigate to a repository.
 

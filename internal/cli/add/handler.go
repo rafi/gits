@@ -13,10 +13,11 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// ExecAdd adds the current repository to a project in the config file.
+// ExecAdd adds one or more repositories to a project in the config file.
 //
 // Args: (optional)
 //   - project name
+//   - repository paths, a glob pattern, or a remote URL
 func ExecAdd(args []string, deps types.RuntimeCLI) error {
 	// Load the config file.
 	rootNode, err := load(deps.ConfigPath)
@@ -38,57 +39,99 @@ func ExecAdd(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	cwd, err := ensureRepository(args, deps)
+	repositoryPaths, err := ensureRepositories(args, deps)
 	if err != nil {
 		return err
 	}
 
-	remoteURL, err := deps.Git.Remote(cwd)
-	if err != nil {
-		return fmt.Errorf("failed adding repo: %w", err)
+	existingPaths := make(map[string]struct{}, len(project.Repos))
+	for _, repo := range project.Repos {
+		existingPaths[filepath.Clean(repo.AbsPath)] = struct{}{}
 	}
 
-	for _, r := range project.Repos {
-		if r.AbsPath == cwd {
-			return fmt.Errorf("repository already in project %q", project.Name)
+	addedPaths := make([]string, 0, len(repositoryPaths))
+	for _, repositoryPath := range repositoryPaths {
+		if _, exists := existingPaths[filepath.Clean(repositoryPath)]; exists {
+			continue
 		}
+
+		remoteURL, err := deps.Git.Remote(repositoryPath)
+		if err != nil {
+			return fmt.Errorf("failed adding repository %q: %w", repositoryPath, err)
+		}
+
+		nicePath := cli.Path(repositoryPath, deps.HomeDir)
+		appendRepo(nicePath, remoteURL, reposNode)
+		addedPaths = append(addedPaths, nicePath)
+		existingPaths[filepath.Clean(repositoryPath)] = struct{}{}
 	}
 
-	nicePath := cli.Path(cwd, deps.HomeDir)
-	appendRepo(nicePath, remoteURL, reposNode)
+	if len(addedPaths) == 0 {
+		return fmt.Errorf("all matched repositories are already in project %q", project.Name)
+	}
 
 	if err := save(deps.ConfigPath, rootNode); err != nil {
 		return err
 	}
 
-	fmt.Printf("Added %q repository to project %q\n", nicePath, project.Name)
+	if len(addedPaths) == 1 {
+		fmt.Printf("Added %q repository to project %q\n", addedPaths[0], project.Name)
+	} else {
+		fmt.Printf("Added %d repositories to project %q\n", len(addedPaths), project.Name)
+		for _, path := range addedPaths {
+			fmt.Printf("  - %s\n", path)
+		}
+	}
 	return nil
 }
 
-// ensureRepository returns the current repository path, and clones it if it
-// doesn't exist.
-func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
+// ensureRepositories returns repository paths selected by the arguments. A
+// single argument that is neither a local path nor a glob retains the existing
+// behavior of being cloned as a remote URL.
+func ensureRepositories(args []string, deps types.RuntimeCLI) ([]string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("unable to get current directory: %w", err)
+		return nil, fmt.Errorf("unable to get current directory: %w", err)
 	}
 
-	if len(args) > 1 {
-		// Clone repository if address has been provided.
-		remoteURL := args[1]
+	if len(args) < 2 {
+		if !deps.Git.IsRepo(cwd) {
+			return nil, fmt.Errorf("not a git repository: %s", cwd)
+		}
+		return []string{cwd}, nil
+	}
+
+	targets := args[1:]
+	if len(targets) == 1 && !hasGlobMeta(targets[0]) {
+		path := resolvePath(cwd, targets[0])
+		info, statErr := os.Stat(path)
+		switch {
+		case statErr == nil:
+			if !info.IsDir() || !deps.Git.IsRepo(path) {
+				return nil, fmt.Errorf("not a git repository: %s", path)
+			}
+			return []string{path}, nil
+		case !os.IsNotExist(statErr):
+			return nil, fmt.Errorf("unable to inspect repository %q: %w", path, statErr)
+		}
+
+		// Clone a single target that does not resolve to a local path.
+		remoteURL := targets[0]
 		baseName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
-		cwd = filepath.Join(cwd, baseName)
-		output, err := deps.Git.Clone(remoteURL, cwd)
+		path = filepath.Join(cwd, baseName)
+		output, err := deps.Git.Clone(remoteURL, path)
 		if err != nil {
 			fmt.Println(output)
-			return "", err
+			return nil, err
 		}
+		return []string{path}, nil
 	}
 
-	if !deps.Git.IsRepo(cwd) {
-		return "", fmt.Errorf("not a git repository: %s", cwd)
+	paths, err := expandRepositoryTargets(cwd, targets, deps.Git.IsRepo)
+	if err != nil {
+		return nil, err
 	}
-	return cwd, nil
+	return paths, nil
 }
 
 // ensureProject returns project by name, and creates it if it doesn't exist.
