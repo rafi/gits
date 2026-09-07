@@ -19,8 +19,8 @@ import (
 //   - project name
 //   - repository paths, a glob pattern, or a remote URL
 func ExecAdd(args []string, deps types.RuntimeCLI) error {
-	// Load the config file.
-	rootNode, err := load(deps.ConfigPath)
+	// Load or initialize the config file.
+	rootNode, configPath, configCreated, err := load(deps.ConfigPath, deps.HomeDir)
 	if err != nil {
 		return err
 	}
@@ -70,10 +70,13 @@ func ExecAdd(args []string, deps types.RuntimeCLI) error {
 		return fmt.Errorf("all matched repositories are already in project %q", project.Name)
 	}
 
-	if err := save(deps.ConfigPath, rootNode); err != nil {
+	if err := save(configPath, rootNode); err != nil {
 		return err
 	}
 
+	if configCreated {
+		fmt.Printf("Created config file %q\n", configPath)
+	}
 	if len(addedPaths) == 1 {
 		fmt.Printf("Added %q repository to project %q\n", addedPaths[0], project.Name)
 	} else {
