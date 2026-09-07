@@ -7,6 +7,7 @@
 <!-- vim-markdown-toc GFM -->
 
 - [Features](#features)
+- [Concepts](#concepts)
 - [Install](#install)
 - [Usage](#usage)
 - [Configuration](#configuration)
@@ -19,12 +20,22 @@
 Use as a git clone manager, and while developing on multiple git repositories.
 
 - [x] GitHub/GitLab/Bitbucket/filesystem support with cache
-- [x] Interactive browsing of projects/repositories/branches/tags
+- [x] Interactive browsing of gits projects/repositories/branches/tags
 - [x] Clone/fetch/pull for multiple repositories
 - [x] Show one-line status with icons for all repositories
-- [x] List projects as table/tree/json/name
+- [x] List gits projects as table/tree/json/name
 - [x] Checkout branches interactively
 - [x] Configurable by YAML/JSON/TOML
+
+## Concepts
+
+A **gits project** is a named group of Git repositories managed together by
+`gits`. It is not itself a Git repository or a software build project. Before
+using commands such as `list`, `status`, or `pull`, decide how you want to group
+your repositories into one or more gits projects.
+
+For example, a gits project named `backend` could contain every backend service
+repository, allowing `gits status backend` to check them together.
 
 ## Install
 
@@ -42,39 +53,40 @@ go install github.com/rafi/gits
 
 ## Usage
 
-Usage: `gits [command] <project>`
+Usage: `gits [command] <gits-project>`
 
 Available Commands:
 
-- `add` —      Add repository to a project
+- `add` —      Add repositories to a gits project
 - `browse` —   Browse branches and tags
 - `cd` —       Get repository path
 - `checkout` — Traverse repositories and optionally checkout branch
-- `clone` —    Clone all repositories for specified project(s)
+- `clone` —    Clone all repositories for specified gits project(s)
 - `fetch` —    Fetch and prune from all remotes
 - `help` —     Help about any command
-- `list` —     List all projects or their repositories
+- `list` —     List all gits projects or their repositories
 - `orphan` —   Finds orphan repository
 - `pull` —     Pull repositories
 - `status` —   Shows Git repositories short status
-- `sync` —     Synchronize project caches
+- `sync` —     Synchronize gits project caches
 - `version` —  Shows current version
 
-`gits` is configured by a YAML file. See [examples](#config-examples). `gits`
-will look for a config file at `~/.gits.yaml` or
-`$XDG_CONFIG_HOME/gits/.git.yaml`.
+`gits` stores gits project definitions in a configuration file. See
+[examples](#config-examples). It looks for `~/.gits.yaml` or
+`$XDG_CONFIG_HOME/gits/config.yaml`.
 
-You can run `gits` with project names as arguments, or a local path to a
-directory containing multiple projects.
+You can pass configured gits project names to commands. You can also pass a
+local path to discover the Git repositories beneath it dynamically, without
+creating a permanent gits project.
 
 Examples:
 
 ```bash
 gits                # list all commands
-gits list           # list all projects
-gits list acme      # list all project 'acme' repositories
+gits list           # list all gits projects
+gits list acme      # list repositories in the 'acme' gits project
 
-gits status acme    # show status for project 'acme' repositories
+gits status acme    # show status for repositories in the 'acme' gits project
 gits status ~/code  # show status for all repositories at path
 gits status .       # show status for all repositories at current path
 ```
@@ -90,17 +102,21 @@ gits add acme 'backend*'
 
 Quote glob patterns so `gits` can expand them consistently. Matching paths that
 are not Git repositories are ignored, and repositories already mapped to the
-project are skipped.
+gits project are skipped. If no config file exists, `gits add` creates
+`~/.gits.yaml` automatically.
 
 To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your shell
 `~/.bashrc` or `~/.zshrc`, and use `cdgit` to navigate to a repository.
 
 ## Configuration
 
-Configuration file must be present at `~/.gits.yaml` or `$XDG_CONFIG_HOME/gits/.gits.yaml`.
+Configuration is loaded from `~/.gits.yaml` or
+`$XDG_CONFIG_HOME/gits/config.yaml`. If neither exists, `gits add`
+automatically creates `~/.gits.yaml`.
 
 > [!WARNING]
-> Each project in config file can either have a `source` or `repos` key, not both.
+> Each gits project in the config file can have either a `source` or `repos`
+> key, not both.
 
 The structure of the config file is as follows:
 
@@ -108,9 +124,9 @@ The structure of the config file is as follows:
 ---
 # ~/.gits.yaml
 
-# Project definition
-projectname:          # Project name
-  desc: My projects   # Optional
+# Gits project definition
+projectname:          # Gits project name
+  desc: My repositories # Optional
   path: ~/code/github # Optional if 'repos' are specified and have absolute paths.
   source:             # Required if no 'repos' defined, default: filesystem
     type: github      # Required: github|gitlab|bitbucket|filesystem
@@ -126,7 +142,7 @@ anotherproject:
 
 ## Config Examples
 
-Each project in the following example is defined differently:
+Each gits project in the following example is defined differently:
 
 ```yaml
 ---
@@ -184,7 +200,7 @@ myapp:
   - dir: android
     src: https://github.com/app/android.git
 
-# Absolute directories and explicit remote source URL. (No project path)
+# Absolute directories and explicit remote source URL. (No gits project path)
 rafi:
   desc: My dotfiles
   repos:
