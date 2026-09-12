@@ -2,6 +2,7 @@ package version
 
 import "testing"
 
+//nolint:paralleltest // rewrites the package-level version; must stay serial.
 func TestGetMajorMinor(t *testing.T) {
 	orig := version
 	t.Cleanup(func() { version = orig })
@@ -27,6 +28,7 @@ func TestGetMajorMinor(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // rewrites the package-level version and metadata; must stay serial.
 func TestGetVersion(t *testing.T) {
 	origVer, origMeta := version, metadata
 	t.Cleanup(func() { version, metadata = origVer, origMeta })

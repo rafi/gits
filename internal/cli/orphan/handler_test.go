@@ -21,6 +21,7 @@ import (
 // every directory it walked.
 type fakeGit struct {
 	clitest.FakeGit
+
 	remote string
 }
 
@@ -50,6 +51,8 @@ func mkdirs(t *testing.T, root string, paths ...string) {
 // scoped to that repository's work tree and reports the git repository nested
 // inside it, which no Project declares.
 func TestExecOrphanNestedInRepository(t *testing.T) {
+	t.Parallel()
+
 	const src = "git@x:acme/embedded.git"
 	deps := clitest.New(t, fakeGit{remote: src}).WithProject("acme", clitest.Cloned("api"))
 
@@ -82,6 +85,8 @@ func TestExecOrphanNestedInRepository(t *testing.T) {
 // the Project Path and reports the repository sitting there that the project
 // never declared, while the one it did declare is passed over.
 func TestExecOrphanUndeclaredInProject(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, fakeGit{}).WithProject("acme", clitest.Cloned("api"))
 
 	root := deps.Projects["acme"].Path
@@ -104,6 +109,8 @@ func TestExecOrphanUndeclaredInProject(t *testing.T) {
 // scan: there is no tree to walk, so the Repository's own Reason aborts the
 // command on Diagnostic Output.
 func TestExecOrphanAbortsOnNonOKState(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, fakeGit{}).WithProject("acme", clitest.Broken("bad"))
 
 	err := ExecOrphan([]string{"acme", "bad"}, deps.RuntimeCLI)
@@ -123,6 +130,8 @@ func TestExecOrphanAbortsOnNonOKState(t *testing.T) {
 // stays alongside the entry-point test above because it pins where the scan
 // stops descending, which the reported list alone does not show.
 func TestFindNestedRepos(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	mkdirs(t, root,
 		".git/objects",         // the scanned repo's own metadata: skipped

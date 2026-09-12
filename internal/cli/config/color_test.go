@@ -3,6 +3,8 @@ package config
 import "testing"
 
 func TestColorOptionString(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		opt  colorOption
 		want string

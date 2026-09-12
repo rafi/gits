@@ -1,3 +1,5 @@
+// Package sync implements `gits sync`, which refreshes each Project's cached
+// repository list from its Provider Source.
 package sync
 
 import (
@@ -6,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/providers"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/providers"
 )
 
 // ExecSync cleans the cache for the given projects.

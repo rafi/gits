@@ -45,21 +45,23 @@ const (
 	RepoStateOK RepoState = "ok"
 )
 
+// GetName returns the repository's display name: its configured name, else
+// the basename of its Repo Dir or Repo Src, else a placeholder.
 func (r Repository) GetName() string {
-	title := ""
 	switch {
 	case r.Name != "":
-		title = r.Name
+		return r.Name
 	case r.Dir != "":
-		title = filepath.Base(r.Dir)
+		return filepath.Base(r.Dir)
 	case r.Src != "":
-		title = filepath.Base(r.Src)
+		return filepath.Base(r.Src)
 	default:
-		title = "<unnamed>"
+		return "<unnamed>"
 	}
-	return title
 }
 
+// GetNameWithNamespace returns GetName prefixed with the repository's
+// namespace, when it has one.
 func (r Repository) GetNameWithNamespace() string {
 	title := r.GetName()
 	if r.Namespace != "" {
@@ -68,6 +70,8 @@ func (r Repository) GetNameWithNamespace() string {
 	return title
 }
 
+// GetSource returns the repository's Repo Src, falling back to its Reason
+// when it has none — an `error` repository has a reason and no source.
 func (r Repository) GetSource() string {
 	switch {
 	case r.Src != "":
@@ -77,6 +81,8 @@ func (r Repository) GetSource() string {
 	}
 }
 
+// ContainedIn reports whether any of paths names this repository — by name,
+// by namespace, or by namespaced name.
 func (r Repository) ContainedIn(paths []string) bool {
 	keys := []string{
 		r.GetName(),

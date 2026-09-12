@@ -10,7 +10,11 @@ import (
 // maximum argument count is reached, instead of offering values cobra will
 // reject.
 func TestCompletionArgClamps(t *testing.T) {
+	t.Parallel()
+
 	t.Run("project+repo commands stop after 2 args", func(t *testing.T) {
+		t.Parallel()
+
 		got, directive := completeProjectRepo(nil, []string{"proj", "repo"}, "")
 		if got != nil || directive != cobra.ShellCompDirectiveNoFileComp {
 			t.Errorf("completeProjectRepo(2 args) = (%v, %v), want (nil, NoFileComp)",
@@ -19,6 +23,8 @@ func TestCompletionArgClamps(t *testing.T) {
 	})
 
 	t.Run("project+repo+branch commands stop after 3 args", func(t *testing.T) {
+		t.Parallel()
+
 		got, directive := completeProjectRepoBranch(nil, []string{"proj", "repo", "branch"}, "")
 		if got != nil || directive != cobra.ShellCompDirectiveNoFileComp {
 			t.Errorf("completeProjectRepoBranch(3 args) = (%v, %v), want (nil, NoFileComp)",
@@ -30,6 +36,8 @@ func TestCompletionArgClamps(t *testing.T) {
 // TestCompletionDepsSettings proves completion runs with the loaded settings
 // (cache toggle, includeArchived, provider timeout) instead of zero values.
 func TestCompletionDepsSettings(t *testing.T) {
+	t.Parallel()
+
 	orig := configFile.Settings
 	configFile.Settings.IncludeArchived = true
 	configFile.Settings.ProviderTimeout = "42s"

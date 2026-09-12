@@ -77,8 +77,12 @@ const wantReason = "relative `dir:` \"web\" requires the project to set `path:`"
 // renders to Result Output and nothing to Diagnostic Output. A format still
 // naming a process stream would leave the captured Result Output empty.
 func TestExecListWritesResultOutput(t *testing.T) {
+	t.Parallel()
+
 	for _, format := range []string{"name", "tree", "table", "wide", "json"} {
 		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+
 			deps := testDeps(t)
 			if err := ExecList(format, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
@@ -96,6 +100,8 @@ func TestExecListWritesResultOutput(t *testing.T) {
 // TestExecListNameRepos covers `gits list -o name acme`: one repository name
 // per line and nothing else, which is what a shell pipeline consumes.
 func TestExecListNameRepos(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	if err := ExecList("name", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
@@ -110,6 +116,8 @@ func TestExecListNameRepos(t *testing.T) {
 // TestExecListNameProjects covers `gits list -o name` with no project named:
 // the name format switches to project names, sorted.
 func TestExecListNameProjects(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	deps.Projects["beta"] = fixtureProject()
 
@@ -132,6 +140,8 @@ func TestExecListNameProjects(t *testing.T) {
 // empty path. The nesting of Sub-projects, not the leaf text, is what this
 // test pins.
 func TestExecListTree(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	if err := ExecList("tree", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
@@ -158,6 +168,8 @@ func TestExecListTree(t *testing.T) {
 // repository reaches the user with its Reason in the source column — that
 // column is where a repository with no Repo Src explains itself.
 func TestExecListTable(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	if err := ExecList("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
@@ -180,6 +192,8 @@ func TestExecListTable(t *testing.T) {
 // TestExecListWide covers the wide format: the same table with the path
 // column appended.
 func TestExecListWide(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	if err := ExecList("wide", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
@@ -198,6 +212,8 @@ func TestExecListWide(t *testing.T) {
 // projects keyed by name, each repository carrying its Repo State, and a
 // Reason on the `error` one.
 func TestExecListJSON(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	if err := ExecList("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
@@ -256,11 +272,13 @@ func TestExecListJSON(t *testing.T) {
 	}
 }
 
-// TestExecListUnknownFormat covers an unrecognised format being rejected
+// TestExecListUnknownFormat covers an unrecognized format being rejected
 // before any project is loaded. The fixture's Provider Source is invalid, so
 // a load would fail with its own error — the format error arriving instead is
 // what says nothing was loaded.
 func TestExecListUnknownFormat(t *testing.T) {
+	t.Parallel()
+
 	deps := testDeps(t)
 	deps.Projects = domain.ProjectListKeyed{"acme": {
 		Source: &domain.ProviderSource{Type: "nope"},

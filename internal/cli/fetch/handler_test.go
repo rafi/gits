@@ -23,6 +23,7 @@ import (
 // clitest.FakeGit and panics if reached.
 type fakeGit struct {
 	clitest.FakeGit
+
 	out string
 	err error
 
@@ -38,7 +39,7 @@ func (f *fakeGit) Fetch(_ context.Context, path string) (string, error) {
 }
 
 // Fetched returns the name of every repository Fetch was called for, in the
-// order the walker reached them.
+// order the Traversal reached them.
 func (f *fakeGit) Fetched() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -54,6 +55,8 @@ func (f *fakeGit) Fetched() []string {
 // rather than a terminal — emits nothing at all, so no ANSI can reach any
 // assertion in this package.
 func TestExecFetchProject(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -79,6 +82,8 @@ func TestExecFetchProject(t *testing.T) {
 // selects one repository, and only that one is fetched and rendered — without
 // the project title the whole-project path prints.
 func TestExecFetchSingleRepo(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -103,6 +108,8 @@ func TestExecFetchSingleRepo(t *testing.T) {
 // without a fetch and both count toward the exit code. The defective one
 // reports the Reason it was classified with, not a generic message.
 func TestExecFetchSkipsNonOKRepositories(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
@@ -132,6 +139,8 @@ func TestExecFetchSkipsNonOKRepositories(t *testing.T) {
 // git's message reaches Result Output on the repository's line and Diagnostic
 // Output in the error epilogue, and the run reports failure.
 func TestExecFetchFailureReportsEpilogue(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{err: errors.New("network down")}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 

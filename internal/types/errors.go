@@ -1,3 +1,5 @@
+// Package types holds the runtime dependencies every command is handed, and
+// the warning envelope commands report failures through.
 package types
 
 import (
@@ -6,13 +8,23 @@ import (
 	"strings"
 )
 
+// Type separates a real failure from a downgradeable warning.
 type Type int
 
+// ErrorType counts toward the exit code; WarningType does not.
 const (
 	ErrorType Type = iota
 	WarningType
 )
 
+// Warning is the envelope every command reports a per-Repository failure
+// through, carrying the Repository it concerns alongside the cause. Its Type
+// decides whether it counts toward the exit code.
+//
+// The name is the domain's, not the Go convention's: this is not always a
+// failure, so naming it WarningError would misstate what it carries.
+//
+//nolint:errname // deliberate — see above.
 type Warning struct {
 	Type   Type
 	Title  string
@@ -23,6 +35,8 @@ type Warning struct {
 	Cause error
 }
 
+// NewWarning formats a downgradeable warning, keeping the last error in args
+// as its cause so the chain stays visible.
 func NewWarning(reason string, args ...any) error {
 	return &Warning{
 		Type:   WarningType,

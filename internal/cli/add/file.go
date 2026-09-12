@@ -1,3 +1,5 @@
+// Package add implements `gits add`, which records a Repository in a
+// Project's config file.
 package add
 
 import (
@@ -21,12 +23,15 @@ func load(filePath string) (yaml.Node, error) {
 	return node, err
 }
 
+// yamlIndent is the indentation the config file is written back with.
+const yamlIndent = 2
+
 // save saves a yaml node into a file, atomically: the original file mode is
 // preserved, and any failure leaves no temp file behind.
 func save(filePath string, node yaml.Node) error {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
+	enc.SetIndent(yamlIndent)
 	if err := enc.Encode(&node); err != nil {
 		return err
 	}
@@ -66,7 +71,7 @@ func appendRepo(path, remoteSrc string, node *yaml.Node) {
 
 // findProject finds a project node in the config file.
 func findProject(projectName string, rootNode *yaml.Node) (*yaml.Node, error) {
-	for i := 0; i < len(rootNode.Content[0].Content); i++ {
+	for i := range len(rootNode.Content[0].Content) {
 		node := rootNode.Content[0].Content[i]
 		if node.Kind == yaml.ScalarNode && node.Value == projectName {
 			return rootNode.Content[0].Content[i+1], nil
@@ -77,7 +82,7 @@ func findProject(projectName string, rootNode *yaml.Node) (*yaml.Node, error) {
 
 // findScalarMapping finds a scalar mapping in a node.
 func findScalarMapping(nodeName string, nodes *yaml.Node) (*yaml.Node, error) {
-	for i := 0; i < len(nodes.Content); i++ {
+	for i := range len(nodes.Content) {
 		node := nodes.Content[i]
 		if node.Kind == yaml.ScalarNode && node.Value == nodeName {
 			return nodes.Content[i+1], nil

@@ -1,3 +1,5 @@
+// Package orphan implements `gits orphan`, which finds repositories on disk
+// under a Project Path that the Project's config does not declare.
 package orphan
 
 import (
@@ -12,9 +14,9 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/providers"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
-	"github.com/rafi/gits/pkg/providers"
 )
 
 // ExecOrphan discovers orphaned repositories, ones that are not known to the
@@ -59,7 +61,7 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 // repositories — directories with their own .git — which no provider knows
 // about. Detection is by .git presence, not rev-parse: inside a work tree
 // every subdirectory reports --is-inside-work-tree.
-func findNestedRepos(ctx context.Context, root string, gitClient git.GitClient) ([]domain.Repository, error) {
+func findNestedRepos(ctx context.Context, root string, gitClient git.Client) ([]domain.Repository, error) {
 	orphanRepos := []domain.Repository{}
 	walkErr := godirwalk.Walk(root, &godirwalk.Options{
 		Unsorted:            false,
@@ -105,7 +107,7 @@ func makeRepoMap(project domain.Project, repoMap map[string]bool) {
 
 // findOrphanedRepos scans the project's directory for repositories that are not
 // known to the project provider.
-func findOrphanedRepos(ctx context.Context, project domain.Project, gitClient git.GitClient) ([]domain.Repository, error) {
+func findOrphanedRepos(ctx context.Context, project domain.Project, gitClient git.Client) ([]domain.Repository, error) {
 	orphanRepos := []domain.Repository{}
 	knownRepos := make(map[string]bool)
 	makeRepoMap(project, knownRepos)

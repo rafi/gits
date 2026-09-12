@@ -13,6 +13,7 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
+// ReadMeFilename is the file the repository overview previews.
 const ReadMeFilename = "README.md"
 
 // ExecRepoOverview displays a repository with README preview.
@@ -71,7 +72,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 		return "", err
 	}
 
-	headerStyle := deps.Theme.PreviewHeader.PaddingLeft(2)
+	headerStyle := deps.Theme.PreviewHeader.PaddingLeft(previewHeaderPad)
 	if width > 0 {
 		headerStyle = previewHeader(headerStyle, width)
 	}

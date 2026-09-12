@@ -1,3 +1,7 @@
+// Package checkout implements `gits checkout`, which walks a Project's
+// Repositories and optionally checks a branch out of each. It is not a Bulk
+// Command: it asks the user per Repository. See
+// docs/adr/0005-bulk-commands-share-one-module.md.
 package checkout
 
 import (
@@ -87,7 +91,7 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 	want, current, err := promptRepo(repoTitle, repo.AbsPath, deps)
 	if err != nil {
 		// Name the repository, as the checkout failure below does: in a
-		// project walk these land in a summary that is otherwise anonymous.
+		// project traversal these land in a summary that is otherwise anonymous.
 		// The wrap keeps huh.ErrUserAborted matchable by both abort sites.
 		return cli.RepoError(err, repo)
 	}
@@ -155,7 +159,7 @@ func newBranchPrompt(repoTitle string, branches []string, choice *string) *huh.S
 		Value(choice)
 
 	// Only ask for a height when the list needs paging. huh pads a field out
-	// to the height it is given — blank rows a project-wide walk would repeat
+	// to the height it is given — blank rows a project-wide run would repeat
 	// for every repository — whereas an unset height sizes the field to its
 	// options exactly, however the title happens to wrap. The extra row is
 	// that title, which counts against the height.

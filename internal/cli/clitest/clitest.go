@@ -5,9 +5,9 @@
 // types.RuntimeCLI through it rather than each carrying its own copy of this
 // wiring, so a new dependency is added in one place.
 //
-// Buffers are not terminals, so walk.NewReporter selects the no-op progress
+// Buffers are not terminals, so the bulk module selects the no-op progress
 // reporter and no ANSI cursor control reaches the captured text. Result and
-// Diagnostic are additionally ANSI-stripped, since the theme still colours
+// Diagnostic are additionally ANSI-stripped, since the theme still colors
 // what it renders.
 package clitest
 
@@ -22,8 +22,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
 // HomeDir is the home directory tests render paths against. It never exists on
@@ -46,7 +46,7 @@ type Deps struct {
 // New builds test dependencies around gitClient, which may be nil when the
 // command under test never reaches the git client — any call on a nil client
 // panics, which is the intended guard.
-func New(t *testing.T, gitClient git.GitClient) *Deps {
+func New(t *testing.T, gitClient git.Client) *Deps {
 	t.Helper()
 
 	settings := domain.Settings{WorkerCount: 1}
@@ -59,7 +59,7 @@ func New(t *testing.T, gitClient git.GitClient) *Deps {
 		Out:     &deps.out,
 		Err:     &deps.err,
 		Runtime: types.Runtime{
-			// Cancelled when the test ends, so a command left walking does
+			// Canceled when the test ends, so a command left walking does
 			// not outlive it.
 			Ctx:      t.Context(),
 			Git:      gitClient,
@@ -91,7 +91,7 @@ func (d *Deps) Diagnostic() string { return ansi.Strip(d.err.String()) }
 // repository — and embeds the interface, so any call the test did not intend
 // panics on the nil embed. A command's own fake embeds it and implements the
 // calls that command makes.
-type FakeGit struct{ git.GitClient }
+type FakeGit struct{ git.Client }
 
 // IsRepo reports every path as a git repository. Classification stats the path
 // first, and NewProject creates a directory only for a repository it declares

@@ -22,6 +22,8 @@ func writeTemp(t *testing.T, name, content string) string {
 }
 
 func TestLoadConfigFormats(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		file    string
@@ -48,6 +50,8 @@ func TestLoadConfigFormats(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			path := writeTemp(t, tt.file, tt.content)
 			f := &File{}
 			if err := f.loadConfig(path); err != nil {
@@ -74,6 +78,8 @@ func TestLoadConfigFormats(t *testing.T) {
 }
 
 func TestLoadConfigProviderSettings(t *testing.T) {
+	t.Parallel()
+
 	path := writeTemp(t, "c.yaml",
 		"p:\n  desc: x\nsettings:\n  includeArchived: true\n  providerTimeout: 90s\n")
 	f := &File{}
@@ -91,6 +97,8 @@ func TestLoadConfigProviderSettings(t *testing.T) {
 // TestLoadConfigProviderTokens proves per-provider credentials parse from
 // the settings block, in both spellings of the token command key.
 func TestLoadConfigProviderTokens(t *testing.T) {
+	t.Parallel()
+
 	path := writeTemp(t, "c.yaml", `
 p:
   desc: x
@@ -117,6 +125,8 @@ settings:
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider, func(t *testing.T) {
+			t.Parallel()
+
 			auth := f.Settings.ProviderAuth(tt.provider)
 			if auth.Token != tt.wantToken {
 				t.Errorf("token = %q, want %q", auth.Token, tt.wantToken)
@@ -129,6 +139,8 @@ settings:
 }
 
 func TestLoadConfigUnsupportedExt(t *testing.T) {
+	t.Parallel()
+
 	path := writeTemp(t, "c.ini", "nope")
 	f := &File{}
 	if err := f.loadConfig(path); err == nil {
@@ -137,6 +149,8 @@ func TestLoadConfigUnsupportedExt(t *testing.T) {
 }
 
 func TestLoadConfigWorkerCountDefault(t *testing.T) {
+	t.Parallel()
+
 	path := writeTemp(t, "c.yaml", "myproj:\n  desc: hi\n")
 	f := &File{}
 	if err := NewConfigFromFile(path, f); err != nil {
@@ -149,6 +163,8 @@ func TestLoadConfigWorkerCountDefault(t *testing.T) {
 }
 
 func TestConvertDeprecatedProjectsKey(t *testing.T) {
+	t.Parallel()
+
 	path := writeTemp(t, "c.yaml", "projects:\n  legacy:\n    desc: old\n")
 	f := &File{}
 	if err := f.loadConfig(path); err != nil {
@@ -165,8 +181,7 @@ func TestConvertDeprecatedProjectsKey(t *testing.T) {
 }
 
 func TestFindDefaultPath(t *testing.T) {
-	homedir.DisableCache = true
-	t.Cleanup(func() { homedir.DisableCache = false })
+	disableHomedirCache(t)
 
 	t.Run("xdg config dir", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
@@ -234,9 +249,10 @@ func TestFindDefaultPath(t *testing.T) {
 // TestNewConfigDefaultsWithoutFile proves runtime defaults do not depend on a
 // config file: without one, bulk commands must still get a real worker count
 // and the -C color toggle must still be honored.
+//
+//nolint:paralleltest // restoreEnv rewrites process environment; must stay serial.
 func TestNewConfigDefaultsWithoutFile(t *testing.T) {
-	homedir.DisableCache = true
-	t.Cleanup(func() { homedir.DisableCache = false })
+	disableHomedirCache(t)
 
 	origProfile := lipgloss.Writer.Profile
 	origForce, hadForce := os.LookupEnv("CLICOLOR_FORCE")
@@ -276,6 +292,7 @@ func TestNewConfigDefaultsWithoutFile(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest // restoreEnv rewrites process environment; must stay serial.
 func TestLoadConfigColorToggle(t *testing.T) {
 	origProfile := lipgloss.Writer.Profile
 	origNoColor, hadNoColor := os.LookupEnv("NO_COLOR")
@@ -317,9 +334,22 @@ func TestLoadConfigColorToggle(t *testing.T) {
 	})
 }
 
+// disableHomedirCache stops go-homedir answering from its process-wide cache,
+// so a test that sets $HOME per case gets the home it just set.
+func disableHomedirCache(t *testing.T) {
+	t.Helper()
+	//nolint:reassign // go-homedir exposes its cache toggle as a package variable.
+	homedir.DisableCache = true
+	t.Cleanup(func() {
+		//nolint:reassign // restore the package default this test changed.
+		homedir.DisableCache = false
+	})
+}
+
 func restoreEnv(t *testing.T, key, val string, had bool) {
 	t.Helper()
 	if had {
+		//nolint:usetesting // t.Setenv registers its own cleanup and cannot run from inside one.
 		os.Setenv(key, val)
 	} else {
 		os.Unsetenv(key)

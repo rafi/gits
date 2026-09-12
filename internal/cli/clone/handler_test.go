@@ -12,7 +12,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/pkg/git"
+	"github.com/rafi/gits/internal/git"
 )
 
 // Every test here drives ExecClone — the command's real entry point — with
@@ -31,6 +31,7 @@ type cloneCall struct {
 // repositories were reached and what was made of the answer.
 type fakeGit struct {
 	clitest.FakeGit
+
 	out string
 	err error
 
@@ -54,7 +55,7 @@ func (f *fakeGit) Clone(_ context.Context, src, path string) (string, error) {
 	return f.out, nil
 }
 
-// Clones returns every clone, in the order the walker reached them.
+// Clones returns every clone, in the order the Traversal reached them.
 func (f *fakeGit) Clones() []cloneCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -72,6 +73,8 @@ func (f *fakeGit) Clones() []cloneCall {
 // handed a buffer rather than a terminal — emits nothing at all, so no ANSI can
 // reach any assertion in this package.
 func TestExecCloneProject(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
@@ -101,6 +104,8 @@ func TestExecCloneProject(t *testing.T) {
 // selects one repository, and only that one is cloned and rendered — without
 // the project title the whole-project path prints.
 func TestExecCloneSingleRepo(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
@@ -122,6 +127,8 @@ func TestExecCloneSingleRepo(t *testing.T) {
 // into, so it is passed over reporting the Reason it was classified with, and
 // counts toward the exit code.
 func TestExecCloneSkipsErrorState(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"), clitest.Broken("bad"))
 
@@ -146,6 +153,8 @@ func TestExecCloneSkipsErrorState(t *testing.T) {
 // git's message reaches Result Output on the repository's line and Diagnostic
 // Output in the error epilogue, and the run reports failure.
 func TestExecCloneFailureReportsEpilogue(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{err: errors.New("repository not found")}
 	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"))
 
@@ -181,6 +190,8 @@ func skipping(t *testing.T, g *fakeGit, repos ...clitest.Repo) *clitest.Deps {
 // not to clone: nothing is cloned, and the skip is reported as Diagnostic
 // Output rather than through a logger nothing else in a command reaches.
 func TestExecCloneSkippedProject(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := skipping(t, g, clitest.NotCloned("gone"))
 
@@ -190,6 +201,11 @@ func TestExecCloneSkippedProject(t *testing.T) {
 
 	if got := g.Clones(); len(got) != 0 {
 		t.Errorf("clones = %+v, want none under a project configured not to clone", got)
+	}
+	// The project vanishes rather than appearing as an empty block: its title
+	// is not drawn either, so Result Output stays pipeable-empty.
+	if got := deps.Result(); got != "" {
+		t.Errorf("Result Output = %q, want a skipped project to render nothing", got)
 	}
 	if got := deps.Diagnostic(); !strings.Contains(got, "Skipping acme") {
 		t.Errorf("Diagnostic Output = %q, want the skipped project named", got)
@@ -202,6 +218,8 @@ func TestExecCloneSkippedProject(t *testing.T) {
 // Result Output, and the skip is reported exactly as it is for the whole
 // project.
 func TestExecCloneSkippedProjectSingleRepo(t *testing.T) {
+	t.Parallel()
+
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := skipping(t, g, clitest.NotCloned("gone"))
 
@@ -220,39 +238,45 @@ func TestExecCloneSkippedProjectSingleRepo(t *testing.T) {
 	}
 }
 
-// TestPruneSkipped: a project with Clone=false keeps its header node but drops
-// its repos and entire subtree, so the walker clones nothing under it.
-func TestPruneSkipped(t *testing.T) {
+// TestExecCloneSkippedSubProject covers a sub-project configured not to clone:
+// it takes everything beneath it with it, while the rest of the project clones
+// as usual. A skipped project vanishes rather than failing — nothing under it
+// counts toward the exit code.
+func TestExecCloneSkippedSubProject(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{out: "Cloning into 'z'…"}
+	deps := clitest.New(t, g)
+
+	root := clitest.NewProject(t, clitest.NotCloned("z"))
+	skipped := clitest.NewProject(t, clitest.NotCloned("y"))
+	skipped.Name = "skip"
 	no := false
-	sub := domain.Project{Name: "sub", Repos: []domain.Repository{{Name: "x"}}}
-	skipped := domain.Project{
-		Name:        "skip",
-		Clone:       &no,
-		Repos:       []domain.Repository{{Name: "y"}},
-		SubProjects: []domain.Project{sub},
-	}
-	root := domain.Project{
-		Name:        "root",
-		Repos:       []domain.Repository{{Name: "z"}},
-		SubProjects: []domain.Project{skipped},
+	skipped.Clone = &no
+	sub := clitest.NewProject(t, clitest.NotCloned("x"))
+	sub.Name = "sub"
+	skipped.SubProjects = []domain.Project{sub}
+	root.SubProjects = []domain.Project{skipped}
+	deps.Projects["acme"] = root
+
+	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
 
-	pruned := pruneSkipped(root)
-	if len(pruned.Repos) != 1 {
-		t.Fatalf("root repos = %d, want 1", len(pruned.Repos))
+	want := []cloneCall{{clitest.RepoSrc("z"), "z"}}
+	if !slices.Equal(g.Clones(), want) {
+		t.Errorf("clones = %+v, want only the unskipped repository %+v", g.Clones(), want)
 	}
-	if len(pruned.SubProjects) != 1 {
-		t.Fatalf("subprojects = %d, want 1", len(pruned.SubProjects))
+	result := deps.Result()
+	if !strings.Contains(result, "z") {
+		t.Errorf("Result Output = %q, want the unskipped repository's line", result)
 	}
-	s := pruned.SubProjects[0]
-	if len(s.Repos) != 0 {
-		t.Fatalf("skipped project repos = %d, want 0", len(s.Repos))
+	for _, banned := range []string{":: skip", ":: sub"} {
+		if strings.Contains(result, banned) {
+			t.Errorf("Result Output = %q, want %q to have vanished entirely", result, banned)
+		}
 	}
-	if len(s.SubProjects) != 0 {
-		t.Fatalf("skipped project subprojects = %d, want 0", len(s.SubProjects))
-	}
-	// The original tree must be left untouched (prune returns a copy).
-	if len(root.SubProjects[0].Repos) != 1 {
-		t.Fatal("pruneSkipped mutated the original tree")
+	if got := deps.Diagnostic(); !strings.Contains(got, "Skipping skip") {
+		t.Errorf("Diagnostic Output = %q, want the skipped sub-project named", got)
 	}
 }

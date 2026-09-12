@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
 // Every test here drives ExecPush — the command's real entry point — with
@@ -28,17 +28,16 @@ type pushCall struct {
 	Opts   git.PushOptions
 }
 
-// fakeGit implements the three calls pushRepo makes. Everything else is
+// fakeGit implements the two calls pushRepo makes. Everything else is
 // inherited from clitest.FakeGit and panics if reached, except IsRepo, which is
 // overridden to record that classification ran at all.
 type fakeGit struct {
 	clitest.FakeGit
-	branch      string
-	branchErr   error
-	upstream    string
-	upstreamErr error
-	pushOut     string
-	pushErr     error
+
+	head    git.HeadRef
+	headErr error
+	pushOut string
+	pushErr error
 
 	mu         sync.Mutex
 	pushes     []pushCall
@@ -52,12 +51,8 @@ func (f *fakeGit) IsRepo(context.Context, string) bool {
 	return true
 }
 
-func (f *fakeGit) CurrentBranch(context.Context, string) (string, error) {
-	return f.branch, f.branchErr
-}
-
-func (f *fakeGit) UpstreamBranch(context.Context, string) (string, error) {
-	return f.upstream, f.upstreamErr
+func (f *fakeGit) HeadUpstream(context.Context, string) (git.HeadRef, error) {
+	return f.head, f.headErr
 }
 
 func (f *fakeGit) Push(
@@ -69,7 +64,7 @@ func (f *fakeGit) Push(
 	return f.pushOut, f.pushErr
 }
 
-// Pushes returns every push, in the order the walker reached them.
+// Pushes returns every push, in the order the Traversal reached them.
 func (f *fakeGit) Pushes() []pushCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -93,10 +88,13 @@ func pushed(calls []pushCall) []string {
 	return names
 }
 
-// tracking is a fake whose repositories all sit on a branch with an Upstream,
-// which is the condition push works under.
+// tracking is a fake whose repositories all sit on a branch with an Upstream
+// that resolves, which is the condition push works under.
 func tracking() *fakeGit {
-	return &fakeGit{branch: "main", upstream: "origin/main", pushOut: "Everything up-to-date"}
+	return &fakeGit{
+		head:    git.HeadRef{Branch: "main", Upstream: "origin/main"},
+		pushOut: "Everything up-to-date",
+	}
 }
 
 // TestExecPushProject covers `gits push acme`: every repository of the project
@@ -108,6 +106,8 @@ func tracking() *fakeGit {
 // rather than a terminal — emits nothing at all, so no ANSI can reach any
 // assertion in this package.
 func TestExecPushProject(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -137,6 +137,8 @@ func TestExecPushProject(t *testing.T) {
 // selects one repository, and only that one is pushed and rendered — without
 // the project title the whole-project path prints.
 func TestExecPushSingleRepo(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -161,6 +163,8 @@ func TestExecPushSingleRepo(t *testing.T) {
 // without a push and both count toward the exit code. The defective one reports
 // the Reason it was classified with, not a generic message.
 func TestExecPushSkipsNonOKRepositories(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
@@ -190,6 +194,8 @@ func TestExecPushSkipsNonOKRepositories(t *testing.T) {
 // reaches Result Output on the repository's line and Diagnostic Output in the
 // error epilogue, and the run reports failure.
 func TestExecPushFailureReportsEpilogue(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	g.pushErr = errors.New("failed to push some refs: non-fast-forward")
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
@@ -210,30 +216,58 @@ func TestExecPushFailureReportsEpilogue(t *testing.T) {
 	}
 }
 
-// TestExecPushNoUpstreamIsSkipped covers the skip ADR-0002 requires: pushing a
-// branch with no Upstream is undefined, so the repository is passed over with a
-// rendered line, nothing is pushed, and — unlike every other skip — the run
-// still succeeds. Both ways of saying there is no Upstream are covered.
-func TestExecPushNoUpstreamIsSkipped(t *testing.T) {
+// TestExecPushUnpushableIsSkipped covers the two skips ADR-0002 requires:
+// pushing a branch with no Upstream is undefined, and pushing one whose
+// Upstream is gone would re-create the branch someone deleted on the Remote.
+// Both are passed over with a rendered line, nothing is pushed, and — unlike
+// every other skip — the run still succeeds.
+//
+// That no push is issued is asserted directly rather than inferred from the
+// line: a push in the gone state succeeds, so the output alone would not say
+// whether the ref was scattered.
+func TestExecPushUnpushableIsSkipped(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name string
-		git  *fakeGit
+		head git.HeadRef
+		want []string
 	}{
-		{"sentinel", &fakeGit{branch: "main", upstreamErr: git.ErrNoUpstream}},
-		{"empty upstream", &fakeGit{branch: "main", upstream: ""}},
+		{
+			name: "no upstream",
+			head: git.HeadRef{Branch: "main"},
+			want: []string{"skipped", git.ErrNoUpstream.Error()},
+		},
+		{
+			name: "gone upstream",
+			head: git.HeadRef{Branch: "feat-b", Upstream: "origin/feat-b", Gone: true},
+			want: []string{"skipped", "origin/feat-b", git.ErrUpstreamGone.Error()},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			deps := clitest.New(t, tc.git).WithProject("acme", clitest.Cloned("api"))
+			t.Parallel()
+
+			g := &fakeGit{head: tc.head}
+			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
 			if err := ExecPush(git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecPush error = %v, want a skipped repository not to fail the run", err)
 			}
-			if got := tc.git.Pushes(); len(got) != 0 {
+			if got := g.Pushes(); len(got) != 0 {
 				t.Errorf("pushes = %+v, want none for a skipped repository", got)
 			}
-			if got := deps.Result(); !strings.Contains(got, "skipped") ||
-				!strings.Contains(got, git.ErrNoUpstream.Error()) {
-				t.Errorf("Result Output = %q, want the repository's line to explain the skip", got)
+			got := deps.Result()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("Result Output = %q, want the line to contain %q", got, want)
+				}
+			}
+			// Nothing git says about the condition reaches the user: the state
+			// is read from a query that answers it, not from a failure.
+			for _, banned := range []string{"fatal:", "@{upstream}", "ambiguous argument"} {
+				if strings.Contains(got, banned) {
+					t.Errorf("Result Output = %q, want no raw git error text (%q)", got, banned)
+				}
 			}
 			if got := deps.Diagnostic(); got != "" {
 				t.Errorf("Diagnostic Output = %q, want a warning to leave the epilogue empty", got)
@@ -242,10 +276,41 @@ func TestExecPushNoUpstreamIsSkipped(t *testing.T) {
 	}
 }
 
+// TestExecPushSkipsReadDifferently covers the two skips being distinguishable:
+// a branch merged and cleaned up on the Remote must not read like one that was
+// never pushed.
+func TestExecPushSkipsReadDifferently(t *testing.T) {
+	t.Parallel()
+
+	line := func(t *testing.T, head git.HeadRef) string {
+		t.Helper()
+		deps := clitest.New(t, &fakeGit{head: head}).
+			WithProject("acme", clitest.Cloned("api"))
+		if err := ExecPush(git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+			t.Fatalf("ExecPush error = %v, want nil", err)
+		}
+		return deps.Result()
+	}
+
+	none := line(t, git.HeadRef{Branch: "main"})
+	gone := line(t, git.HeadRef{Branch: "feat-b", Upstream: "origin/feat-b", Gone: true})
+	if none == gone {
+		t.Errorf("both skips rendered %q, want the two conditions to read apart", none)
+	}
+	if strings.Contains(none, "origin/") {
+		t.Errorf("Result Output = %q, want no Upstream named for a branch without one", none)
+	}
+}
+
 // TestExecPushRenamedUpstream covers an Upstream under a different name than
 // the local branch: the push goes to that name, not to the local branch's.
 func TestExecPushRenamedUpstream(t *testing.T) {
-	g := &fakeGit{branch: "feature", upstream: "upstream/release/v2", pushOut: "ok"}
+	t.Parallel()
+
+	g := &fakeGit{
+		head:    git.HeadRef{Branch: "feature", Upstream: "upstream/release/v2"},
+		pushOut: "ok",
+	}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
 	if err := ExecPush(git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
@@ -262,10 +327,13 @@ func TestExecPushRenamedUpstream(t *testing.T) {
 }
 
 // TestExecPushLocalUpstreamIsAnError covers a branch tracking another local
-// branch: it has an Upstream, so the skip does not apply, but there is nowhere
-// to push it.
+// branch: it has an Upstream that resolves, so neither skip applies, but there
+// is nowhere to push it. The two conditions are independent — this one is
+// unaffected by the Gone Upstream skip beside it.
 func TestExecPushLocalUpstreamIsAnError(t *testing.T) {
-	g := &fakeGit{branch: "feature", upstream: "main"}
+	t.Parallel()
+
+	g := &fakeGit{head: git.HeadRef{Branch: "feature", Upstream: "main"}}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
 	err := ExecPush(git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI)
@@ -287,14 +355,15 @@ func TestExecPushLocalUpstreamIsAnError(t *testing.T) {
 // branch is resolved, the destination is left to git, and a repository with no
 // Upstream is pushed rather than skipped.
 func TestExecPushSelectsRefsSuspendsUpstream(t *testing.T) {
+	t.Parallel()
+
 	for _, opts := range []git.PushOptions{
 		{All: true}, {Branches: true}, {Tags: true},
 	} {
 		// A fake that would fail if the branch or the Upstream were consulted.
 		g := &fakeGit{
-			branchErr:   errors.New("CurrentBranch must not be called"),
-			upstreamErr: git.ErrNoUpstream,
-			pushOut:     "pushed",
+			headErr: errors.New("HeadUpstream must not be called"),
+			pushOut: "pushed",
 		}
 		deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
@@ -309,9 +378,67 @@ func TestExecPushSelectsRefsSuspendsUpstream(t *testing.T) {
 	}
 }
 
+// TestExecPushSelectsRefsFailure covers git refusing a ref-selecting push: the
+// destination was left to git, so the failure is reported as itself and counts
+// toward the exit code.
+func TestExecPushSelectsRefsFailure(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{pushErr: errors.New("failed to push some refs")}
+	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+
+	err := ExecPush(git.PushOptions{All: true}, []string{"acme", "api"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecPush error = nil, want the rejected push to fail")
+	}
+	if !strings.Contains(err.Error(), "failed to push some refs") {
+		t.Errorf("ExecPush error = %v, want git's message", err)
+	}
+}
+
+// TestExecPushHeadFailure covers the Upstream lookup itself failing — an
+// unreadable repository, or a cancellation: it surfaces as itself and fails the
+// run, rather than being downgraded to one of the documented skips. Nothing is
+// pushed either way.
+func TestExecPushHeadFailure(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"canceled", context.Canceled, context.Canceled.Error()},
+		{"git failure", errors.New("not a git repository"), "not a git repository"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			g := &fakeGit{headErr: tc.err}
+			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+
+			err := ExecPush(git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI)
+			if err == nil {
+				t.Fatal("ExecPush error = nil, want the failed lookup to fail the run")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ExecPush error = %v, want it to carry %q", err, tc.want)
+			}
+			if types.IsWarning(err) {
+				t.Error("a failed lookup is a failure, not one of the documented skips")
+			}
+			if got := g.Pushes(); len(got) != 0 {
+				t.Errorf("pushes = %+v, want none", got)
+			}
+		})
+	}
+}
+
 // TestExecPushPassthroughFlagsReachGit covers the flags gits does not interpret
 // arriving at the git client unchanged.
 func TestExecPushPassthroughFlagsReachGit(t *testing.T) {
+	t.Parallel()
+
 	opts := git.PushOptions{FollowTags: true, Atomic: true, Prune: true, DryRun: true}
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
@@ -332,6 +459,8 @@ func TestExecPushPassthroughFlagsReachGit(t *testing.T) {
 // remote. The same dependencies with a valid combination do reach
 // classification, which is what makes that assertion meaningful.
 func TestExecPushRejectsConflictingFlags(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 

@@ -3,6 +3,8 @@ package domain
 import "testing"
 
 func TestRepositoryGetName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		repo Repository
@@ -15,6 +17,8 @@ func TestRepositoryGetName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := tt.repo.GetName(); got != tt.want {
 				t.Errorf("GetName() = %q, want %q", got, tt.want)
 			}
@@ -23,6 +27,8 @@ func TestRepositoryGetName(t *testing.T) {
 }
 
 func TestRepositoryGetNameWithNamespace(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		repo Repository
@@ -34,6 +40,8 @@ func TestRepositoryGetNameWithNamespace(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := tt.repo.GetNameWithNamespace(); got != tt.want {
 				t.Errorf("GetNameWithNamespace() = %q, want %q", got, tt.want)
 			}
@@ -42,6 +50,8 @@ func TestRepositoryGetNameWithNamespace(t *testing.T) {
 }
 
 func TestRepositoryGetSource(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		repo Repository
@@ -53,6 +63,8 @@ func TestRepositoryGetSource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := tt.repo.GetSource(); got != tt.want {
 				t.Errorf("GetSource() = %q, want %q", got, tt.want)
 			}
@@ -61,6 +73,8 @@ func TestRepositoryGetSource(t *testing.T) {
 }
 
 func TestRepositoryContainedIn(t *testing.T) {
+	t.Parallel()
+
 	repo := Repository{Name: "repo", Namespace: "team"}
 	tests := []struct {
 		name  string
@@ -75,6 +89,8 @@ func TestRepositoryContainedIn(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := repo.ContainedIn(tt.paths); got != tt.want {
 				t.Errorf("ContainedIn(%v) = %v, want %v", tt.paths, got, tt.want)
 			}

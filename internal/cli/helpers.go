@@ -14,11 +14,15 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
+// The margins every Repository title is rendered with, so titles from
+// different commands line up.
 const (
 	LeftMargin  = 2
 	RightMargin = 2
 )
 
+// The sentinel errors a non-OK Repo State is reported as when the state
+// carries no Reason of its own.
 var (
 	ErrNotRepository = fmt.Errorf("not a repository")
 	ErrNotCloned     = fmt.Errorf("not cloned")
@@ -45,7 +49,8 @@ func stateError(repo domain.Repository) error {
 
 // AbortOnRepoState writes an error message as Diagnostic Output and aborts if
 // the repository is in an error state. Used by single-repo/interactive
-// callers; walk.RepoFunc callers use RepoStateError to render no line at all.
+// callers; a Bulk Command declares the states it accepts instead, and the
+// module renders the guard failure on the repository's own line.
 //
 // The message is terminated here, so a caller that writes a repository title
 // ahead of it shares that line and appends no newline of its own.
@@ -56,15 +61,15 @@ func AbortOnRepoState(w io.Writer, repo domain.Repository, style lipgloss.Style)
 }
 
 // RepoStateError wraps a non-OK repository's state through RepoError,
-// rendering no line — for walk.RepoFunc callers that build their own result
-// line and only need the error. It counts toward the exit code: a repository
-// the caller expected to work on is not there.
+// rendering no line — for the bulk module's state guard, which builds the
+// repository's result line itself and only needs the error. It counts toward
+// the exit code: a repository the command expected to work on is not there.
 func RepoStateError(repo domain.Repository) error {
 	return RepoError(stateError(repo), repo)
 }
 
 // RepoError wraps a repo failure as a *types.Warning (ErrorType) so it counts
-// as a real error and matches uniformly via errors.As.
+// as a real error and matches uniformly via [errors.As].
 func RepoError(err error, repo domain.Repository) error {
 	return &types.Warning{
 		Title:  repo.GetName(),
@@ -88,17 +93,11 @@ func RepoWarning(err error, repo domain.Repository) error {
 	}
 }
 
-// IndentMultiline reformats a rendered repo line so its continuation lines (any
-// after the first) are indented and prefixed with "> ". This keeps multi-line
-// git output and errors visually attached to their repo row instead of bleeding
-// out to the left margin. A single-line input is returned unchanged.
-func IndentMultiline(line string) string {
-	return indentContinuation(line, "    > ")
-}
-
-// indentContinuation keeps the first line of s untouched and prefixes every
+// IndentContinuation keeps the first line of s untouched and prefixes every
 // continuation line with prefix. A single-line input is returned unchanged.
-func indentContinuation(s, prefix string) string {
+// The error epilogue and the bulk module's result lines each pass their own
+// prefix; the pass over the string is the same one.
+func IndentContinuation(s, prefix string) string {
 	head, rest, found := strings.Cut(s, "\n")
 	if !found {
 		return s
@@ -120,7 +119,7 @@ func RenderErrors(w io.Writer, errs []error, excludeWarnings bool) error {
 			continue
 		}
 		count++
-		out = append(out, indentContinuation(fmt.Sprintf("  - %s", err), "      > "))
+		out = append(out, IndentContinuation(fmt.Sprintf("  - %s", err), "      > "))
 	}
 	if count < 1 {
 		return nil
@@ -171,10 +170,8 @@ func ProjectTitle(project domain.Project, theme config.Theme) string {
 // ProjectTreeTitle returns a formatted project title for tree display.
 func ProjectTreeTitle(project domain.Project, homeDir string, theme config.Theme) string {
 	title := theme.ProjectTitle.Render(project.Name)
-	sourceName := getSourceType(project)
-	if sourceName != "" {
-		sourceName := theme.Provider.Render(sourceName)
-		title = fmt.Sprintf("%s %s", title, sourceName)
+	if sourceName := getSourceType(project); sourceName != "" {
+		title = fmt.Sprintf("%s %s", title, theme.Provider.Render(sourceName))
 	}
 	projectPath := ""
 	if project.AbsPath != "" {
@@ -204,64 +201,13 @@ func RepoTitle(repo domain.Repository, project domain.Project, homeDir string, t
 		SetString(RepoRelPath(project, repo, homeDir))
 }
 
-// PaddedRepoTitle is the common prologue of every walk.RepoFunc: the repo's
-// title padded to width — the project's widest repo name, precomputed once per
-// walk via NewTitleWidths — so the result bodies align (AC-7).
-func PaddedRepoTitle(repo domain.Repository, project domain.Project, width int, deps types.RuntimeCLI) lipgloss.Style {
-	return RepoTitle(repo, project, deps.HomeDir, deps.Theme).Width(width)
-}
-
-// TitleWidths holds the widest repo title of every project node in a tree,
-// measured once up front so walk.RepoFunc handlers — called once per repo,
-// concurrently — don't remeasure the whole project for each repo. Nodes are
-// identified by their Repos backing array, the one part of a project value
-// that stays shared as the walker copies project nodes around.
-type TitleWidths map[*domain.Repository]int
-
-// NewTitleWidths measures every project node of root, root itself included,
-// matching the walker's traversal so each group keeps its own padding.
-func NewTitleWidths(root domain.Project, homeDir string) TitleWidths {
-	widths := TitleWidths{}
-	var visit func(p domain.Project)
-	visit = func(p domain.Project) {
-		if len(p.Repos) > 0 {
-			widths[&p.Repos[0]] = GetMaxLen(p, homeDir)
-		}
-		for _, sub := range p.SubProjects {
-			visit(sub)
-		}
-	}
-	visit(root)
-	return widths
-}
-
-// For returns project's precomputed title width; a project without repos has
-// no titles to pad and yields zero.
-func (tw TitleWidths) For(project domain.Project) int {
-	if len(project.Repos) == 0 {
-		return 0
-	}
-	return tw[&project.Repos[0]]
-}
-
 // Path returns a clean path with ~ for home directory.
 func Path(path, homeDir string) string {
-	cut := false
 	path = filepath.Clean(path)
-	if path, cut = strings.CutPrefix(path, homeDir); cut {
-		path = "~" + path
+	if rest, cut := strings.CutPrefix(path, homeDir); cut {
+		return "~" + rest
 	}
 	return path
-}
-
-// GetMaxLen returns the rendered width of the widest repo display path in a
-// project, measured on the same derivation the titles render.
-func GetMaxLen(project domain.Project, homeDir string) int {
-	maxLen := 0
-	for _, repo := range project.Repos {
-		maxLen = max(maxLen, lipgloss.Width(RepoRelPath(project, repo, homeDir)))
-	}
-	return maxLen
 }
 
 // getSourceType returns the source type name of a project.

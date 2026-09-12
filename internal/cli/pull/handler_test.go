@@ -10,7 +10,8 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/pkg/git"
+	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/types"
 )
 
 // Every test here drives ExecPull — the command's real entry point — with
@@ -18,29 +19,24 @@ import (
 // Project and acting on a single Repository, the error epilogue and the exit
 // code all run for real, and the interactive finder is never reached.
 
-// fakeGit implements the three calls pullRepo makes and records the
-// repositories it pulled, since which were pulled — and which were passed over
-// — is itself what several tests assert. Everything else is inherited from
-// clitest.FakeGit and panics if reached.
+// fakeGit implements the two calls pullRepo makes and records the repositories
+// it pulled, since which were pulled — and which were passed over — is itself
+// what several tests assert. Everything else is inherited from clitest.FakeGit
+// and panics if reached.
 type fakeGit struct {
 	clitest.FakeGit
-	branch      string
-	branchErr   error
-	upstream    string
-	upstreamErr error
-	pullOut     string
-	pullErr     error
+
+	head    git.HeadRef
+	headErr error
+	pullOut string
+	pullErr error
 
 	mu     sync.Mutex
 	pulled []string
 }
 
-func (f *fakeGit) CurrentBranch(context.Context, string) (string, error) {
-	return f.branch, f.branchErr
-}
-
-func (f *fakeGit) UpstreamBranch(context.Context, string) (string, error) {
-	return f.upstream, f.upstreamErr
+func (f *fakeGit) HeadUpstream(context.Context, string) (git.HeadRef, error) {
+	return f.head, f.headErr
 }
 
 func (f *fakeGit) Pull(_ context.Context, path string) (string, error) {
@@ -51,17 +47,20 @@ func (f *fakeGit) Pull(_ context.Context, path string) (string, error) {
 }
 
 // Pulled returns the name of every repository Pull was called for, in the
-// order the walker reached them.
+// order the Traversal reached them.
 func (f *fakeGit) Pulled() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.pulled)
 }
 
-// tracking is a fake whose repositories all sit on a branch with an Upstream,
-// which is the only condition pull works under.
+// tracking is a fake whose repositories all sit on a branch with an Upstream
+// that resolves, which is the only condition pull works under.
 func tracking() *fakeGit {
-	return &fakeGit{branch: "main", upstream: "origin/main", pullOut: "up to date"}
+	return &fakeGit{
+		head:    git.HeadRef{Branch: "main", Upstream: "origin/main"},
+		pullOut: "up to date",
+	}
 }
 
 // TestExecPullProject covers `gits pull acme`: every repository of the project
@@ -73,6 +72,8 @@ func tracking() *fakeGit {
 // rather than a terminal — emits nothing at all, so no ANSI can reach any
 // assertion in this package.
 func TestExecPullProject(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -98,6 +99,8 @@ func TestExecPullProject(t *testing.T) {
 // selects one repository, and only that one is pulled and rendered — without
 // the project title the whole-project path prints.
 func TestExecPullSingleRepo(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -122,6 +125,8 @@ func TestExecPullSingleRepo(t *testing.T) {
 // without a pull and both count toward the exit code. The defective one reports
 // the Reason it was classified with, not a generic message.
 func TestExecPullSkipsNonOKRepositories(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
@@ -151,6 +156,8 @@ func TestExecPullSkipsNonOKRepositories(t *testing.T) {
 // git's message reaches Result Output on the repository's line and Diagnostic
 // Output in the error epilogue, and the run reports failure.
 func TestExecPullFailureReportsEpilogue(t *testing.T) {
+	t.Parallel()
+
 	g := tracking()
 	g.pullErr = errors.New("would clobber local changes")
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
@@ -172,72 +179,134 @@ func TestExecPullFailureReportsEpilogue(t *testing.T) {
 	}
 }
 
-// TestExecPullNoUpstream covers a branch with no Upstream: unlike push, which
-// passes over it as a warning, pull has nowhere to pull from and counts it as a
-// failure. Both ways of saying so — the sentinel and an empty answer — are
-// covered, and the single-Repository path is driven so the repository's own
-// error is returned rather than the run's summary.
-func TestExecPullNoUpstream(t *testing.T) {
+// TestExecPullUnpullableIsSkipped covers the two branches pull has nowhere to
+// pull from: one with no Upstream at all, and one whose Upstream is gone —
+// merged and cleaned up on the Remote. Both are reported on the repository's
+// line, both leave the exit code alone, and the gone one names the Upstream
+// that went away so the two read differently.
+//
+// The no-Upstream case is the deliberate change from the hard error pull used
+// to raise, which is what makes it agree with push about an unpushable branch.
+func TestExecPullUnpullableIsSkipped(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name string
-		git  *fakeGit
+		head git.HeadRef
+		want []string
 	}{
-		{"sentinel", &fakeGit{branch: "main", upstreamErr: git.ErrNoUpstream}},
-		{"empty upstream", &fakeGit{branch: "main", upstream: ""}},
+		{
+			name: "no upstream",
+			head: git.HeadRef{Branch: "main"},
+			want: []string{"skipped", git.ErrNoUpstream.Error()},
+		},
+		{
+			name: "gone upstream",
+			head: git.HeadRef{Branch: "feat-b", Upstream: "origin/feat-b", Gone: true},
+			want: []string{"skipped", "origin/feat-b", git.ErrUpstreamGone.Error()},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			deps := clitest.New(t, tc.git).WithProject("acme", clitest.Cloned("api"))
+			t.Parallel()
 
-			err := ExecPull([]string{"acme", "api"}, deps.RuntimeCLI)
-			if err == nil {
-				t.Fatal("ExecPull error = nil, want a branch with no Upstream to fail")
+			g := &fakeGit{head: tc.head}
+			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+
+			if err := ExecPull([]string{"acme"}, deps.RuntimeCLI); err != nil {
+				t.Fatalf("ExecPull error = %v, want a skipped repository not to fail the run", err)
 			}
-			if !errors.Is(err, git.ErrNoUpstream) {
-				t.Errorf("ExecPull error = %v, want it to wrap ErrNoUpstream", err)
+			if len(g.Pulled()) != 0 {
+				t.Errorf("pulled %v, want nothing pulled", g.Pulled())
 			}
-			if len(tc.git.Pulled()) != 0 {
-				t.Errorf("pulled %v, want nothing pulled", tc.git.Pulled())
+			got := deps.Result()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("Result Output = %q, want the line to contain %q", got, want)
+				}
 			}
-			if got := deps.Result(); !strings.Contains(got, "no upstream") {
-				t.Errorf("Result Output = %q, want the repository's line to explain", got)
+			// Nothing git says about the condition reaches the user: the state
+			// is read from a query that answers it, not from a failure.
+			for _, banned := range []string{"fatal:", "@{upstream}", "ambiguous argument"} {
+				if strings.Contains(got, banned) {
+					t.Errorf("Result Output = %q, want no raw git error text (%q)", got, banned)
+				}
+			}
+			if got := deps.Diagnostic(); got != "" {
+				t.Errorf("Diagnostic Output = %q, want a warning to leave the epilogue empty", got)
+			}
+
+			// The single-Repository path returns the repository's own error
+			// rather than the run's summary, so the skip reaches the root as
+			// itself — and must arrive there as a warning, which is what the
+			// root downgrades to a zero exit code.
+			single := clitest.New(t, &fakeGit{head: tc.head}).
+				WithProject("acme", clitest.Cloned("api"))
+			if err := ExecPull([]string{"acme", "api"}, single.RuntimeCLI); !types.IsWarning(err) {
+				t.Errorf("ExecPull error = %v, want the single-repository skip downgraded", err)
 			}
 		})
 	}
 }
 
-// TestExecPullUpstreamFailureNotMislabeled covers an UpstreamBranch failure that
-// is not ErrNoUpstream (e.g. cancellation): it must surface as itself, not as
-// the misleading "no upstream tracking branch found".
-func TestExecPullUpstreamFailureNotMislabeled(t *testing.T) {
-	g := &fakeGit{branch: "main", upstreamErr: context.Canceled}
-	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+// TestExecPullSkipsReadDifferently covers the two skips being distinguishable:
+// the gone one names its Upstream, and the no-Upstream one claims nothing about
+// an Upstream it does not have.
+func TestExecPullSkipsReadDifferently(t *testing.T) {
+	t.Parallel()
 
-	err := ExecPull([]string{"acme", "api"}, deps.RuntimeCLI)
-	if err == nil {
-		t.Fatal("ExecPull error = nil, want the cancelled lookup to fail")
+	line := func(t *testing.T, head git.HeadRef) string {
+		t.Helper()
+		deps := clitest.New(t, &fakeGit{head: head}).
+			WithProject("acme", clitest.Cloned("api"))
+		if err := ExecPull([]string{"acme"}, deps.RuntimeCLI); err != nil {
+			t.Fatalf("ExecPull error = %v, want nil", err)
+		}
+		return deps.Result()
 	}
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("ExecPull error = %v, want it to wrap context.Canceled", err)
+
+	none := line(t, git.HeadRef{Branch: "main"})
+	gone := line(t, git.HeadRef{Branch: "feat-b", Upstream: "origin/feat-b", Gone: true})
+	if none == gone {
+		t.Errorf("both skips rendered %q, want the two conditions to read apart", none)
 	}
-	if strings.Contains(err.Error(), "no upstream") {
-		t.Errorf("ExecPull error = %v, want the cancellation not mislabeled as a skip", err)
+	if strings.Contains(none, "origin/") {
+		t.Errorf("Result Output = %q, want no Upstream named for a branch without one", none)
 	}
 }
 
-// TestExecPullBranchError covers a failure resolving the current branch: it is
-// counted, and nothing is pulled.
-func TestExecPullBranchError(t *testing.T) {
-	g := &fakeGit{branchErr: errors.New("detached HEAD")}
-	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+// TestExecPullHeadFailure covers the Upstream lookup itself failing (e.g.
+// cancellation): it surfaces as itself and counts toward the exit code, rather
+// than being downgraded to one of the documented skips.
+func TestExecPullHeadFailure(t *testing.T) {
+	t.Parallel()
 
-	err := ExecPull([]string{"acme", "api"}, deps.RuntimeCLI)
-	if err == nil {
-		t.Fatal("ExecPull error = nil, want an unresolvable branch to fail")
-	}
-	if !strings.Contains(err.Error(), "detached HEAD") {
-		t.Errorf("ExecPull error = %v, want git's message", err)
-	}
-	if len(g.Pulled()) != 0 {
-		t.Errorf("pulled %v, want nothing pulled", g.Pulled())
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"canceled", context.Canceled, context.Canceled.Error()},
+		{"git failure", errors.New("not a git repository"), "not a git repository"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			g := &fakeGit{headErr: tc.err}
+			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+
+			err := ExecPull([]string{"acme", "api"}, deps.RuntimeCLI)
+			if err == nil {
+				t.Fatal("ExecPull error = nil, want the failed lookup to fail the run")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ExecPull error = %v, want it to carry %q", err, tc.want)
+			}
+			if types.IsWarning(err) {
+				t.Error("a failed lookup is a failure, not one of the documented skips")
+			}
+			if len(g.Pulled()) != 0 {
+				t.Errorf("pulled %v, want nothing pulled", g.Pulled())
+			}
+		})
 	}
 }

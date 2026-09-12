@@ -11,6 +11,8 @@ import (
 // across filesystems would fail with EXDEV), preserves the original file
 // mode, and leaves no stray temp files behind.
 func TestSaveRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	content := "myproj:\n  repos:\n    - dir: ~/code/x\n      src: git@x:a/x.git\n"

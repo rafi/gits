@@ -11,21 +11,41 @@ import (
 	"charm.land/lipgloss/v2/table"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/config"
-	"github.com/rafi/gits/internal/cli/walk"
 	"github.com/rafi/gits/internal/types"
 )
 
+// render returns the command's renderer. It owns the tail: which format is
+// drawn, and what the run's exit code is — the json form deliberately prints
+// no error epilogue and exits zero for per-repository conditions, since a
+// repository's condition is data in that document rather than the command's
+// outcome, while an interrupted run still fails because the document is
+// incomplete and nothing inside it says so.
+func render(format string, opts Options) func(bulk.Results[*repoStatus], types.RuntimeCLI) error {
+	return func(res bulk.Results[*repoStatus], deps types.RuntimeCLI) error {
+		if format == "json" {
+			// A single repository's group carries the sub-projects the run
+			// never visited, so the document is built from that one node
+			// rather than descending.
+			if err := renderJSON(deps.Out, res.Groups, !res.Single, opts); err != nil {
+				return err
+			}
+			return res.Interrupted
+		}
+		return bulk.Epilogue(res, renderGroups(res, opts, deps), deps)
+	}
+}
+
 // renderGroups prints one compact table per project group as Result Output and
-// a summary footer as Diagnostic Output, returning every result error in stable
-// tree order. The traversal (nil slots, error collection, titles, separators) is
-// walk's; this body filters rows — active filters (Dirty, Unsynced) drop
-// non-matching rows, error rows stay visible — and projects left with no rows
-// disappear entirely.
+// a summary footer as Diagnostic Output, returning every result error in
+// stable tree order. The traversal (nil slots, error collection, titles,
+// separators) is the module's; this body filters rows — active filters (Dirty,
+// Unsynced) drop non-matching rows, error rows stay visible — and projects
+// left with no rows disappear entirely.
 func renderGroups(
-	groups []walk.GroupResult,
-	withTitles bool,
+	res bulk.Results[*repoStatus],
 	opts Options,
 	deps types.RuntimeCLI,
 ) []error {
@@ -35,22 +55,42 @@ func renderGroups(
 		all    []*repoStatus
 		hidden int
 	)
-	errs := walk.RenderGroups(out, groups, deps, withTitles,
-		func(g walk.GroupResult) (string, bool) {
-			sts, skipped := visibleStatuses(g, opts)
-			hidden += skipped
-			if opts.filtered() && len(sts) == 0 {
-				return "", false
-			}
-			if len(sts) == 0 {
-				return "", true
-			}
-			all = append(all, sts...)
-			return renderTable(sts, termWidth, opts, deps), true
-		})
+	errs := bulk.Render(res, deps, func(g bulk.Group[*repoStatus]) (string, bool) {
+		sts, skipped := visibleStatuses(g, opts)
+		hidden += skipped
+		if opts.filtered() && len(sts) == 0 {
+			return "", false
+		}
+		if len(sts) == 0 {
+			return "", true
+		}
+		all = append(all, sts...)
+		return renderTable(sts, termWidth, opts, deps), true
+	})
 	renderFooter(deps.Err, all, hidden, deps.Theme)
 	return errs
 }
+
+const (
+	// Column padding. The gutter is the leading glyph column, which sits
+	// tighter against the title than the ordinary cells do.
+	cellPad        = 2
+	gutterPadLeft  = 2
+	gutterPadRight = 1
+
+	// The thresholds compactCount abbreviates at, so every count fits two
+	// cells: exact below a hundred, then C, K, and ∞.
+	countHundred     = 100
+	countThousand    = 1000
+	countUncountable = 10000
+
+	// hoursPerDay converts the age of a commit into the coarser units
+	// shortAge renders it in.
+	hoursPerDay  = 24
+	daysPerWeek  = 7
+	daysPerMonth = 30
+	daysPerYear  = 365
+)
 
 // tableColumn describes one display-order column of the status table.
 type tableColumn struct {
@@ -166,14 +206,14 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 		Headers(headers...).
 		Rows(rows...).
 		StyleFunc(func(row, c int) lipgloss.Style {
-			s := lipgloss.NewStyle().PaddingRight(2)
+			s := lipgloss.NewStyle().PaddingRight(cellPad)
 			if c < 0 || c >= len(cols) {
 				return s
 			}
 			col := cols[c]
 			switch {
 			case col.gutter:
-				s = s.PaddingLeft(2).PaddingRight(1)
+				s = s.PaddingLeft(gutterPadLeft).PaddingRight(gutterPadRight)
 			case col.right:
 				s = s.Align(lipgloss.Right)
 			case col.bare:
@@ -231,7 +271,7 @@ func newSlotWidths(icons domain.Icons) slotWidths {
 		fourth: max(lipgloss.Width(icons.DiffError), lipgloss.Width(icons.NA), 1),
 	}
 	for _, icon := range []string{
-		icons.DiffClean, icons.NA, icons.Diverged, icons.Ahead, icons.Behind,
+		icons.DiffClean, icons.NA, icons.Gone, icons.Diverged, icons.Ahead, icons.Behind,
 	} {
 		w.upstream = max(w.upstream, lipgloss.Width(icon))
 	}
@@ -256,6 +296,11 @@ func statusSlots(st *repoStatus, icons domain.Icons, th config.Theme, widths slo
 
 	upstreamIcon := icons.DiffClean
 	switch {
+	case st.upstreamGone:
+		// Ahead of the divergence glyphs: a Gone Upstream is what the row is
+		// about, and the counts — measured against a fallback ref, when one
+		// was found — still show in the Upstream⇅ column.
+		upstreamIcon = icons.Gone
 	case st.noUpstream:
 		upstreamIcon = icons.NA
 	case st.ahead > 0 && st.behind > 0:
@@ -372,12 +417,12 @@ func padLeft(s string, w int) string {
 // hundreds (632 → 6C), thousands (4567 → 4K) and ∞ from 10000 up.
 func compactCount(n int) string {
 	switch {
-	case n >= 10000:
+	case n >= countUncountable:
 		return "∞"
-	case n >= 1000:
-		return strconv.Itoa(n/1000) + "K"
-	case n >= 100:
-		return strconv.Itoa(n/100) + "C"
+	case n >= countThousand:
+		return strconv.Itoa(n/countThousand) + "K"
+	case n >= countHundred:
+		return strconv.Itoa(n/countHundred) + "C"
 	default:
 		return strconv.Itoa(n)
 	}
@@ -394,16 +439,16 @@ func shortAge(t, now time.Time) string {
 		return "now"
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
+	case d < hoursPerDay*time.Hour:
 		return fmt.Sprintf("%dh", int(d.Hours()))
-	case d < 7*24*time.Hour:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	case d < 30*24*time.Hour:
-		return fmt.Sprintf("%dw", int(d.Hours()/(24*7)))
-	case d < 365*24*time.Hour:
-		return fmt.Sprintf("%dmo", int(d.Hours()/(24*30)))
+	case d < daysPerWeek*hoursPerDay*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/hoursPerDay))
+	case d < daysPerMonth*hoursPerDay*time.Hour:
+		return fmt.Sprintf("%dw", int(d.Hours()/(hoursPerDay*daysPerWeek)))
+	case d < daysPerYear*hoursPerDay*time.Hour:
+		return fmt.Sprintf("%dmo", int(d.Hours()/(hoursPerDay*daysPerMonth)))
 	default:
-		return fmt.Sprintf("%dy", int(d.Hours()/(24*365)))
+		return fmt.Sprintf("%dy", int(d.Hours()/(hoursPerDay*daysPerYear)))
 	}
 }
 

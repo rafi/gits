@@ -8,9 +8,9 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/fzf"
 )
 
 // ExecBrowse opens a fzf window to browse the entire catalog.
@@ -53,7 +53,7 @@ func resolveProjectRepo(args []string, deps types.RuntimeCLI) (domain.Repository
 	if err != nil {
 		return domain.Repository{}, fmt.Errorf("unable to load project %q: %w", args[0], err)
 	}
-	if len(args) < 2 {
+	if len(args) < repoArgIdx+1 {
 		return domain.Repository{}, fmt.Errorf("missing repo name")
 	}
 	repo, found := project.GetRepo(args[1], "")
@@ -62,6 +62,24 @@ func resolveProjectRepo(args []string, deps types.RuntimeCLI) (domain.Repository
 	}
 	return repo, nil
 }
+
+const (
+	// The positional argument slots the browse commands read: project, repo,
+	// then an optional branch.
+	repoArgIdx   = 1
+	branchArgIdx = 2
+
+	// previewHeaderPad indents a preview pane header, and previewHeaderTrim
+	// is what centring it costs in width.
+	previewHeaderPad  = 2
+	previewHeaderTrim = 2
+
+	// The branch overview is drawn as two side-by-side panels.
+	panelCount       = 2
+	chartSidePadding = 2
+	branchNameIndent = 10
+	branchStateWidth = 20
+)
 
 // previewWidth returns the fzf preview pane width, or zero when unknown.
 // Fzf sets environment variables to detect width/height, see man fzf.
@@ -75,7 +93,7 @@ func previewWidth() int {
 
 // previewHeader centers a preview pane header across its width.
 func previewHeader(style lipgloss.Style, width int) lipgloss.Style {
-	return style.Align(lipgloss.Center).Width(width - 2)
+	return style.Align(lipgloss.Center).Width(width - previewHeaderTrim)
 }
 
 // browseTarget resolves the project name and explicit branch from the
@@ -87,8 +105,8 @@ func browseTarget(args []string, project domain.Project) (projName, branch strin
 	if len(args) > 0 {
 		projName = args[0]
 	}
-	if len(args) == 3 {
-		branch = args[2]
+	if len(args) == branchArgIdx+1 {
+		branch = args[branchArgIdx]
 	}
 	return projName, branch
 }

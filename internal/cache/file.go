@@ -20,6 +20,10 @@ import (
 
 const cacheTimeFormat = time.RFC3339
 
+// cacheDirMode is the mode the cache directory is created with. The cache
+// is per-user and holds nothing anyone else needs to read.
+const cacheDirMode = 0o750
+
 // File is the file-backed cache client. Its ttl comes from the cacheTTL
 // setting: an explicit "0s" disables caching entirely (every Get is a miss).
 type File struct {
@@ -53,6 +57,8 @@ func cacheFilePath(key string) (string, error) {
 	return path, nil
 }
 
+// Get loads a cached Project into project, reporting whether a live entry
+// was found. A stale or unreadable entry reports false, not an error.
 func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	path, err := cacheFilePath(key)
 	if err != nil {
@@ -112,6 +118,7 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	return true, nil
 }
 
+// Save writes project to the cache file for key.
 func (cf *File) Save(key string, project domain.Project) error {
 	path, err := cacheFilePath(key)
 	if err != nil {
@@ -119,7 +126,7 @@ func (cf *File) Save(key string, project domain.Project) error {
 	}
 
 	basePath := filepath.Dir(path)
-	if err := os.MkdirAll(basePath, 0o755); err != nil {
+	if err := os.MkdirAll(basePath, cacheDirMode); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -141,6 +148,8 @@ func (cf *File) Save(key string, project domain.Project) error {
 	return nil
 }
 
+// Flush removes the cache entry for project's Provider Source, so the next
+// command rediscovers its repositories.
 func (cf *File) Flush(project domain.Project) error {
 	if project.Source == nil {
 		return fmt.Errorf("project %q has no source", project.Name)

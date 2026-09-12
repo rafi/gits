@@ -32,6 +32,8 @@ func sampleProject() Project {
 }
 
 func TestProjectGetRepo(t *testing.T) {
+	t.Parallel()
+
 	p := sampleProject()
 	tests := []struct {
 		name      string
@@ -47,6 +49,8 @@ func TestProjectGetRepo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			repo, found := p.GetRepo(tt.query, "")
 			if found != tt.wantFound {
 				t.Fatalf("GetRepo(%q) found = %v, want %v", tt.query, found, tt.wantFound)
@@ -59,6 +63,8 @@ func TestProjectGetRepo(t *testing.T) {
 }
 
 func TestProjectGetSubProject(t *testing.T) {
+	t.Parallel()
+
 	p := sampleProject()
 	tests := []struct {
 		name      string
@@ -73,6 +79,8 @@ func TestProjectGetSubProject(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			sub, found := p.GetSubProject(tt.query, "")
 			if found != tt.wantFound {
 				t.Fatalf("GetSubProject(%q) found = %v, want %v", tt.query, found, tt.wantFound)
@@ -85,6 +93,8 @@ func TestProjectGetSubProject(t *testing.T) {
 }
 
 func TestProjectListReposWithNamespace(t *testing.T) {
+	t.Parallel()
+
 	p := Project{
 		Name:  "root",
 		Repos: []Repository{{Name: "zebra"}, {Name: "apple"}},
@@ -101,6 +111,8 @@ func TestProjectListReposWithNamespace(t *testing.T) {
 }
 
 func TestProjectGetRepoAbsPath(t *testing.T) {
+	t.Parallel()
+
 	tildeExpanded, err := homedir.Expand("~/foo")
 	if err != nil {
 		t.Fatalf("homedir.Expand: %v", err)
@@ -154,6 +166,8 @@ func TestProjectGetRepoAbsPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := tt.project.GetRepoAbsPath(tt.repo)
 			if tt.wantErr {
 				if err == nil {
@@ -172,6 +186,8 @@ func TestProjectGetRepoAbsPath(t *testing.T) {
 }
 
 func TestProjectFilter(t *testing.T) {
+	t.Parallel()
+
 	p := Project{
 		Include: []string{"keep", "both"},
 		Exclude: []string{"drop", "both"},
@@ -205,6 +221,8 @@ func repoNames(repos []Repository) []string {
 }
 
 func TestProjectCalculateHash(t *testing.T) {
+	t.Parallel()
+
 	p := sampleProject()
 	if err := p.CalculateHash(); err != nil {
 		t.Fatalf("CalculateHash: %v", err)

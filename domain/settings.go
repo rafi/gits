@@ -19,6 +19,8 @@ const DefaultProviderTimeout = 5 * time.Minute
 // settings.gitTimeout is unset or unparseable.
 const DefaultGitTimeout = 5 * time.Minute
 
+// Settings is the `settings:` block of the config file: cache policy,
+// timeouts, finder, icons and theme.
 type Settings struct {
 	Cache           *bool            `json:"cache,omitempty"`
 	Finder          Finder           `json:"finder"`
@@ -105,12 +107,15 @@ func (s Settings) CacheTTLDuration() time.Duration {
 	return parseDurationOr(s.CacheTTL, "cacheTTL", DefaultCacheTTL)
 }
 
+// Finder configures the interactive selector gits shells out to.
 type Finder struct {
 	Binary string   `json:"binary"`
 	Args   []string `json:"args,omitempty"`
 	Extra  []string `json:"extra,omitempty"`
 }
 
+// Icons are the glyphs display layers render Repo States and work-tree
+// conditions as. The states themselves stay the wire vocabulary.
 type Icons struct {
 	Modified  string `json:"modified,omitempty"`
 	Untracked string `json:"untracked,omitempty"`
@@ -121,7 +126,10 @@ type Icons struct {
 	Ahead     string `json:"ahead,omitempty"`
 	Behind    string `json:"behind,omitempty"`
 	Diverged  string `json:"diverged,omitempty"`
-	NA        string `json:"na,omitempty"`
+	// Gone marks a Gone Upstream: one still configured, with no Remote branch
+	// behind it. Distinct from NA, which says nothing was compared at all.
+	Gone string `json:"gone,omitempty"`
+	NA   string `json:"na,omitempty"`
 }
 
 // ApplyDefaults fills unset icon fields with the built-in status glyphs, so
@@ -141,9 +149,12 @@ func (i *Icons) ApplyDefaults() {
 	def(&i.Ahead, "⇡")
 	def(&i.Behind, "⇣")
 	def(&i.Diverged, "⇅")
+	def(&i.Gone, "⊘")
 	def(&i.NA, "–")
 }
 
+// Style is one configurable text style, resolved into a render style by the
+// CLI's config package.
 type Style struct {
 	Color string `json:"color,omitempty"`
 	Align string `json:"align,omitempty"`
@@ -152,6 +163,7 @@ type Style struct {
 	Faint bool   `json:"faint,omitempty"`
 }
 
+// Theme is the configurable style of every element gits renders.
 type Theme struct {
 	// General
 	Normal        Style `json:"normal"`

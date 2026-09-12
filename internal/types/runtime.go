@@ -7,7 +7,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/cli/config"
-	"github.com/rafi/gits/pkg/git"
+	"github.com/rafi/gits/internal/git"
 )
 
 // Runtime is the runtime dependencies for the application.
@@ -20,12 +20,14 @@ type Runtime struct {
 	Projects   domain.ProjectListKeyed
 	Cache      cache.Cacher
 	ConfigPath string
-	Git        git.GitClient
+	Git        git.Client
 	Settings   domain.Settings
 }
 
 // RuntimeCLI is the runtime dependencies for the CLI client.
 type RuntimeCLI struct {
+	Runtime
+
 	Theme   config.Theme
 	HomeDir string
 
@@ -38,9 +40,7 @@ type RuntimeCLI struct {
 	// summary footer, the error epilogue.
 	//
 	// The progress reporter is derived from this writer rather than injected:
-	// walk.NewReporter sniffs it for a terminal, so a test buffer yields the
+	// the bulk module sniffs it for a terminal, so a test buffer yields the
 	// no-op reporter and no ANSI reaches the assertions.
 	Err io.Writer
-
-	Runtime
 }

@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/jsonout"
-	"github.com/rafi/gits/internal/cli/walk"
 )
 
 // validateFormat rejects everything but the two formats `status` has.
@@ -24,9 +24,9 @@ func validateFormat(format string) error {
 
 // renderJSON writes the collected results as the envelope `list -o json`
 // shares, with each probed repository's working-tree data nested under it.
-// With tree set, groups are the walker's depth-first traversal of a whole
-// project; without it they are one repository under its project.
-func renderJSON(w io.Writer, groups []walk.GroupResult, tree bool, opts Options) error {
+// With tree set, groups are the Traversal of a whole project; without it
+// they are one repository under its project.
+func renderJSON(w io.Writer, groups []bulk.Group[*repoStatus], tree bool, opts Options) error {
 	env := jsonout.Envelope{}
 	if len(groups) == 0 {
 		return jsonout.Write(w, env)
@@ -48,10 +48,10 @@ func renderJSON(w io.Writer, groups []walk.GroupResult, tree bool, opts Options)
 }
 
 // buildNode rebuilds one project subtree from the flat groups, inverting the
-// walker's depth-first order: a group is followed by one subtree per
+// Traversal's depth-first order: a group is followed by one subtree per
 // sub-project of its project. It returns the node, whether it survived the
 // active filters, and the index of the next unconsumed group.
-func buildNode(groups []walk.GroupResult, i int, opts Options) (jsonout.Project, bool, int) {
+func buildNode(groups []bulk.Group[*repoStatus], i int, opts Options) (jsonout.Project, bool, int) {
 	if i >= len(groups) {
 		return jsonout.Project{}, false, i
 	}
@@ -74,9 +74,9 @@ func buildNode(groups []walk.GroupResult, i int, opts Options) (jsonout.Project,
 }
 
 // buildLeaf converts a single group without descending, for the single-repo
-// form where the group's project carries sub-projects the walker never
+// form where the group's project carries sub-projects the Traversal never
 // visited.
-func buildLeaf(g walk.GroupResult, opts Options) (jsonout.Project, bool) {
+func buildLeaf(g bulk.Group[*repoStatus], opts Options) (jsonout.Project, bool) {
 	node := jsonout.NewProject(g.Project)
 	node.Repos = buildRepos(g, opts)
 	return node, keptNode(node, opts)
@@ -101,7 +101,7 @@ func keptNode(node jsonout.Project, opts Options) bool {
 
 // buildRepos converts one group's visible statuses, so the document holds
 // exactly the repositories the table would have shown rows for.
-func buildRepos(g walk.GroupResult, opts Options) []jsonout.Repository {
+func buildRepos(g bulk.Group[*repoStatus], opts Options) []jsonout.Repository {
 	sts, _ := visibleStatuses(g, opts)
 	repos := make([]jsonout.Repository, 0, len(sts))
 	for _, st := range sts {
@@ -137,6 +137,15 @@ func buildRepo(st *repoStatus) jsonout.Repository {
 		Behind:    st.behind,
 		Compared:  !st.noUpstream,
 		Version:   st.version,
+	}
+	// The object's absence is what says no Upstream is configured, so a branch
+	// that was never pushed is structurally distinct from one whose Upstream
+	// went away.
+	if st.upstream != "" {
+		status.Upstream = &jsonout.Upstream{
+			Name:    st.upstream,
+			Tracked: !st.upstreamGone,
+		}
 	}
 	// hasStat is the whole condition: the probe only runs under --stat, so a
 	// measured diff is already a --stat diff.
