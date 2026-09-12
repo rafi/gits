@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,12 @@ import (
 	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/pkg/fzf"
 )
+
+// isCancelled reports whether an interactive selection ended without a
+// choice — the user pressed Esc/Ctrl-C or there was nothing to match.
+func isCancelled(err error) bool {
+	return errors.Is(err, fzf.ErrAborted) || errors.Is(err, fzf.ErrNoMatch)
+}
 
 // ParseArgs parses the arguments and returns the project and repo.
 func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
@@ -20,31 +27,16 @@ func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
 		return proj, nil, err
 	}
 
-	switch {
-
-	// Always select a repo.
-	case !skipRepoSelect:
-		fallthrough
-
-	// 2nd argument provided, and it is NOT a sub-project.
-	case len(args) > 1 && !strings.HasSuffix(args[1], "/"):
+	// Select a repo when the command demands one, or when a 2nd argument
+	// names one directly (a trailing "/" means sub-project, not repo).
+	if !skipRepoSelect || (len(args) > 1 && !strings.HasSuffix(args[1], "/")) {
 		repo, err := getOrSelectRepo(proj, args, deps)
 		if err != nil {
 			return proj, nil, err
 		}
-		return proj, &repo, err
-
-	// Skip repo selection, or no 2nd argument provided.
-	case len(args) < 2 || skipRepoSelect:
-		return proj, nil, err
-
-	default:
-		repo, found := proj.GetRepo(args[1], "")
-		if !found {
-			return proj, nil, fmt.Errorf("unable to load repo %q", args[1])
-		}
-		return proj, &repo, err
+		return proj, &repo, nil
 	}
+	return proj, nil, nil
 }
 
 // getOrSelectProject returns a project from the first argument, or
@@ -103,9 +95,11 @@ func getOrSelectRepo(
 	}
 	if repoName == "" {
 		repoName, err = SelectRepo(rootProject, project, deps)
-		if repoName == "" || err != nil {
-			err = fmt.Errorf("unable to select a repo: %w", err)
+		if err != nil {
 			return domain.Repository{}, err
+		}
+		if repoName == "" {
+			return domain.Repository{}, types.NewWarning("no repository selected")
 		}
 	}
 
@@ -135,8 +129,11 @@ func SelectProject(deps types.RuntimeCLI) (string, error) {
 	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath)
 	finder.WithPreview(previewCmd, "")
 
-	projName, err := finder.Run(buffer)
-	if projName == "" || err != nil {
+	projName, err := finder.Run(deps.Ctx, buffer)
+	if err != nil {
+		if isCancelled(err) {
+			return "", nil
+		}
 		return "", err
 	}
 	projName = strings.Split(projName, " ")[0]
@@ -173,10 +170,12 @@ func SelectRepo(
 	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath, rootProject, prefix)
 	finder.WithPreview(previewCmd, "")
 
-	repoName, err := finder.Run(buffer)
-	if repoName == "" || err != nil {
-		err = fmt.Errorf("unable to select a repository: %w", err)
-		return "", err
+	repoName, err := finder.Run(deps.Ctx, buffer)
+	if err != nil {
+		if isCancelled(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("unable to select a repository: %w", err)
 	}
 	return repoName, nil
 }
@@ -215,10 +214,16 @@ func SelectBranch(
 	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath, projName, repoFullName)
 	finder.WithPreview(previewCmd, "")
 
-	selected, err := finder.Run(buffer)
+	selected, err := finder.Run(deps.Ctx, buffer)
 	if err != nil {
+		if isCancelled(err) {
+			return "", types.NewWarning("no branch selected")
+		}
 		return "", err
 	}
-	branchName := strings.Split(selected, delimiter)[1]
-	return branchName, nil
+	parts := strings.SplitN(selected, delimiter, 3)
+	if len(parts) < 2 {
+		return "", types.NewWarning("no branch selected")
+	}
+	return parts[1], nil
 }

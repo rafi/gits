@@ -20,9 +20,19 @@ import (
 
 // GetProjects returns a list of populated projects filtered by name or path.
 func GetProjects(args []string, deps types.Runtime) (domain.ProjectListKeyed, error) {
-	// Support path based project directories.
+	// Support path based project directories. Resolve to an absolute path
+	// first: the filesystem walk returns dirs relative to its root, so a
+	// relative root would be joined onto itself ("dir/dir"), and "." or "~"
+	// would become the project name.
 	if len(args) > 0 && isPath(args[0]) {
-		path := filepath.Clean(args[0])
+		path, err := homedir.Expand(args[0])
+		if err != nil {
+			return nil, fmt.Errorf("unable to expand path: %w", err)
+		}
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("unable to resolve path %q: %w", args[0], err)
+		}
 		project := newFilesystemProject(path)
 		deps.Projects = domain.ProjectListKeyed{project.Name: project}
 		args[0] = project.Name
@@ -209,8 +219,11 @@ func computeState(ctx context.Context, project *domain.Project, git git.GitClien
 		if sub.Path == "" {
 			sub.Path = filepath.Join(project.Path, sub.Name)
 		}
-		if sub.Source == nil {
-			sub.Source = project.Source
+		if sub.Source == nil && project.Source != nil {
+			// Copy the parent source so later mutations (e.g. getSource
+			// adjusting Search) never leak across the project tree.
+			src := *project.Source
+			sub.Source = &src
 		}
 		computeState(ctx, sub, git)
 	}

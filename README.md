@@ -123,9 +123,14 @@ settings:
   workerCount: 8   # Concurrent git workers. Default: max(NumCPU/2, 2).
   verbose: false   # Enable debug logging.
   includeArchived: false  # Include archived repositories when listing
-                          # from providers. Default: false.
+                          # from providers (GitHub, GitLab). Default: false.
+                          # Bitbucket Cloud has no archived flag, so the
+                          # setting does not apply there.
   providerTimeout: 5m     # HTTP timeout for provider API calls. Go
                           # duration syntax. Default: 5m.
+  gitTimeout: 5m          # Timeout for network git operations
+                          # (clone/fetch/pull). Go duration syntax.
+                          # Default: 5m.
 ```
 
 ## Config Examples

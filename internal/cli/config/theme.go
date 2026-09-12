@@ -41,6 +41,16 @@ type Theme struct {
 	Diff      lipgloss.Style
 	Error     lipgloss.Style
 
+	// Status table
+	StatusHeader  lipgloss.Style
+	StatusFlag    lipgloss.Style
+	StatusAhead   lipgloss.Style
+	StatusBehind  lipgloss.Style
+	StatusAdded   lipgloss.Style
+	StatusDeleted lipgloss.Style
+	StatusDim     lipgloss.Style
+	StatusFooter  lipgloss.Style
+
 	// List table
 	TableBorder      lipgloss.Border
 	TableBorderStyle lipgloss.Style
@@ -61,7 +71,8 @@ func (t *Theme) ParseConfig(cfg domain.Theme) (err error) {
 		name := typeOfS.Field(i).Name
 		if v.Field(i).Type().Name() == "Style" {
 			val := v.Field(i).Interface().(domain.Style)
-			if val.Color == "" && val.Align == "" && val.Width == 0 {
+			if val.Color == "" && val.Align == "" && val.Width == 0 &&
+				!val.Bold && !val.Faint {
 				continue
 			}
 			style, err := parseThemeStyle(val)
@@ -81,6 +92,12 @@ func parseThemeStyle(style domain.Style) (lipgloss.Style, error) {
 	}
 	if style.Width > 0 {
 		s = s.Width(style.Width)
+	}
+	if style.Bold {
+		s = s.Bold(true)
+	}
+	if style.Faint {
+		s = s.Faint(true)
 	}
 	switch style.Align {
 	case "right":
@@ -127,6 +144,17 @@ func NewThemeDefault() Theme {
 		Untracked: lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Width(3).Align(lipgloss.Right),
 		Diff:      lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Align(lipgloss.Right),
 		Error:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+
+		// Status table (ANSI16 palette so the terminal theme
+		// decides the exact shades, faint for informational fields)
+		StatusHeader:  lipgloss.NewStyle().Bold(true),
+		StatusFlag:    lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+		StatusAhead:   lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		StatusBehind:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true),
+		StatusAdded:   lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		StatusDeleted: lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		StatusDim:     lipgloss.NewStyle().Faint(true),
+		StatusFooter:  lipgloss.NewStyle().Faint(true),
 
 		// List table
 		TableBorder:      lipgloss.NormalBorder(),

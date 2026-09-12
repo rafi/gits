@@ -19,8 +19,8 @@ var (
 
 // fakeBranchClient satisfies git.GitClient via the embedded nil interface;
 // only the two methods promptRepo reaches before the (TTY) prompt are
-// implemented. CurrentBranch succeeds so control flows into Branches, which
-// fails — exercising the error path under test.
+// implemented. CurrentBranch succeeds so control flows into AllBranches,
+// which fails — exercising the error path under test.
 type fakeBranchClient struct {
 	git.GitClient
 }
@@ -29,7 +29,7 @@ func (fakeBranchClient) CurrentBranch(context.Context, string) (string, error) {
 	return "main", nil
 }
 
-func (fakeBranchClient) Branches(context.Context, string) ([]string, error) {
+func (fakeBranchClient) AllBranches(context.Context, string) ([]string, error) {
 	return nil, errBoom
 }
 

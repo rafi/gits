@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/signal"
 
@@ -88,6 +87,7 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 		if err != nil {
 			return err
 		}
+		gitClient.SetNetworkTimeout(configFile.Settings.GitTimeoutDuration())
 		cacheClient, err := cache.NewCacheClient("file", configFile.Settings.CacheTTLDuration())
 		if err != nil {
 			return err
@@ -117,11 +117,9 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 			},
 		})
 
-		// Downgrade warnings to a subtle log line. Warnings are *types.Warning
-		// (NewWarning/RepoError), so match by pointer and only swallow genuine
-		// WarningType values — real errors must still propagate.
-		var warn *types.Warning
-		if errors.As(cmdErr, &warn) && warn.Type == types.WarningType {
+		// Downgrade warnings to a subtle log line — real errors must still
+		// propagate.
+		if types.IsWarning(cmdErr) {
 			log.Warn(cmdErr.Error())
 			return nil
 		}

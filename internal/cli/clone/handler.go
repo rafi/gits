@@ -2,8 +2,7 @@ package clone
 
 import (
 	"context"
-	"fmt"
-	"os"
+	"errors"
 
 	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
@@ -12,6 +11,7 @@ import (
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/walk"
 	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/pkg/git"
 )
 
 // ExecClone clones project repositories, or a specific repo.
@@ -57,25 +57,6 @@ func pruneSkipped(p domain.Project) domain.Project {
 	return p
 }
 
-type CloneResponse struct {
-	output     string
-	title      lipgloss.Style
-	error      error
-	errorStyle lipgloss.Style
-}
-
-func (r CloneResponse) String() string {
-	if r.error != nil {
-		return fmt.Sprintf("%s %s", r.title, r.errorStyle.Render(r.error.Error()))
-	}
-
-	return fmt.Sprintf(
-		"%s %s",
-		r.title.Render(),
-		r.output,
-	)
-}
-
 // cloneRepo clones one repository and returns its rendered result. It is a
 // walk.RepoFunc: safe to call concurrently and never writes to stdout. Unlike
 // the other bulk commands it only rejects repos in an error state, since a
@@ -86,27 +67,26 @@ func cloneRepo(
 	repo domain.Repository,
 	deps types.RuntimeCLI,
 ) walk.RepoResult {
-	resp := CloneResponse{
-		title:      cli.PaddedRepoTitle(repo, project, deps),
-		errorStyle: deps.Theme.Error,
+	line := cli.RepoLine{
+		Title:      cli.PaddedRepoTitle(repo, project, deps),
+		ErrorStyle: deps.Theme.Error,
 	}
 
 	if repo.State == domain.RepoStateError {
-		resp.error = cli.RepoStateWarning(repo)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
-	}
-	if _, err := os.Stat(repo.AbsPath); !os.IsNotExist(err) {
-		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
-		resp.error = types.NewWarning("already cloned at %s", repoPath)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
+		line.Err = cli.RepoStateWarning(repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
 	}
 
-	var err error
-	resp.output, err = deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
-	if err != nil {
-		resp.error = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
+	output, err := deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
+	if errors.Is(err, git.ErrTargetExists) {
+		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
+		line.Err = types.NewWarning("already cloned at %s", repoPath)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
 	}
-	resp.output = deps.Theme.GitOutput.Render(resp.output)
-	return walk.RepoResult{Line: resp.String(), Err: nil}
+	if err != nil {
+		line.Err = cli.RepoError(err, repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
+	}
+	line.Body = deps.Theme.GitOutput.Render(output)
+	return walk.RepoResult{Line: line.String(), Err: nil}
 }

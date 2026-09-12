@@ -25,16 +25,16 @@ func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
 		token = getFirstEnvValue(bitbucketTokenEnvVarNames)
 	}
 	if token == "" {
-		return provider, fmt.Errorf("token is required for %s", provider.sourceType)
+		return nil, fmt.Errorf("token is required for %s", provider.sourceType)
 	}
 	userLogin := strings.SplitN(token, ":", 2)
 	if len(userLogin) != 2 {
-		return provider, fmt.Errorf("token is invalid for %s", provider.sourceType)
+		return nil, fmt.Errorf("token is invalid for %s", provider.sourceType)
 	}
 	var err error
 	provider.client, err = bitbucket.NewBasicAuth(userLogin[0], userLogin[1])
 	if err != nil {
-		return provider, fmt.Errorf("bitbucket auth failed: %w", err)
+		return nil, fmt.Errorf("bitbucket auth failed: %w", err)
 	}
 	// LimitPages stays 0 (unlimited) so every page is fetched; a larger
 	// page size reduces round-trips for big accounts.
@@ -65,7 +65,7 @@ func (c *bitbucketProvider) fetchRepos(ctx context.Context, ownerName string) ([
 	listOpts := &bitbucket.RepositoriesOptions{Owner: ownerName}
 	result, err := c.client.Repositories.ListForAccount(listOpts)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("bitbucket: list repos for %q: %w", ownerName, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, "", err

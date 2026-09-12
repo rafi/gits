@@ -98,7 +98,7 @@ func (p *Project) GetRepoAbsPath(repo Repository) (string, error) {
 			return "", fmt.Errorf("unable to get repo path %s", repo.Src)
 		}
 		name := repo.Src[lastSlash+1:]
-		name = strings.TrimSuffix(name, filepath.Ext(name))
+		name = strings.TrimSuffix(name, ".git")
 		return filepath.Join(path, name), nil
 	}
 	expanded, err := homedir.Expand(repo.Dir)

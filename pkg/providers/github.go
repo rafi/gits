@@ -36,7 +36,7 @@ func newGitHubProvider(opts Options) (*gitHubProvider, error) {
 		token = getFirstEnvValue(gitHubTokenEnvVarNames)
 	}
 	if token == "" {
-		return provider, fmt.Errorf("token is required for %s", provider.sourceType)
+		return nil, fmt.Errorf("token is required for %s", provider.sourceType)
 	}
 
 	src := oauth2.StaticTokenSource(

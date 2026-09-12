@@ -1,9 +1,11 @@
 package checkout
 
 import (
+	"errors"
 	"fmt"
 
 	"charm.land/lipgloss/v2"
+	"github.com/erikgeiser/promptkit"
 	"github.com/erikgeiser/promptkit/selection"
 
 	"github.com/rafi/gits/domain"
@@ -24,34 +26,48 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 
 	if repo != nil {
 		// Checkout a single repository.
-		return checkoutRepo(project, *repo, deps)
+		err := checkoutRepo(project, *repo, deps)
+		if errors.Is(err, promptkit.ErrAborted) {
+			return types.NewWarning("checkout aborted")
+		}
+		return err
 	}
 
 	// Checkout all project's repositories.
-	errs := checkoutProjectRepos(project, deps)
+	errs, _ := checkoutProjectRepos(project, deps)
 	if len(errs) > 0 {
 		return cli.RenderErrors(errs, true)
 	}
 	return nil
 }
 
-func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
+// checkoutProjectRepos walks the project tree prompting per repo. Aborting a
+// prompt (Esc/Ctrl-C) stops the whole traversal instead of forcing the user
+// to dismiss every remaining repository one by one.
+func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) ([]error, bool) {
 	lipgloss.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
 	errList := make([]error, 0)
 	for _, repo := range project.Repos {
 		err := checkoutRepo(project, repo, deps)
-		if err != nil {
-			errList = append(errList, err)
+		if err == nil {
+			continue
 		}
+		if errors.Is(err, promptkit.ErrAborted) {
+			return append(errList, types.NewWarning("checkout aborted")), true
+		}
+		errList = append(errList, err)
 	}
 
 	for _, subProject := range project.SubProjects {
 		fmt.Println()
-		errs := checkoutProjectRepos(subProject, deps)
+		errs, aborted := checkoutProjectRepos(subProject, deps)
 		errList = append(errList, errs...)
+		if aborted {
+			return errList, true
+		}
 	}
-	return errList
+	return errList, false
 }
 
 func checkoutRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
@@ -90,7 +106,7 @@ func promptRepo(repoTitle, repoPath string, deps types.RuntimeCLI) (string, erro
 
 	ps := fmt.Sprintf("%s [%s]> ", repoTitle, current)
 
-	branches, err := deps.Git.Branches(deps.Ctx, repoPath)
+	branches, err := deps.Git.AllBranches(deps.Ctx, repoPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to read branches: %w", err)
 	}

@@ -3,7 +3,6 @@ package walk
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -179,8 +178,7 @@ func TestWalkErrorAggregation(t *testing.T) {
 	// The walker returns all; RenderErrors(_, true) must keep only the real error.
 	failing := 0
 	for _, e := range errs {
-		var w *types.Warning
-		if asWarning(e, &w) && w.Type == types.WarningType {
+		if types.IsWarning(e) {
 			continue
 		}
 		failing++
@@ -188,11 +186,6 @@ func TestWalkErrorAggregation(t *testing.T) {
 	if failing != 1 {
 		t.Fatalf("expected exactly 1 non-warning failure, got %d", failing)
 	}
-}
-
-// asWarning is a local shim mirroring cli.RenderErrors' warning check.
-func asWarning(err error, target **types.Warning) bool {
-	return errors.As(err, target)
 }
 
 // TestWalkCancellation verifies AC-9: cancelling mid-run leaves queued tasks
@@ -219,18 +212,80 @@ func TestWalkCancellation(t *testing.T) {
 		return RepoResult{Line: lineFor(r)}
 	}
 
-	done := make(chan struct{})
+	done := make(chan []error, 1)
 	go func() {
-		walkTo(ctx, project, testDeps(2), "testing", fn, &bytes.Buffer{}, &bytes.Buffer{})
-		close(done)
+		done <- walkTo(ctx, project, testDeps(2), "testing", fn, &bytes.Buffer{}, &bytes.Buffer{})
 	}()
+	var errs []error
 	select {
-	case <-done:
+	case errs = <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("walk did not return promptly after cancellation")
 	}
 	if s := started.Load(); s >= total {
 		t.Fatalf("cancellation did not stop queued tasks: started=%d total=%d", s, total)
+	}
+
+	// An interrupted run must fail loudly: exactly one non-warning error
+	// naming how many repos were skipped, so the process exits non-zero
+	// instead of silently reporting partial success.
+	var interrupted error
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "interrupted") {
+			interrupted = e
+		}
+	}
+	if interrupted == nil {
+		t.Fatalf("no interruption error surfaced after cancellation: %v", errs)
+	}
+	if !isFailure(interrupted) {
+		t.Fatalf("interruption error %v must not be a warning", interrupted)
+	}
+}
+
+// TestCollectCancellationError verifies the Collect path also surfaces the
+// interruption: callers rendering grouped results must learn the run was cut
+// short.
+func TestCollectCancellationError(t *testing.T) {
+	const total = 40
+	repos := make([]domain.Repository, total)
+	for i := range repos {
+		repos[i] = repo(fmt.Sprintf("r%03d", i))
+	}
+	project := domain.Project{Name: "proj", Repos: repos}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var started atomic.Int64
+	fn := func(c context.Context, _ domain.Project, r domain.Repository, _ types.RuntimeCLI) RepoResult {
+		if started.Add(1) == 4 {
+			cancel()
+		}
+		select {
+		case <-time.After(50 * time.Millisecond):
+		case <-c.Done():
+		}
+		return RepoResult{Line: lineFor(r)}
+	}
+
+	groups, err := collectReport(ctx, project, testDeps(2), "testing", fn, &nopReporter{})
+	if err == nil {
+		t.Fatal("Collect after cancellation returned nil error, want interruption")
+	}
+	if !strings.Contains(err.Error(), "interrupted") {
+		t.Fatalf("interruption error = %v, want mention of interruption", err)
+	}
+	if len(groups) == 0 {
+		t.Fatal("cancelled Collect should still return partial groups")
+	}
+
+	// A clean run must stay error-free.
+	groups, err = collectReport(context.Background(), project, testDeps(2), "testing",
+		echoFunc(nil), &nopReporter{})
+	if err != nil {
+		t.Fatalf("uninterrupted Collect returned %v, want nil", err)
+	}
+	if len(groups) != 1 || len(groups[0].Results) != total {
+		t.Fatalf("unexpected groups shape: %d", len(groups))
 	}
 }
 
@@ -370,5 +425,44 @@ func TestWalkPerRepoTrackers(t *testing.T) {
 	}
 	if rep.lastErrors != 1 {
 		t.Errorf("lastErrors = %d, want 1", rep.lastErrors)
+	}
+}
+
+// TestCollectGroupOrder verifies Collect returns results grouped per project in
+// stable tree order, with payloads intact and no line rendering.
+func TestCollectGroupOrder(t *testing.T) {
+	project := domain.Project{
+		Name:  "root",
+		Repos: []domain.Repository{repo("r1"), repo("r2")},
+		SubProjects: []domain.Project{
+			{Name: "sub", Repos: []domain.Repository{repo("s1")}},
+		},
+	}
+	fn := func(ctx context.Context, _ domain.Project, r domain.Repository, _ types.RuntimeCLI) RepoResult {
+		return RepoResult{Payload: r.Name}
+	}
+
+	groups, err := collectReport(context.Background(), project, testDeps(2), "testing", fn, NewReporter(&bytes.Buffer{}))
+	if err != nil {
+		t.Fatalf("unexpected interruption error: %v", err)
+	}
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+	if groups[0].Project.Name != "root" || groups[1].Project.Name != "sub" {
+		t.Fatalf("group order = %q, %q", groups[0].Project.Name, groups[1].Project.Name)
+	}
+	var names []string
+	for _, g := range groups {
+		for _, res := range g.Results {
+			if res == nil {
+				t.Fatal("unexpected nil result without cancellation")
+			}
+			names = append(names, res.Payload.(string))
+		}
+	}
+	want := []string{"r1", "r2", "s1"}
+	if fmt.Sprint(names) != fmt.Sprint(want) {
+		t.Fatalf("payload order = %v, want %v", names, want)
 	}
 }

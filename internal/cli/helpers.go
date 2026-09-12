@@ -23,14 +23,6 @@ var (
 	ErrNotCloned     = fmt.Errorf("not cloned")
 )
 
-func GetTheme(themeSettings domain.Theme) (config.Theme, error) {
-	theme := config.NewThemeDefault()
-	if err := theme.ParseConfig(themeSettings); err != nil {
-		return theme, err
-	}
-	return theme, nil
-}
-
 // repoStateError maps a non-OK repository state to its sentinel error.
 func repoStateError(repo domain.Repository) error {
 	switch repo.State {
@@ -74,6 +66,7 @@ func RepoError(err error, repo domain.Repository) error {
 		Title:  repo.GetName(),
 		Reason: err.Error(),
 		Dir:    repo.AbsPath,
+		Cause:  err,
 	}
 }
 
@@ -103,11 +96,8 @@ func RenderErrors(errs []error, excludeWarnings bool) error {
 	out := []string{}
 	count := 0
 	for _, err := range errs {
-		if excludeWarnings {
-			var w *types.Warning
-			if errors.As(err, &w) && w.Type == types.WarningType {
-				continue
-			}
+		if excludeWarnings && types.IsWarning(err) {
+			continue
 		}
 		count++
 		out = append(out, indentContinuation(fmt.Sprintf("  - %s", err), "      > "))

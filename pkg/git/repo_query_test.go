@@ -2,6 +2,8 @@ package git
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,4 +114,114 @@ func TestCheckout(t *testing.T) {
 	if cur != "feature" {
 		t.Errorf("after Checkout, CurrentBranch = %q, want feature", cur)
 	}
+}
+
+// TestAllBranches proves the checkout candidate list merges local branches
+// with remote-only ones: locals first, remote prefix stripped, symbolic
+// origin/HEAD dropped, and no duplicate for branches that exist both
+// locally and remotely.
+func TestAllBranches(t *testing.T) {
+	g, _ := NewGit()
+	ctx := context.Background()
+	dir := setupRepo(t)
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := exec.CommandContext(ctx, "git",
+			append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	head, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := string(head[:len(head)-1])
+	run("update-ref", "refs/remotes/origin/remote-only", sha)
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	got, err := g.AllBranches(ctx, dir)
+	if err != nil {
+		t.Fatalf("AllBranches: %v", err)
+	}
+	want := []string{"feature", "main", "remote-only"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("AllBranches = %v, want %v", got, want)
+	}
+}
+
+// TestCheckoutRemoteOnlyBranch proves selecting a remote-only name works:
+// git's DWIM creates a local tracking branch at the remote revision.
+func TestCheckoutRemoteOnlyBranch(t *testing.T) {
+	g, _ := NewGit()
+	ctx := context.Background()
+	dir := setupRepo(t)
+	head, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := string(head[:len(head)-1])
+	if out, err := exec.CommandContext(ctx, "git", "-C", dir,
+		"update-ref", "refs/remotes/origin/remote-only", sha).CombinedOutput(); err != nil {
+		t.Fatalf("update-ref: %v\n%s", err, out)
+	}
+
+	if err := g.Checkout(ctx, dir, "remote-only"); err != nil {
+		t.Fatalf("Checkout(remote-only): %v", err)
+	}
+	cur, err := g.CurrentBranch(ctx, dir)
+	if err != nil {
+		t.Fatalf("CurrentBranch: %v", err)
+	}
+	if cur != "remote-only" {
+		t.Errorf("CurrentBranch = %q, want remote-only", cur)
+	}
+}
+
+// TestUpstreamBranch covers error fidelity: a genuine missing upstream maps
+// to ErrNoUpstream, a configured upstream resolves, and unrelated failures
+// (context cancellation) must NOT masquerade as "no upstream".
+func TestUpstreamBranch(t *testing.T) {
+	g, _ := NewGit()
+	ctx := context.Background()
+	dir := setupRepo(t)
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := exec.CommandContext(ctx, "git",
+			append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	t.Run("no upstream configured", func(t *testing.T) {
+		if _, err := g.UpstreamBranch(ctx, dir); !errors.Is(err, ErrNoUpstream) {
+			t.Errorf("UpstreamBranch = %v, want ErrNoUpstream", err)
+		}
+	})
+
+	t.Run("cancelled context is not ErrNoUpstream", func(t *testing.T) {
+		cctx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := g.UpstreamBranch(cctx, dir)
+		if err == nil {
+			t.Fatal("UpstreamBranch with cancelled ctx succeeded, want error")
+		}
+		if errors.Is(err, ErrNoUpstream) {
+			t.Errorf("cancellation misreported as ErrNoUpstream: %v", err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("error %v does not wrap context.Canceled", err)
+		}
+	})
+
+	t.Run("upstream configured", func(t *testing.T) {
+		run("config", "branch.main.remote", "origin")
+		run("config", "branch.main.merge", "refs/heads/main")
+		got, err := g.UpstreamBranch(ctx, dir)
+		if err != nil {
+			t.Fatalf("UpstreamBranch: %v", err)
+		}
+		if got != "origin/main" {
+			t.Errorf("UpstreamBranch = %q, want origin/main", got)
+		}
+	})
 }

@@ -121,7 +121,7 @@ $(GOIMPORTS):
 	(cd /; GO111MODULE=on go install golang.org/x/tools/cmd/goimports@latest)
 
 $(GOLANGCI_LINT):
-	(cd /; GO111MODULE=on go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	(cd /; GO111MODULE=on go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)
 
 # ------------------------------------------------------------------------------
 

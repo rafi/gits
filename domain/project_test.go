@@ -126,6 +126,14 @@ func TestProjectGetRepoAbsPath(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// Only a ".git" suffix is stripped — a repo named next.js must
+			// not lose its ".js".
+			name:    "dotted repo name keeps its extension",
+			project: Project{AbsPath: "/home/proj"},
+			repo:    Repository{Src: "https://host/owner/next.js"},
+			want:    "/home/proj/next.js",
+		},
+		{
 			name:    "absolute dir used directly",
 			project: Project{AbsPath: "/home/proj"},
 			repo:    Repository{Dir: "/abs/path"},

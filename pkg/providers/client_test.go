@@ -74,3 +74,27 @@ func TestGetFirstEnvValue(t *testing.T) {
 		}
 	})
 }
+
+// TestConstructorsReturnNilOnError proves failed construction returns a nil
+// provider, so a caller mishandling err can only nil-deref immediately
+// instead of calling methods on a half-initialized client.
+func TestConstructorsReturnNilOnError(t *testing.T) {
+	for _, name := range []string{
+		"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN", "GITLAB_TOKEN", "BITBUCKET_TOKEN",
+	} {
+		t.Setenv(name, "")
+	}
+
+	if p, err := newGitHubProvider(Options{}); err == nil || p != nil {
+		t.Errorf("newGitHubProvider(no token) = (%v, %v), want (nil, error)", p, err)
+	}
+	if p, err := newGitLabProvider(Options{}); err == nil || p != nil {
+		t.Errorf("newGitLabProvider(no token) = (%v, %v), want (nil, error)", p, err)
+	}
+	if p, err := newBitbucketProvider(Options{}); err == nil || p != nil {
+		t.Errorf("newBitbucketProvider(no token) = (%v, %v), want (nil, error)", p, err)
+	}
+	if p, err := newBitbucketProvider(Options{Token: "no-colon"}); err == nil || p != nil {
+		t.Errorf("newBitbucketProvider(bad token) = (%v, %v), want (nil, error)", p, err)
+	}
+}

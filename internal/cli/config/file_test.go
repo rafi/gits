@@ -102,7 +102,7 @@ func TestLoadConfigWorkerCountDefault(t *testing.T) {
 	if err := NewConfigFromFile(path, f); err != nil {
 		t.Fatalf("NewConfigFromFile: %v", err)
 	}
-	want := max(runtime.NumCPU()/2, 2)
+	want := max(runtime.NumCPU(), 2)
 	if f.Settings.WorkerCount != want {
 		t.Errorf("default workerCount = %d, want %d", f.Settings.WorkerCount, want)
 	}
@@ -214,7 +214,7 @@ func TestNewConfigDefaultsWithoutFile(t *testing.T) {
 		if err := NewConfigFromFile("", f); err != nil {
 			t.Fatalf("NewConfigFromFile: %v", err)
 		}
-		want := max(runtime.NumCPU()/2, 2)
+		want := max(runtime.NumCPU(), 2)
 		if f.Settings.WorkerCount != want {
 			t.Errorf("workerCount = %d, want %d", f.Settings.WorkerCount, want)
 		}
@@ -229,7 +229,7 @@ func TestNewConfigDefaultsWithoutFile(t *testing.T) {
 		if err := NewConfigFromFile(path, f); err == nil {
 			t.Fatal("NewConfigFromFile = nil, want parse error")
 		}
-		want := max(runtime.NumCPU()/2, 2)
+		want := max(runtime.NumCPU(), 2)
 		if f.Settings.WorkerCount != want {
 			t.Errorf("workerCount = %d, want %d", f.Settings.WorkerCount, want)
 		}

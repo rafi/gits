@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 
@@ -16,19 +15,23 @@ import (
 var gitLabTokenEnvVarNames = []string{"GITLAB_TOKEN"}
 
 type gitLabProvider struct {
-	client     *gitlab.Client
-	sourceType Provider
+	client          *gitlab.Client
+	sourceType      Provider
+	includeArchived bool
 }
 
 func newGitLabProvider(opts Options) (*gitLabProvider, error) {
 	token := opts.Token
 	var err error
-	provider := &gitLabProvider{sourceType: ProviderGitLab}
+	provider := &gitLabProvider{
+		sourceType:      ProviderGitLab,
+		includeArchived: opts.IncludeArchived,
+	}
 	if token == "" {
 		token = getFirstEnvValue(gitLabTokenEnvVarNames)
 	}
 	if token == "" {
-		return provider, fmt.Errorf("token is required for %s", provider.sourceType)
+		return nil, fmt.Errorf("token is required for %s", provider.sourceType)
 	}
 
 	clientOpts := []gitlab.ClientOptionFunc{}
@@ -41,6 +44,13 @@ func newGitLabProvider(opts Options) (*gitLabProvider, error) {
 		return nil, fmt.Errorf("unable to create gitlab client: %w", err)
 	}
 	return provider, nil
+}
+
+// skipGitLabProject reports whether a listed project is omitted: empty
+// repositories always (nothing to clone), archived ones unless
+// settings.includeArchived is set.
+func skipGitLabProject(p *gitlab.Project, includeArchived bool) bool {
+	return p.EmptyRepo || (p.Archived && !includeArchived)
 }
 
 var gitLabListOptions = gitlab.ListOptions{
@@ -56,7 +66,7 @@ func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, gitClien
 
 	g, _, err := c.client.Groups.GetGroup(groupID, nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return err
+		return fmt.Errorf("gitlab: get group %q: %w", groupID, err)
 	}
 	if project.Name == "" {
 		project.Name = g.Name
@@ -123,13 +133,13 @@ func (c *gitLabProvider) fetchGroupProjects(ctx context.Context, groupID string)
 		}
 
 		for _, p := range ps {
-			if p.Archived || p.EmptyRepo {
+			if skipGitLabProject(p, c.includeArchived) {
 				continue
 			}
 			projects = append(projects, domain.Repository{
 				ID:        strconv.FormatInt(p.ID, 10),
 				Name:      p.Path,
-				Namespace: strings.TrimPrefix(p.Namespace.FullPath, p.Path+"/"),
+				Namespace: p.Namespace.FullPath,
 				Src:       p.SSHURLToRepo,
 				URL:       p.WebURL,
 				Desc:      p.Description,

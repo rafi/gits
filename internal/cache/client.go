@@ -22,7 +22,7 @@ type Cacher interface {
 func NewCacheClient(name string, ttl time.Duration) (Cacher, error) {
 	switch Client(name) {
 	case ClientFile:
-		return newCacheFile(ttl)
+		return newCacheFile(ttl), nil
 	default:
 		return nil, fmt.Errorf("unknown cache client: %s", name)
 	}

@@ -3,6 +3,7 @@ package browse
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -79,7 +80,6 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	}
 
 	if width == 0 {
-		// TODO: improve
 		width = 80
 	}
 
@@ -100,25 +100,20 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 		Padding(0, chartSidePadding).
 		Align(lipgloss.Left)
 
-	if width > 0 {
-		panelWidth := width / 2
+	panelWidth := width / 2
 
-		branchCurrentStyle = branchCurrentStyle.
-			Width(panelWidth).
-			PaddingLeft(10)
+	branchCurrentStyle = branchCurrentStyle.
+		Width(panelWidth).
+		PaddingLeft(10)
 
-		panelLeftStyle = panelLeftStyle.
-			Width(panelWidth).
-			PaddingLeft(0)
+	panelLeftStyle = panelLeftStyle.
+		Width(panelWidth).
+		PaddingLeft(0)
 
-		chartStyle = chartStyle.Width(panelWidth)
-		chartWidth = panelWidth - 2*chartSidePadding
-	}
+	chartStyle = chartStyle.Width(panelWidth)
+	chartWidth = panelWidth - 2*chartSidePadding
 
-	panelLeft, err := renderBranchDiffList(foundRepo.AbsPath, current, remotes, deps)
-	if err != nil {
-		log.Warnf("unable to render branch diff list: %s", err)
-	}
+	panelLeft := renderBranchDiffList(foundRepo.AbsPath, current, remotes, deps)
 	panelLeft = "\n" + branchCurrentStyle.Render(current) + "\n\n" + panelLeft
 
 	// Render commits per day panelRight.
@@ -131,10 +126,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	doc := strings.Builder{}
 
 	// Header
-	headerStyle := theme.PreviewHeader
-	if width > 0 {
-		headerStyle = headerStyle.Align(lipgloss.Center).Width(width - 2)
-	}
+	headerStyle := theme.PreviewHeader.Align(lipgloss.Center).Width(width - 2)
 	doc.WriteString(headerStyle.Render(repoName))
 	doc.WriteString("\n")
 
@@ -150,15 +142,15 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	docStyle := lipgloss.NewStyle().Padding(0)
 	lipgloss.Println(docStyle.Render(doc.String()))
 
-	log, err := deps.Git.Log(deps.Ctx, foundRepo.AbsPath, current)
+	commitLog, err := deps.Git.Log(deps.Ctx, foundRepo.AbsPath, current)
 	if err != nil {
 		return err
 	}
-	fmt.Println(log)
+	fmt.Println(commitLog)
 	return nil
 }
 
-func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) (string, error) {
+func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) string {
 	doc := strings.Builder{}
 	branches := map[string]string{}
 	for _, remote := range remotes {
@@ -173,14 +165,24 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 	}
 	theme := deps.Theme
 
-	for fullName, remoteName := range branches {
+	// Iterate in sorted order so the list doesn't reshuffle on every
+	// preview redraw.
+	names := make([]string, 0, len(branches))
+	for fullName := range branches {
+		names = append(names, fullName)
+	}
+	sort.Strings(names)
+
+	for _, fullName := range names {
+		remoteName := branches[fullName]
 		ahead, behind, err := deps.Git.Diff(deps.Ctx, repoPath, subjectBranch, fullName)
-		if err != nil {
-			return "", err
-		}
 
 		state := ""
-		if ahead == 0 && behind == 0 {
+		if err != nil {
+			// Best-effort: one failed comparison marks its own row N/A
+			// instead of blanking the whole panel.
+			state = deps.Settings.Icons.NA
+		} else if ahead == 0 && behind == 0 {
 			state = "✓"
 		}
 		if ahead > 0 {
@@ -200,7 +202,7 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 			theme.BranchName.Render(branchName),
 		)
 	}
-	return doc.String(), nil
+	return doc.String()
 }
 
 // renderBranchChart draws a chart of commits per day.

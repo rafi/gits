@@ -16,7 +16,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: go test
-        run: go test ./...
+        run: go test -race ./...
 
   golangci:
     name: Lint

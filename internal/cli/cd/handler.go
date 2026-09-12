@@ -18,10 +18,6 @@ func ExecCD(args []string, deps types.RuntimeCLI) error {
 	if err != nil {
 		return err
 	}
-	if repo == nil {
-		return fmt.Errorf("missing repo name")
-	}
-
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
 		return cli.AbortOnRepoState(*repo, deps.Theme.Error)
