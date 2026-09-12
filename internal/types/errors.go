@@ -52,6 +52,23 @@ func IsWarning(err error) bool {
 	return errors.As(err, &w) && w.Type == WarningType
 }
 
+// ErrSilent is a failure whose explanation the user has already been given.
+// It counts toward the exit code like any other error, but carries no message
+// to print: a command returning it has already rendered the reason as its own
+// Result Output.
+//
+// `gits doctor` is the case it exists for. Its findings *are* the output, so
+// appending "completed with errors" beneath them would restate what the last
+// line already said, and printing a bare "error" would be worse. A script
+// still reads a non-zero exit; a person still reads the findings.
+var ErrSilent = errors.New("")
+
+// IsSilent reports whether err is (or wraps) ErrSilent, so the top level can
+// choose the exit code without printing anything.
+func IsSilent(err error) bool {
+	return errors.Is(err, ErrSilent)
+}
+
 // lastError returns the last error among format arguments, so warnings built
 // with "%s"-formatted causes still wrap them.
 func lastError(args []any) error {

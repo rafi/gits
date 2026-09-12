@@ -454,23 +454,25 @@ func TestStatusJSONSkipsUnstartedRepos(t *testing.T) {
 }
 
 // TestValidateFormat: AC-8. status takes table and json, and says so instead
-// of falling back when handed one of list's other styles.
+// of falling back when handed one of list's other styles. The validator is
+// the bulk module's, shared with the line Bulk Commands, and asserted here at
+// the seam status reaches it through.
 func TestValidateFormat(t *testing.T) {
 	t.Parallel()
 
 	for _, format := range []string{"table", "json"} {
-		if err := validateFormat(format); err != nil {
-			t.Errorf("validateFormat(%q) = %v, want nil", format, err)
+		if err := bulk.ValidateFormat(format); err != nil {
+			t.Errorf("ValidateFormat(%q) = %v, want nil", format, err)
 		}
 	}
 	for _, format := range []string{"name", "tree", "wide", "", "JSON"} {
-		err := validateFormat(format)
+		err := bulk.ValidateFormat(format)
 		if err == nil {
-			t.Errorf("validateFormat(%q) = nil, want an error", format)
+			t.Errorf("ValidateFormat(%q) = nil, want an error", format)
 			continue
 		}
 		if !strings.Contains(err.Error(), "table") || !strings.Contains(err.Error(), "json") {
-			t.Errorf("validateFormat(%q) = %q, want it to name the accepted values",
+			t.Errorf("ValidateFormat(%q) = %q, want it to name the accepted values",
 				format, err)
 		}
 	}

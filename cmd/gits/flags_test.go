@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -51,5 +53,42 @@ func TestColorFlagRejectsUnknown(t *testing.T) {
 
 	if err := rootCmd.PersistentFlags().Set("color", "always"); err != nil {
 		t.Errorf("setting --color=always = %v, want nil", err)
+	}
+}
+
+// TestBulkOutputFlagRegistered proves each line Bulk Command takes -o, bound
+// to its own destination and defaulting to table, so `gits pull -o json`
+// parses on every one of them and none share a variable by accident.
+//
+//nolint:paralleltest // reads the shared command tree; kept serial with its siblings.
+func TestBulkOutputFlagRegistered(t *testing.T) {
+	registerRootFlags()
+
+	for _, tc := range []struct {
+		cmd  *cobra.Command
+		dest *string
+	}{
+		{cloneCmd, &cloneOutput},
+		{execCmd, &execOutput},
+		{fetchCmd, &fetchOutput},
+		{pullCmd, &pullOutput},
+		{pushCmd, &pushOutput},
+	} {
+		flag := tc.cmd.PersistentFlags().Lookup("output")
+		if flag == nil {
+			t.Errorf("%s: no --output flag", tc.cmd.Name())
+			continue
+		}
+		if flag.Shorthand != "o" || flag.DefValue != "table" {
+			t.Errorf("%s: --output shorthand/default = %q/%q, want o/table",
+				tc.cmd.Name(), flag.Shorthand, flag.DefValue)
+		}
+		if err := flag.Value.Set("json"); err != nil {
+			t.Errorf("%s: set --output=json: %v", tc.cmd.Name(), err)
+		}
+		if *tc.dest != "json" {
+			t.Errorf("%s: --output=json left its destination at %q", tc.cmd.Name(), *tc.dest)
+		}
+		_ = flag.Value.Set("table")
 	}
 }

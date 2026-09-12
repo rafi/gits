@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -64,6 +66,94 @@ func cacheFilePath(key string) (string, error) {
 		return "", fmt.Errorf("failed to expand cache path: %w", err)
 	}
 	return path, nil
+}
+
+// Dir returns the directory cache entries are written to, whether or not it
+// exists yet. `gits doctor` reports it so a user can find, inspect or delete
+// the files a run reads.
+func Dir() (string, error) {
+	// Derived from the same function the entries themselves use, so the two
+	// can never name different directories.
+	path, err := cacheFilePath("x")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(path), nil
+}
+
+// Entry describes one cached project as `gits doctor` reports it: the key its
+// file is named for, when it was written, and whether it is still usable.
+// Unusable covers every reason Get would treat it as a miss — a stale
+// timestamp, a version from an older gits, or a file it could not parse.
+type Entry struct {
+	Key      string
+	CachedAt time.Time
+	Version  string
+	// Unusable is empty for a live entry, and otherwise says why the next
+	// command will refetch instead of reading it.
+	Unusable string
+}
+
+// Entries lists the cached projects, oldest key first, describing each against
+// ttl. A missing cache directory is not an error: it means nothing has been
+// cached yet, which is what the caller reports.
+func Entries(ttl time.Duration) ([]Entry, error) {
+	dir, err := Dir()
+	if err != nil {
+		return nil, err
+	}
+	files, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cache directory: %w", err)
+	}
+
+	entries := make([]Entry, 0, len(files))
+	for _, file := range files {
+		if file.IsDir() || filepath.Ext(file.Name()) != ".json" {
+			continue
+		}
+		entries = append(entries, describeEntry(filepath.Join(dir, file.Name()), ttl))
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
+	return entries, nil
+}
+
+// describeEntry reads one cache file and reports it the way Get would judge
+// it, without the side effect of loading a project.
+func describeEntry(path string, ttl time.Duration) Entry {
+	entry := Entry{Key: strings.TrimSuffix(filepath.Base(path), ".json")}
+
+	// The path comes from reading the cache directory this same package
+	// writes, not from user input.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		entry.Unusable = "unreadable"
+		return entry
+	}
+	var p payload
+	if err := json.Unmarshal(content, &p); err != nil {
+		entry.Unusable = "corrupt"
+		return entry
+	}
+	entry.Version = p.Version
+	if cachedAt, err := time.Parse(cacheTimeFormat, p.Timestamp); err == nil {
+		entry.CachedAt = cachedAt
+		if cachedAt.Before(time.Now().Add(-ttl)) {
+			entry.Unusable = "expired"
+		}
+	} else {
+		entry.Unusable = "unreadable timestamp"
+	}
+	// A version mismatch busts the entry regardless of its age, so it is
+	// reported ahead of expiry: it is the reason a fresh-looking entry will
+	// still be refetched.
+	if p.Version != version.GetMajorMinor() {
+		entry.Unusable = fmt.Sprintf("written by gits %s", p.Version)
+	}
+	return entry
 }
 
 // Get loads a cached Project into project, reporting whether a live entry

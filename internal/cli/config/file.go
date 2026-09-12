@@ -23,6 +23,10 @@ import (
 // few CPUs it reports.
 const minWorkerCount = 2
 
+// configTag is the struct tag the config file unmarshals through. The keys in
+// a user's YAML are the `json` tags of the domain structs, not `koanf` ones.
+const configTag = "json"
+
 // File represents a config file with projects and settings.
 type File struct {
 	deprecations
@@ -182,7 +186,7 @@ func (f *File) loadConfig(filePath string) error {
 		return err
 	}
 
-	koanfConf := koanf.UnmarshalConf{Tag: "json"}
+	koanfConf := koanf.UnmarshalConf{Tag: configTag}
 	if err := f.client.UnmarshalWithConf("", &f.Projects, koanfConf); err != nil {
 		return fmt.Errorf("unable to parse config file: %w", err)
 	}
@@ -211,5 +215,33 @@ func (f *File) loadConfig(filePath string) error {
 		return fmt.Errorf("unable to parse config file: %w", err)
 	}
 
+	// A key that matches no field is ignored by koanf, so `pth:` instead of
+	// `path:` used to produce a project with no path and no message at all.
+	// Report every one of them as a warning on every run, rather than only
+	// under `gits doctor`: the user who misspelled a key does not yet know
+	// anything is wrong, so a check they must first suspect and then run is
+	// the wrong place for it to be the only mention. It stays a warning, not
+	// a failure — the rest of the config is valid and every command still
+	// runs. See ADR-0004 for where these are rendered.
+	for _, key := range f.unknownKeys() {
+		f.Warnings = append(f.Warnings, fmt.Sprintf(
+			"unknown config key %q in %s, ignored", key, f.Filename))
+	}
+
 	return nil
+}
+
+// unknownKeys reports the config keys that matched no field of the structs the
+// file was unmarshalled into. It decodes into fresh values rather than the
+// loaded ones, so collecting key names cannot disturb what the config already
+// resolved to.
+func (f *File) unknownKeys() []string {
+	if f.client == nil {
+		return nil
+	}
+	var (
+		projects domain.ProjectListKeyed
+		settings domain.Settings
+	)
+	return unknownKeys(f.client, &projects, &settings)
 }

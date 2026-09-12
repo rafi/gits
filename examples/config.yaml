@@ -22,6 +22,11 @@
 # Note: color output is a CLI flag (`gits -C auto|always|never`, default
 # `auto`), not a setting. A top-level `color:` key would be parsed as a
 # project.
+#
+# Note: a key gits does not recognize is ignored, and reported as a warning on
+# every run — `pth:` where `path:` was meant would otherwise be silent. Run
+# `gits doctor` to check this file, the project paths it names, the binaries
+# gits shells out to, and the state of each cached project.
 
 settings:
   # Cache repository lists fetched from providers (github/gitlab/bitbucket).
@@ -86,7 +91,14 @@ settings:
   # gitlab:
   #   tokenCommand: op read op://private/gitlab/token
   # bitbucket:
-  #   token: my-user:my-app-password   # username:app-password
+  #   token: me@example.com:my-api-token  # Atlassian email and API token.
+  #                                       # The API token on its own also
+  #                                       # works: `token: my-api-token`.
+  #
+  # A Bitbucket API token needs the read:repository:bitbucket and
+  # read:workspace:bitbucket scopes. A legacy username:app-password still
+  # works wherever Bitbucket still honors it, but Atlassian has deprecated
+  # app passwords in favor of API tokens.
 
   # Status icons. Each is a plain string, so you can use any glyph your font
   # supports. Keys you omit keep their built-in glyph, so overriding just one

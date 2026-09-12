@@ -6,23 +6,24 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/huh/v2"
+
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/types"
 )
 
-// The branch prompt itself has no test, and that is deliberate rather than an
-// oversight: promptRepo runs a huh form on the terminal, and `checkout`
-// reaches it even when both arguments are given — there is no argument that
-// skips it, the way an explicit repository name skips the interactive finder.
-// Covering it needs a seam for interactive selection, which does not exist
-// yet.
+// The branch prompt runs a huh form on the terminal, and `checkout` reaches it
+// even when both arguments are given — there is no argument that skips it, the
+// way an explicit repository name skips the interactive finder. So the package
+// has one interactive seam, runBranchPrompt, which stubPrompt below replaces.
+// Everything around it is then driven through the real entry point: the state
+// guard, the three outcome lines a repository gets once its prompt returns,
+// the project traversal, the sub-project separator and the error epilogue.
 //
-// So the entry-point tests below drive ExecCheckout with repositories that
-// abort at the state guard, ahead of the prompt. That reaches the guard, the
-// project traversal, the sub-project separator and the error epilogue; the
-// three outcome lines a repository gets after its prompt returns stay uncovered
-// until that seam exists.
+// What is deliberately not covered is the form itself — the keys huh binds and
+// what it draws — which belongs to huh's own tests.
 
 var (
 	errBoom = errors.New("boom")
@@ -184,5 +185,178 @@ func TestNewBranchPromptPreselectsCurrent(t *testing.T) {
 	}
 	if got != current {
 		t.Fatalf("cursor opens on %q, want the current branch %q", got, current)
+	}
+}
+
+// stubPrompt replaces the package's one interactive seam for the duration of a
+// test, so the outcome lines a repository gets after its prompt returns are
+// reachable without a terminal. choose is given the branch currently checked
+// out and returns the branch the user picked.
+func stubPrompt(t *testing.T, choose func(current string) (string, error)) {
+	t.Helper()
+	original := runBranchPrompt
+	t.Cleanup(func() { runBranchPrompt = original })
+
+	runBranchPrompt = func(_ *huh.Select[string], choice *string) error {
+		want, err := choose(*choice)
+		if err != nil {
+			return err
+		}
+		*choice = want
+		return nil
+	}
+}
+
+// checkoutGit answers the three methods a completed checkout reaches, and
+// records what Checkout was asked to do.
+type checkoutGit struct {
+	clitest.FakeGit
+
+	current     string
+	branches    []string
+	err         error
+	checkedOut  string
+	checkoutErr error
+}
+
+func (c *checkoutGit) CurrentBranch(context.Context, string) (string, error) {
+	return c.current, c.err
+}
+
+func (c *checkoutGit) AllBranches(context.Context, string) ([]string, error) {
+	return c.branches, nil
+}
+
+func (c *checkoutGit) Checkout(_ context.Context, _, branch string) error {
+	c.checkedOut = branch
+	return c.checkoutErr
+}
+
+// TestCheckoutRepoSwitchesBranch covers the success line: a pick that differs
+// from the current branch reaches git and is reported on Result Output.
+//
+//nolint:paralleltest // stubPrompt replaces a package-level seam.
+func TestCheckoutRepoSwitchesBranch(t *testing.T) {
+	stubPrompt(t, func(string) (string, error) { return "feat", nil })
+
+	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
+	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
+
+	if err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecCheckout: %v", err)
+	}
+	if gitClient.checkedOut != "feat" {
+		t.Errorf("Checkout branch = %q, want %q", gitClient.checkedOut, "feat")
+	}
+	got := deps.Result()
+	for _, want := range []string{"api", `Switched to branch "feat"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Result Output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestCheckoutRepoKeepsCurrentBranch covers the no-op line: picking the branch
+// already checked out reports it and never calls git.
+//
+//nolint:paralleltest // stubPrompt replaces a package-level seam.
+func TestCheckoutRepoKeepsCurrentBranch(t *testing.T) {
+	stubPrompt(t, func(current string) (string, error) { return current, nil })
+
+	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
+	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
+
+	if err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecCheckout: %v", err)
+	}
+	if gitClient.checkedOut != "" {
+		t.Errorf("Checkout branch = %q, want no checkout for an unchanged branch", gitClient.checkedOut)
+	}
+	if got := deps.Result(); !strings.Contains(got, "main") {
+		t.Errorf("Result Output = %q, want the current branch reported", got)
+	}
+}
+
+// TestCheckoutRepoReportsFailure covers the failure line: git's error is shown
+// against the repository and fails the command.
+//
+//nolint:paralleltest // stubPrompt replaces a package-level seam.
+func TestCheckoutRepoReportsFailure(t *testing.T) {
+	stubPrompt(t, func(string) (string, error) { return "feat", nil })
+
+	gitClient := &checkoutGit{
+		current: "main", branches: []string{"main", "feat"}, checkoutErr: errBoom,
+	}
+	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
+
+	err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecCheckout error = nil, want the checkout failure")
+	}
+	if !strings.Contains(err.Error(), "api") {
+		t.Errorf("ExecCheckout error = %v, want it to name the repository", err)
+	}
+	if got := deps.Result(); !strings.Contains(got, errBoom.Error()) {
+		t.Errorf("Result Output = %q, want git's error", got)
+	}
+}
+
+// TestCheckoutRepoAbortIsAWarning covers Ctrl-C at the prompt: it is a
+// documented pass-over, not a failure, so it comes back as a warning.
+//
+//nolint:paralleltest // stubPrompt replaces a package-level seam.
+func TestCheckoutRepoAbortIsAWarning(t *testing.T) {
+	stubPrompt(t, func(string) (string, error) { return "", huh.ErrUserAborted })
+
+	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
+	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
+
+	err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecCheckout error = nil, want the abort reported")
+	}
+	if !types.IsWarning(err) {
+		t.Errorf("ExecCheckout error = %T (%v), want a downgradeable warning", err, err)
+	}
+}
+
+// TestCheckoutProjectAbortStopsTraversal covers the whole-project path: an
+// abort stops the walk rather than prompting for every remaining repository,
+// and is a warning, so the run itself still succeeds.
+//
+//nolint:paralleltest // stubPrompt replaces a package-level seam.
+func TestCheckoutProjectAbortStopsTraversal(t *testing.T) {
+	prompts := 0
+	stubPrompt(t, func(string) (string, error) {
+		prompts++
+		return "", huh.ErrUserAborted
+	})
+
+	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
+	deps := clitest.New(t, gitClient).
+		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
+
+	if err := ExecCheckout([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecCheckout: %v — an abort is a warning, not a failed run", err)
+	}
+	if prompts != 1 {
+		t.Errorf("prompts = %d, want 1 — an abort stops the traversal", prompts)
+	}
+}
+
+// TestPromptRepoCurrentBranchErrorDoesNotExit covers the other pre-prompt
+// failure: a repository whose current branch cannot be read fails alone.
+//
+//nolint:paralleltest // stubPrompt replaces a package-level seam.
+func TestPromptRepoCurrentBranchErrorDoesNotExit(t *testing.T) {
+	gitClient := &checkoutGit{err: errBoom}
+	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
+
+	err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecCheckout error = nil, want the branch lookup failure")
+	}
+	if !strings.Contains(err.Error(), "unable to get branch") {
+		t.Errorf("ExecCheckout error = %v, want it to name the branch lookup", err)
 	}
 }

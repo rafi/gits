@@ -457,3 +457,190 @@ func restoreEnv(t *testing.T, key, val string, had bool) {
 		os.Unsetenv(key)
 	}
 }
+
+// TestLoadConfigUnknownKeysWarn covers the load-time half of `gits doctor`:
+// koanf ignores a key that matches no struct field, so `pth:` instead of
+// `path:` produced a project with no path and no message at all. Every
+// unknown key is now a warning naming it, on every run.
+func TestLoadConfigUnknownKeysWarn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "misspelled project key",
+			content: "acme:\n  pth: ~/code\n",
+			want:    []string{"acme.pth"},
+		},
+		{
+			name: "misspelled repository key",
+			content: `
+acme:
+  path: ~/code
+  repos:
+    - name: one
+      srcc: git@example.com:acme/one.git
+`,
+			want: []string{"acme.repos[0].srcc"},
+		},
+		{
+			name: "misspelled sub-project key",
+			content: `
+acme:
+  path: ~/code
+  subprojects:
+    - name: sub
+      pathh: ~/other
+`,
+			want: []string{"acme.subprojects[0].pathh"},
+		},
+		{
+			name:    "misspelled settings key",
+			content: "settings:\n  workerCont: 4\n",
+			want:    []string{"settings.workerCont"},
+		},
+		{
+			name:    "misspelled nested settings key",
+			content: "settings:\n  finder:\n    binry: sk\n",
+			want:    []string{"settings.finder.binry"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := writeTemp(t, "c.yaml", tt.content)
+			f := &File{}
+			if err := f.loadConfig(path); err != nil {
+				t.Fatalf("loadConfig: %v", err)
+			}
+			joined := strings.Join(f.Warnings, "\n")
+			for _, want := range tt.want {
+				if !strings.Contains(joined, want) {
+					t.Errorf("warnings %q missing the unknown key %q", joined, want)
+				}
+			}
+			// An unknown key is a warning, never a failure: the rest of the
+			// config still loads and every command still runs.
+			if len(f.Warnings) == 0 {
+				t.Error("warnings = none, want one naming the unknown key")
+			}
+		})
+	}
+}
+
+// TestLoadConfigKnownKeysDoNotWarn is the other half, and the one that keeps
+// the check honest: a checker that flags the project's own documented example
+// config is worse than no checker. Every key of both shipped examples, and of
+// a config exercising each documented shape, must load silently.
+func TestLoadConfigKnownKeysDoNotWarn(t *testing.T) {
+	t.Parallel()
+
+	t.Run("every documented shape", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeTemp(t, "c.yaml", `
+settings:
+  cache: true
+  cacheTTL: 168h
+  providerTimeout: 5m
+  gitTimeout: 5m
+  workerCount: 8
+  includeArchived: false
+  verbose: false
+  finder:
+    binary: sk
+    args: ["--ansi"]
+    extra: ["--height=80%"]
+  github:
+    tokenCommand: pass tokens/github
+  gitlab:
+    token-cmd: op read op://private/gitlab/token
+  bitbucket:
+    token: user:app-password
+  icons:
+    modified: "M"
+    gone: "G"
+  theme:
+    repoTitle: { color: "4", bold: true }
+    diff: { color: "140", align: right, width: 3, faint: true }
+
+remote:
+  desc: A provider-backed project
+  path: ~/code/github
+  clone: false
+  source:
+    type: github
+    search: rafi
+  include: [one]
+  exclude: [two]
+
+explicit:
+  path: ~/code/myapp
+  repos:
+    - id: "1"
+      name: api
+      namespace: acme
+      dir: api
+      src: https://example.com/acme/api.git
+      url: https://example.com/acme/api
+      desc: The API
+  subprojects:
+    - name: tools
+      path: ~/code/tools
+      repos:
+        - dir: cli
+`)
+		f := &File{}
+		if err := f.loadConfig(path); err != nil {
+			t.Fatalf("loadConfig: %v", err)
+		}
+		if len(f.Warnings) != 0 {
+			t.Errorf("warnings = %q, want none for a config using only documented keys", f.Warnings)
+		}
+	})
+
+	// The shipped examples are the strongest regression test available: they
+	// are what a user copies, so a false positive on them is a false positive
+	// for everyone.
+	for _, name := range []string{"config.yaml", "simple.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join("..", "..", "..", "examples", name)
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("example not present: %v", err)
+			}
+			f := &File{}
+			if err := f.loadConfig(path); err != nil {
+				t.Fatalf("loadConfig(%s): %v", name, err)
+			}
+			if len(f.Warnings) != 0 {
+				t.Errorf("examples/%s warnings = %q, want none", name, f.Warnings)
+			}
+		})
+	}
+}
+
+// TestLoadConfigUnknownKeysAreCaseInsensitive documents a limit of the check
+// rather than asserting a behavior worth having: koanf matches keys
+// case-insensitively, so a miscapitalized key still binds and is not reported.
+// Pinned so a future change to strict matching is a deliberate one.
+func TestLoadConfigUnknownKeysAreCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	path := writeTemp(t, "c.yaml", "settings:\n  cachettl: 1h\n")
+	f := &File{}
+	if err := f.loadConfig(path); err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if len(f.Warnings) != 0 {
+		t.Errorf("warnings = %q, want none: a miscapitalized key still binds", f.Warnings)
+	}
+	if f.Settings.CacheTTL != "1h" {
+		t.Errorf("cacheTTL = %q, want %q — the value must still have bound", f.Settings.CacheTTL, "1h")
+	}
+}

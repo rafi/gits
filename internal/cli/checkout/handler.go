@@ -135,17 +135,30 @@ func promptRepo(repoTitle, repoPath string, deps types.RuntimeCLI) (string, stri
 
 	want := current
 	prompt := newBranchPrompt(repoTitle, branches, &want)
-	// Run the field as a form rather than with prompt.Run(), which hides the
-	// help line — it is the only place "/" is advertised as the filter key.
-	//
-	// The form is deliberately not given deps.Ctx, unlike every git call
-	// around it. Bubbletea handles SIGINT itself and reports it as an abort,
-	// which is what an interrupted prompt is; handing it the root context
-	// would reach the same user through huh.ErrTimeout instead.
-	if err := huh.NewForm(huh.NewGroup(prompt)).Run(); err != nil {
+	if err := runBranchPrompt(prompt, &want); err != nil {
 		return "", "", err
 	}
 	return want, current, nil
+}
+
+// runBranchPrompt runs the branch selection and is the package's one
+// interactive seam: everything around it — the state guard, the three outcome
+// lines a repository gets once its prompt returns, the traversal and the error
+// epilogue — is reachable in a test by replacing this, without a terminal.
+//
+// choice is the same binding the prompt was built with, passed explicitly so a
+// replacement can report a selection by writing through it, exactly as huh
+// does. It is unused here.
+//
+// The field runs as a form rather than through prompt.Run(), which hides the
+// help line: it is the only place "/" is advertised as the filter key.
+//
+// The form is deliberately not given a context, unlike every git call around
+// it. Bubbletea handles SIGINT itself and reports it as an abort, which is
+// what an interrupted prompt is; handing it the root context would reach the
+// same user through huh.ErrTimeout instead.
+var runBranchPrompt = func(prompt *huh.Select[string], _ *string) error {
+	return huh.NewForm(huh.NewGroup(prompt)).Run()
 }
 
 // newBranchPrompt builds the branch selection. choice is huh's value binding:

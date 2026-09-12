@@ -13,27 +13,32 @@ import (
 )
 
 // ExecPush pushes project repositories, or a specific repo, to their
-// Upstream. See docs/adr/0002-push-safety-model.md for what it deliberately
-// cannot do.
+// Upstream, rendering the results as lines or as the JSON envelope. See
+// docs/adr/0002-push-safety-model.md for what it deliberately cannot do.
 //
 // Args: (optional)
 //   - project name
 //   - repo
-func ExecPush(opts git.PushOptions, args []string, deps types.RuntimeCLI) error {
+func ExecPush(format string, opts git.PushOptions, args []string, deps types.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a rejected flag
-	// combination costs neither a provider round-trip nor a single remote.
+	// combination or a typo'd format costs neither a provider round-trip nor
+	// a single remote.
+	if err := bulk.ValidateFormat(format); err != nil {
+		return err
+	}
 	if err := opts.Validate(); err != nil {
 		return err
 	}
 
 	res, err := bulk.Command[string]{
+		Name: "push",
 		Verb: "pushing",
 		Body: pushRepo(opts),
 	}.Run(args, deps)
 	if err != nil {
 		return err
 	}
-	return bulk.Lines(res, deps)
+	return bulk.Render(res, format, deps)
 }
 
 // pushRepo returns a body that pushes one repository into its result lines.

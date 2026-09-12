@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 type colorOption int
@@ -24,12 +25,16 @@ func (c colorOption) String() string {
 	return [...]string{"auto", "always", "never"}[c]
 }
 
-// colorChoices are the three accepted --color values, in the order they are
-// listed to the user on a rejected value.
-var colorChoices = []string{
-	ColorOptionAuto.String(),
-	ColorOptionAlways.String(),
-	ColorOptionNever.String(),
+// ColorChoices returns the accepted --color values, in the order they are
+// listed to the user on a rejected value. It is the one source the flag's
+// validation, its rejection message and its shell completion are built from,
+// so a fourth value could not be offered without being accepted.
+func ColorChoices() []string {
+	return []string{
+		ColorOptionAuto.String(),
+		ColorOptionAlways.String(),
+		ColorOptionNever.String(),
+	}
 }
 
 // ColorValue is a pflag.Value binding the --color flag to a string, rejecting
@@ -55,8 +60,9 @@ func (c *ColorValue) String() string {
 
 // Set validates and stores a color value, listing the accepted ones on error.
 func (c *ColorValue) Set(v string) error {
-	if !slices.Contains(colorChoices, v) {
-		return fmt.Errorf("invalid color %q: must be one of auto, always, never", v)
+	if !slices.Contains(ColorChoices(), v) {
+		return fmt.Errorf("invalid color %q: must be one of %s",
+			v, strings.Join(ColorChoices(), ", "))
 	}
 	*c.dst = v
 	return nil

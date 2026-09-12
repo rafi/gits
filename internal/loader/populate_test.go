@@ -557,7 +557,9 @@ func TestComputeStateMatrix(t *testing.T) {
 		for i, r := range p.Repos {
 			got[i] = r.GetName()
 		}
-		want := []string{"alpha.git", "bravo", "charlie", "delta"}
+		// "alpha", not "alpha.git": the Src fallback strips the suffix so the
+		// display name matches the directory derived from that same Src.
+		want := []string{"alpha", "bravo", "charlie", "delta"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("display-name order = %v, want %v", got, want)
 		}
@@ -847,4 +849,203 @@ type isRepoCountingGit struct {
 func (isRepoCountingGit) IsRepo(_ context.Context, path string) bool {
 	_, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil
+}
+
+// TestPathlessProjectKeepsRepoIdentity pins ticket 32: a project that declares
+// no `path:` must keep every configured field of its repositories. The
+// path-less branch of populateProject used to rebuild each repository from
+// just its Dir and Src, so a configured name, description, namespace, ID and
+// URL were silently dropped — while the identical repository under a project
+// that does declare a `path:` kept all of them.
+func TestPathlessProjectKeepsRepoIdentity(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configured := domain.Repository{
+		ID:        "42",
+		Name:      "dotfiles",
+		Namespace: "rafi",
+		Desc:      "my dotfiles",
+		URL:       "https://example.com/acme/one",
+		Dir:       dir,
+		Src:       "git@example.com:acme/one.git",
+	}
+	p := domain.Project{Name: "acme", Repos: []domain.Repository{configured}}
+
+	deps := types.Runtime{
+		Ctx:   context.Background(),
+		Git:   fakeGit{isRepo: true},
+		Cache: &recordingCache{},
+	}
+	if err := populateProject(&p, deps, options{}); err != nil {
+		t.Fatalf("populateProject: %v", err)
+	}
+
+	got := p.Repos[0]
+	for _, f := range []struct{ name, got, want string }{
+		{"ID", got.ID, configured.ID},
+		{"Name", got.Name, configured.Name},
+		{"Namespace", got.Namespace, configured.Namespace},
+		{"Desc", got.Desc, configured.Desc},
+		{"URL", got.URL, configured.URL},
+		{"Dir", got.Dir, configured.Dir},
+		{"Src", got.Src, configured.Src},
+	} {
+		if f.got != f.want {
+			t.Errorf("%s = %q, want %q — a path-less project must not discard configured identity",
+				f.name, f.got, f.want)
+		}
+	}
+	if got.State != domain.RepoStateOK {
+		t.Errorf("state = %q, want %q", got.State, domain.RepoStateOK)
+	}
+}
+
+// TestPathlessProjectNameFallsBackToSrc pins the degenerate half of ticket 32:
+// a repository with neither a configured name nor a `dir:` took its name from
+// [filepath.Base] of an empty string — the literal ".". GetName's Src fallback
+// names it instead.
+func TestPathlessProjectNameFallsBackToSrc(t *testing.T) {
+	t.Parallel()
+
+	p := domain.Project{
+		Name:  "acme",
+		Repos: []domain.Repository{{Src: "git@example.com:acme/one.git"}},
+	}
+	deps := types.Runtime{
+		Ctx:   context.Background(),
+		Git:   fakeGit{isRepo: true},
+		Cache: &recordingCache{},
+	}
+	if err := populateProject(&p, deps, options{}); err != nil {
+		t.Fatalf("populateProject: %v", err)
+	}
+
+	if got := p.Repos[0].GetName(); got != "one" {
+		t.Errorf("GetName() = %q, want %q — never the basename of an empty dir", got, "one")
+	}
+}
+
+// TestSubProjectSourceIsLoaded pins the defect that a Sub-project's Provider
+// Source is declared, validated and reported by `gits doctor`, but never
+// asked for its repositories: populateProject only ever loaded the root
+// project's source. A sub-project declaring a filesystem source of its own
+// therefore came back empty, and so did one that inherited its parent's.
+func TestSubProjectSourceIsLoaded(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	// The parent discovers nothing of its own; the sub-project's source is
+	// the only thing that can find "svc".
+	parent := filepath.Join(root, "parent")
+	subPath := filepath.Join(root, "services")
+	if err := os.MkdirAll(filepath.Join(parent, "app", ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(subPath, "svc", ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	p := domain.Project{
+		Name: "acme",
+		Path: parent,
+		SubProjects: []domain.Project{{
+			Name:   "backend",
+			Path:   subPath,
+			Source: &domain.ProviderSource{Type: "filesystem", Search: subPath},
+		}},
+	}
+	deps := types.Runtime{
+		Ctx:   context.Background(),
+		Git:   isRepoCountingGit{&countingGit{}},
+		Cache: &recordingCache{},
+	}
+	if err := populateProject(&p, deps, options{}); err != nil {
+		t.Fatalf("populateProject: %v", err)
+	}
+
+	sub := p.SubProjects[0]
+	if len(sub.Repos) != 1 {
+		t.Fatalf("sub-project repos = %d, want 1 — its own source must be loaded", len(sub.Repos))
+	}
+	if got := sub.Repos[0].GetName(); got != "svc" {
+		t.Errorf("repo name = %q, want %q", got, "svc")
+	}
+	if got := sub.Repos[0].State; got != domain.RepoStateOK {
+		t.Errorf("state = %q, want %q", got, domain.RepoStateOK)
+	}
+}
+
+// TestInheritedSubProjectSourceIsNotRediscovered guards the other half of the
+// same rule: a Sub-project with no source of its own inherits the parent's,
+// but that copy must not be discovered through. The parent's search already
+// found everything beneath it, so walking it again per sub-project would
+// duplicate every repository.
+func TestInheritedSubProjectSourceIsNotRediscovered(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "app", ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	p := domain.Project{
+		Name:        "acme",
+		Path:        root,
+		Source:      &domain.ProviderSource{Type: "filesystem", Search: root},
+		SubProjects: []domain.Project{{Name: "team"}},
+	}
+	deps := types.Runtime{
+		Ctx:   context.Background(),
+		Git:   isRepoCountingGit{&countingGit{}},
+		Cache: &recordingCache{},
+	}
+	if err := populateProject(&p, deps, options{}); err != nil {
+		t.Fatalf("populateProject: %v", err)
+	}
+
+	if len(p.Repos) != 1 {
+		t.Errorf("root repos = %d, want 1", len(p.Repos))
+	}
+	if got := len(p.SubProjects[0].Repos); got != 0 {
+		t.Errorf("sub-project repos = %d, want 0 — an inherited source must not be re-walked", got)
+	}
+}
+
+// TestPathlessGroupingProjectIsNotDiscovered pins the shape of a project that
+// exists only to group Sub-projects: no `path:`, no `repos:`, no `source:`.
+// The implicit filesystem default fired regardless of whether there was a
+// path to search, so such a project failed validation with a message telling
+// the user to set `search:` on a source they never declared.
+func TestPathlessGroupingProjectIsNotDiscovered(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "svc", ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	p := domain.Project{
+		Name: "acme",
+		SubProjects: []domain.Project{{
+			Name:   "backend",
+			Path:   root,
+			Source: &domain.ProviderSource{Type: "filesystem", Search: root},
+		}},
+	}
+	deps := types.Runtime{
+		Ctx:   context.Background(),
+		Git:   isRepoCountingGit{&countingGit{}},
+		Cache: &recordingCache{},
+	}
+	if err := populateProject(&p, deps, options{}); err != nil {
+		t.Fatalf("populateProject: %v — a grouping project declares nothing to discover", err)
+	}
+
+	if len(p.Repos) != 0 {
+		t.Errorf("root repos = %d, want 0", len(p.Repos))
+	}
+	if got := len(p.SubProjects[0].Repos); got != 1 {
+		t.Fatalf("sub-project repos = %d, want 1", got)
+	}
 }

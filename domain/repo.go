@@ -47,6 +47,13 @@ const (
 
 // GetName returns the repository's display name: its configured name, else
 // the basename of its Repo Dir or Repo Src, else a placeholder.
+//
+// The Repo Src fallback strips a trailing ".git" via RepoDirName, so it names
+// the repository the same way its local directory is named from that same Src
+// (see RepoDirName and GetRepoAbsPath). Returning the bare basename here made
+// a `src:`-only repository display and key as "one.git" while living in
+// "one", so `gits cd acme one` could not find the repository the listing had
+// just shown.
 func (r Repository) GetName() string {
 	switch {
 	case r.Name != "":
@@ -54,7 +61,7 @@ func (r Repository) GetName() string {
 	case r.Dir != "":
 		return filepath.Base(r.Dir)
 	case r.Src != "":
-		return filepath.Base(r.Src)
+		return RepoDirName(r.Src)
 	default:
 		return "<unnamed>"
 	}

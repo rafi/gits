@@ -1,12 +1,15 @@
 package bulk
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/types"
 )
@@ -196,5 +199,213 @@ func TestLinesGroupsProjectsCopiedThroughAppend(t *testing.T) {
 	if len(lines) != 4 || lines[2] != "" {
 		t.Fatalf("Result Output = %q, want the two root rows grouped and the sub-project split off",
 			deps.Result())
+	}
+}
+
+// TestValidateFormat: a line Bulk Command takes table and json, and says so
+// instead of falling back when handed one of list's other styles.
+func TestValidateFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{FormatTable, FormatJSON} {
+		if err := ValidateFormat(format); err != nil {
+			t.Errorf("ValidateFormat(%q) = %v, want nil", format, err)
+		}
+	}
+	for _, format := range []string{"name", "tree", "wide", "", "JSON"} {
+		err := ValidateFormat(format)
+		if err == nil {
+			t.Errorf("ValidateFormat(%q) = nil, want an error", format)
+			continue
+		}
+		if !strings.Contains(err.Error(), "table") || !strings.Contains(err.Error(), "json") {
+			t.Errorf("ValidateFormat(%q) = %q, want it to name the accepted values", format, err)
+		}
+	}
+}
+
+// jsonFixture is a run over one project of four repositories, one in each
+// condition a renderer distinguishes: a success, a documented pass-over, a
+// failure, and one the state guard turned back. Its output carries terminal
+// styling, as a body's does.
+func jsonFixture(t *testing.T) (Results[string], *clitest.Deps) {
+	t.Helper()
+
+	deps := clitest.New(t, nil)
+	proj := domain.Project{Name: "acme", Path: "/code/acme", Repos: []domain.Repository{
+		{Name: "api", Dir: "api", AbsPath: "/code/acme/api", State: domain.RepoStateOK},
+		{Name: "web", Dir: "web", AbsPath: "/code/acme/web", State: domain.RepoStateOK},
+		{Name: "docs", Dir: "docs", AbsPath: "/code/acme/docs", State: domain.RepoStateOK},
+		{Name: "gone", Dir: "gone", AbsPath: "/code/acme/gone", State: domain.RepoStateNotCloned},
+	}}
+	repo := func(i int) Repo {
+		return Repo{Repository: proj.Repos[i], Project: proj, ProjectKey: "0", Path: proj.Repos[i].Dir}
+	}
+	res := Results[string]{Command: "pull", Project: proj, Results: []Result[string]{
+		{Repo: repo(0), Value: deps.Theme.GitOutput.Render("Already up to date.")},
+		{Repo: repo(1), Err: types.NewWarning("skipped: no upstream")},
+		{Repo: repo(2), Value: "partial", Err: errors.New("boom")},
+		{Repo: repo(3), Err: cli.StateError(proj.Repos[3]), Guarded: true},
+	}}
+	return res, deps
+}
+
+// TestJSONOutcomes: each repository's outcome nests under the command's name
+// as exactly one of output, skipped or error, with the terminal styling the
+// table shows stripped; a repository the guard turned back carries its state
+// and no outcome, since the command never ran for it. None of it fails the
+// run, and there is no epilogue: the document is the whole of the output.
+func TestJSONOutcomes(t *testing.T) {
+	t.Parallel()
+
+	res, deps := jsonFixture(t)
+	if err := JSON(res, deps.RuntimeCLI); err != nil {
+		t.Fatalf("JSON error = %v, want nil: a repository's outcome is data", err)
+	}
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want no epilogue in the json form", got)
+	}
+	if raw := deps.Result(); strings.Contains(raw, "\x1b") {
+		t.Errorf("Result Output = %q, want no terminal styling in the document", raw)
+	}
+
+	repos := deps.JSONRepos("acme")
+	want := map[string]map[string]any{
+		"api":  {"output": "Already up to date."},
+		"web":  {"skipped": "skipped: no upstream"},
+		"docs": {"error": "boom"},
+	}
+	for name, outcome := range want {
+		got, ok := repos[name]["pull"].(map[string]any)
+		if !ok {
+			t.Errorf("%s = %v, want the outcome under the command's name", name, repos[name])
+			continue
+		}
+		if len(got) != 1 || fmt.Sprint(got) != fmt.Sprint(outcome) {
+			t.Errorf("%s.pull = %v, want %v", name, got, outcome)
+		}
+	}
+	gone := repos["gone"]
+	if gone["state"] != "not-cloned" {
+		t.Errorf("gone.state = %v, want not-cloned", gone["state"])
+	}
+	if _, found := gone["pull"]; found {
+		t.Errorf("gone = %v, want no outcome for a repository the guard turned back", gone)
+	}
+}
+
+// TestJSONInterrupted: an interrupted run still writes what it has, and
+// still fails — the document is incomplete and nothing inside it says so.
+// The repositories never started are present with their identity and state
+// and no outcome.
+func TestJSONInterrupted(t *testing.T) {
+	t.Parallel()
+
+	res, deps := jsonFixture(t)
+	res.Results = res.Results[:1]
+	res.Interrupted = errors.New("interrupted: 3 of 4 repositories not processed")
+
+	err := JSON(res, deps.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "interrupted") {
+		t.Fatalf("JSON error = %v, want the interruption to fail the run", err)
+	}
+	repos := deps.JSONRepos("acme")
+	if len(repos) != 4 {
+		t.Fatalf("repos = %v, want every repository of the tree, started or not", repos)
+	}
+	if _, ok := repos["api"]["pull"]; !ok {
+		t.Errorf("api = %v, want the started repository's outcome", repos["api"])
+	}
+	for _, name := range []string{"web", "docs", "gone"} {
+		if _, found := repos[name]["pull"]; found {
+			t.Errorf("%s = %v, want no outcome for a repository never started", name, repos[name])
+		}
+	}
+}
+
+// TestJSONSkippedProject: a run whose named project was skipped has nothing to
+// document, and says so with an empty envelope rather than a nameless node.
+func TestJSONSkippedProject(t *testing.T) {
+	t.Parallel()
+
+	deps := clitest.New(t, nil)
+	if err := JSON(Results[string]{Command: "clone"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("JSON error = %v, want nil", err)
+	}
+	if got := deps.Result(); got != "{}\n" {
+		t.Errorf("Result Output = %q, want an empty envelope", got)
+	}
+}
+
+// TestJSONTree: sub-projects nest as the project tree does, each repository
+// found by identity rather than by the order its result arrived in.
+func TestJSONTree(t *testing.T) {
+	t.Parallel()
+
+	sub := domain.Project{Name: "team", Repos: []domain.Repository{
+		{Name: "tools", AbsPath: "/code/acme/team/tools", State: domain.RepoStateOK},
+	}}
+	root := domain.Project{Name: "acme", SubProjects: []domain.Project{sub}, Repos: []domain.Repository{
+		{Name: "api", AbsPath: "/code/acme/api", State: domain.RepoStateOK},
+	}}
+	res := Results[string]{Command: "fetch", Project: root, Results: []Result[string]{
+		// Reversed from traversal order on purpose.
+		{Repo: Repo{Repository: sub.Repos[0], Project: sub, ProjectKey: "0/0"}, Value: "sub"},
+		{Repo: Repo{Repository: root.Repos[0], Project: root, ProjectKey: "0"}, Value: "root"},
+	}}
+
+	deps := clitest.New(t, nil)
+	if err := JSON(res, deps.RuntimeCLI); err != nil {
+		t.Fatalf("JSON error = %v, want nil", err)
+	}
+	var env map[string]struct {
+		Repos []struct {
+			Name  string            `json:"name"`
+			Fetch map[string]string `json:"fetch"`
+		} `json:"repos"`
+		SubProjects []struct {
+			Name  string `json:"name"`
+			Repos []struct {
+				Name  string            `json:"name"`
+				Fetch map[string]string `json:"fetch"`
+			} `json:"repos"`
+		} `json:"subprojects"`
+	}
+	if err := json.Unmarshal([]byte(deps.Result()), &env); err != nil {
+		t.Fatalf("unmarshal %q: %v", deps.Result(), err)
+	}
+	acme := env["acme"]
+	if len(acme.Repos) != 1 || acme.Repos[0].Name != "api" || acme.Repos[0].Fetch["output"] != "root" {
+		t.Errorf("acme.repos = %+v, want api with its own outcome", acme.Repos)
+	}
+	if len(acme.SubProjects) != 1 || acme.SubProjects[0].Name != "team" {
+		t.Fatalf("acme.subprojects = %+v, want team nested", acme.SubProjects)
+	}
+	if team := acme.SubProjects[0].Repos; len(team) != 1 || team[0].Fetch["output"] != "sub" {
+		t.Errorf("team.repos = %+v, want tools with its own outcome", team)
+	}
+}
+
+// TestRenderDispatches: Render picks the renderer by format, and the exit-code
+// rule follows the renderer — the same failing results fail the table and
+// leave the json form at zero.
+func TestRenderDispatches(t *testing.T) {
+	t.Parallel()
+
+	res, deps := jsonFixture(t)
+	if err := Render(res, FormatJSON, deps.RuntimeCLI); err != nil {
+		t.Errorf("Render(json) error = %v, want nil", err)
+	}
+	if !strings.HasPrefix(deps.Result(), "{") {
+		t.Errorf("Render(json) Result Output = %q, want the document", deps.Result())
+	}
+
+	res, deps = jsonFixture(t)
+	err := Render(res, FormatTable, deps.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "completed with errors") {
+		t.Errorf("Render(table) error = %v, want the failures to fail the run", err)
+	}
+	if strings.HasPrefix(deps.Result(), "{") {
+		t.Errorf("Render(table) Result Output = %q, want lines", deps.Result())
 	}
 }

@@ -13,13 +13,21 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// ExecClone clones project repositories, or a specific repo.
+// ExecClone clones project repositories, or a specific repo, rendering the
+// results as lines or as the JSON envelope.
 //
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecClone(args []string, deps types.RuntimeCLI) error {
+func ExecClone(format string, args []string, deps types.RuntimeCLI) error {
+	// Validate before anything is loaded or selected, so a typo'd format never
+	// costs a provider round-trip or an interactive prompt.
+	if err := bulk.ValidateFormat(format); err != nil {
+		return err
+	}
+
 	res, err := bulk.Command[string]{
+		Name: "clone",
 		Verb: "cloning",
 		// A repository not yet cloned is this command's expected input, where
 		// every other Bulk Command passes over it. Only a defective
@@ -36,7 +44,7 @@ func ExecClone(args []string, deps types.RuntimeCLI) error {
 	if err != nil {
 		return err
 	}
-	return bulk.Lines(res, deps)
+	return bulk.Render(res, format, deps)
 }
 
 // skipped reports whether a project's configuration disables cloning it, and

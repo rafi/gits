@@ -1,6 +1,6 @@
-// Package jsonout holds the JSON envelope `gits list -o json` and
-// `gits status -o json` share, and the conversion into it from the domain
-// tree.
+// Package jsonout holds the JSON envelope `gits list -o json`,
+// `gits status -o json` and the line Bulk Commands' `-o json` share, and the
+// conversion into it from the domain tree.
 //
 // The types here are the wire contract, deliberately separate from the domain
 // structs they mirror. Marshaling `domain.Project` directly — as `list` used
@@ -10,15 +10,19 @@
 // file and out of `domain.Project.CalculateHash`, both of which marshal the
 // domain type.
 //
-// The two commands emit one shape rather than two so a consumer need not know
-// which produced its input. They differ in exactly one way: `status` nests a
-// working-tree object under each repository it probed, and `list` never does
-// — so the key's presence, rather than a zero count, is what says git was
-// consulted.
+// Every command emits one shape rather than its own so a consumer need not
+// know which produced its input. They differ in exactly one way: `status`
+// nests a working-tree object under each repository it probed, a line Bulk
+// Command (`pull`, `fetch`, `push`, `clone`, `exec`) nests an Outcome under
+// its own name for each repository it ran on, and `list` nests nothing — so
+// the key's presence, rather than a zero count, is what says the command was
+// run, and the key's name says which.
 package jsonout
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"time"
 
@@ -63,6 +67,14 @@ type Repository struct {
 	// Status is present only when git was consulted for this repository —
 	// that presence is the statement, not the values inside it.
 	Status *Status `json:"status,omitempty"`
+
+	// Outcome is what a line Bulk Command made of this repository, present
+	// only when the command ran for it. It is nested under Command — the
+	// command's own name, `pull` for `gits pull` — so the key says which
+	// command ran, as `status` does. The key is not a struct tag's to give,
+	// so MarshalJSON adds it; neither field reaches the document by itself.
+	Command string   `json:"-"`
+	Outcome *Outcome `json:"-"`
 }
 
 // Status is one repository's working-tree data, nested so that `list`'s
@@ -145,6 +157,44 @@ func (s Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias(s))
 }
 
+// Outcome is what one of the line Bulk Commands made of a repository. Exactly
+// one field is set, and MarshalJSON emits only that one: a command either
+// produced output, passed the repository over for a documented reason, or
+// failed on it, and `"output": ""` beside an error would read as a command
+// that ran and said nothing.
+type Outcome struct {
+	// Output is what the command printed for the repository — git's own
+	// report, or the child's combined output under `exec` — with no
+	// terminal styling. Present, even when empty, whenever the command
+	// succeeded.
+	Output string `json:"output"`
+	// Skipped is the reason the command passed the repository over: a
+	// documented pass-over, such as a branch with no Upstream, which the
+	// table shows on the line and which does not fail the run. It is not an
+	// error, and is not reported as one.
+	Skipped string `json:"skipped,omitempty"`
+	// Error is why the command failed on the repository.
+	Error string `json:"error,omitempty"`
+}
+
+// MarshalJSON emits the one field that describes the outcome — see Outcome.
+func (o Outcome) MarshalJSON() ([]byte, error) {
+	switch {
+	case o.Error != "":
+		return json.Marshal(struct {
+			Error string `json:"error"`
+		}{Error: o.Error})
+	case o.Skipped != "":
+		return json.Marshal(struct {
+			Skipped string `json:"skipped"`
+		}{Skipped: o.Skipped})
+	default:
+		return json.Marshal(struct {
+			Output string `json:"output"`
+		}{Output: o.Output})
+	}
+}
+
 // FromProjects converts a keyed project list into the envelope, with no
 // working-tree data attached — the shape `list -o json` emits.
 func FromProjects(projects domain.ProjectListKeyed) Envelope {
@@ -202,9 +252,60 @@ func NewRepository(repo domain.Repository) Repository {
 	return out
 }
 
+// errOutcomeWithoutCommand is returned when an Outcome has no key to nest
+// under: a renderer that forgot to name its command, caught at marshal time
+// rather than by emitting a document with a nameless object.
+var errOutcomeWithoutCommand = errors.New("jsonout: an Outcome needs the command's name to nest under")
+
+// MarshalJSON is the default struct encoding, plus the Outcome under the
+// Command's name when there is one. The tagged fields are encoded first, on
+// their own, so a repository without an Outcome — every one `list` and
+// `status` emit — is byte-for-byte what the plain encoding produces.
+func (r Repository) MarshalJSON() ([]byte, error) {
+	// The alias sheds this method, so the default struct encoding applies.
+	type alias Repository
+	raw, err := json.Marshal(alias(r))
+	if err != nil || r.Outcome == nil {
+		return raw, err
+	}
+	if r.Command == "" {
+		return nil, errOutcomeWithoutCommand
+	}
+	key, err := json.Marshal(r.Command)
+	if err != nil {
+		return nil, err
+	}
+	value, err := json.Marshal(r.Outcome)
+	if err != nil {
+		return nil, err
+	}
+	// raw is an object holding at least `state`, so it ends in `}` and a
+	// comma before the added member is always right.
+	var buf bytes.Buffer
+	buf.Write(raw[:len(raw)-1])
+	buf.WriteByte(',')
+	buf.Write(key)
+	buf.WriteByte(':')
+	buf.Write(value)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
 // Write marshals env to w as one newline-terminated line.
 func Write(w io.Writer, env Envelope) error {
-	raw, err := json.Marshal(env)
+	return WriteValue(w, env)
+}
+
+// WriteValue marshals any document to w as one newline-terminated line — the
+// shape that makes Result Output pipeable into `jq` without a reader having to
+// know how many lines to expect.
+//
+// It exists for `doctor`, whose report is a list of findings rather than a
+// project tree and so cannot use Envelope. What the two share is this
+// convention, not the schema, and that is exactly what is factored here: a
+// command emitting a different document still emits it the same way.
+func WriteValue(w io.Writer, doc any) error {
+	raw, err := json.Marshal(doc)
 	if err != nil {
 		return err
 	}

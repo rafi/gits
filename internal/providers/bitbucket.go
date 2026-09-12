@@ -13,22 +13,33 @@ import (
 	"github.com/rafi/gits/domain"
 )
 
-// tokenFields is what a Bitbucket token splits into: user and app password.
-const tokenFields = 2
+// tokenSeparator splits a Bitbucket basic-auth token into its two halves.
+// Its presence is also what picks the authentication scheme: Atlassian
+// documents an API token as either `email:token` over basic auth or the bare
+// token as a bearer, and only the separator tells the two apart. Token shape
+// is deliberately not guessed at — Atlassian does not document one.
+const tokenSeparator = ":"
 
 type bitbucketProvider struct {
 	client *bitbucket.Client
 	log    *slog.Logger
 }
 
+// newBitbucketProvider builds the API client from the configured token.
+//
+// Two forms are accepted, matching what Bitbucket Cloud accepts on the wire:
+//
+//	email:api-token    basic auth, the Atlassian account email as the user
+//	api-token          bearer auth, which needs no email
+//
+// A legacy `user:app-password` is the same basic-auth request as the first
+// form, so it keeps working for as long as Bitbucket honors it without a code
+// path of its own. Atlassian has deprecated app passwords in favor of API
+// tokens; see https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/.
 func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
-	userLogin := strings.SplitN(opts.Token, ":", 2)
-	if len(userLogin) != tokenFields {
-		return nil, fmt.Errorf("token is invalid for %s", ProviderBitbucket)
-	}
 	provider := &bitbucketProvider{log: opts.Log}
 	var err error
-	provider.client, err = bitbucket.NewBasicAuth(userLogin[0], userLogin[1])
+	provider.client, err = newBitbucketClient(opts.Token)
 	if err != nil {
 		return nil, fmt.Errorf("bitbucket auth failed: %w", err)
 	}
@@ -44,6 +55,29 @@ func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
 		provider.client.HttpClient.Timeout = opts.Timeout
 	}
 	return provider, nil
+}
+
+// newBitbucketClient returns the client for token, choosing basic or bearer
+// authentication by whether the token carries a user half. Each half of a
+// `user:token` pair must be non-empty: a bare separator names a credential
+// neither scheme can send, and silently treating `:token` as a bearer would
+// authenticate as somebody other than the user wrote down.
+func newBitbucketClient(token string) (*bitbucket.Client, error) {
+	user, secret, hasUser := strings.Cut(token, tokenSeparator)
+	if !hasUser {
+		if token == "" {
+			return nil, fmt.Errorf("token is empty for %s", ProviderBitbucket)
+		}
+		// A bare token is an Atlassian API token used as a bearer, which
+		// carries its own account and so needs no email.
+		return bitbucket.NewOAuthbearerToken(token)
+	}
+	if user == "" || secret == "" {
+		return nil, fmt.Errorf(
+			"token is invalid for %s: expected `email:api-token`, or the API token alone",
+			ProviderBitbucket)
+	}
+	return bitbucket.NewAPITokenAuth(user, secret)
 }
 
 func (c *bitbucketProvider) LoadRepos(ctx context.Context, ownerName string, project *domain.Project) error {

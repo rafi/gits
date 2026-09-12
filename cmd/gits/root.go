@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 
 	"charm.land/lipgloss/v2"
@@ -72,7 +73,12 @@ func main() {
 	})
 
 	if err := execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// A silent failure has already shown the user why — `gits doctor`'s
+		// findings are its Result Output — so it sets the exit code without
+		// a message that would only restate the last line.
+		if !types.IsSilent(err) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		os.Exit(1)
 	}
 }
@@ -94,7 +100,11 @@ func registerRootFlags() {
 		// -C rejects anything but auto|always|never, so a typo fails loudly
 		// rather than silently meaning auto.
 		rootCmd.PersistentFlags().
-			VarP(config.NewColorValue(&configFile.Color), "color", "C", "color (auto, always, never)")
+			VarP(config.NewColorValue(&configFile.Color), "color", "C",
+				fmt.Sprintf("color (%s)", strings.Join(config.ColorChoices(), ", ")))
+		// The same three values Tab offers, from the same list, so completion
+		// cannot suggest one the flag would reject.
+		mustRegisterFlagCompletion(rootCmd, "color", completeValues(config.ColorChoices()))
 
 		rootCmd.PersistentFlags().
 			BoolVarP(&verboseFlag, "verbose", "v", false, "display verbose output")
@@ -169,11 +179,48 @@ func newRuntime(ctx context.Context) (types.Runtime, []error) {
 		Git:        &gitClient,
 		Cache:      cache.NewFileCache(cacheTTL, log),
 		Log:        log,
+		// Carried so `gits doctor` can report what loading found. Every other
+		// command renders these once, in runWithDeps, and ignores the field.
+		ConfigWarnings: configWarnings(warnings),
 	}, warnings
 }
 
+// configWarnings renders the load-time warnings as the plain sentences doctor
+// reports, combining the config file's own notices with the settings that
+// fell back to their defaults.
+func configWarnings(settingWarnings []error) []string {
+	out := make([]string, 0, len(configFile.Warnings)+len(settingWarnings))
+	out = append(out, configFile.Warnings...)
+	for _, w := range settingWarnings {
+		out = append(out, w.Error())
+	}
+	return out
+}
+
+// runOption tunes how runWithDeps wraps a command.
+type runOption func(*runOptions)
+
+// runOptions is the resolved set of wrapper tunables.
+type runOptions struct {
+	// ownsConfigWarnings suppresses the wrapper's rendering of the load-time
+	// warnings, for a command that reports them itself.
+	ownsConfigWarnings bool
+}
+
+// reportsConfigWarnings marks a command as rendering the config's load-time
+// warnings itself, so the wrapper does not also print them. `gits doctor` is
+// the one such command: those warnings are among its findings, and printing
+// them on Diagnostic Output as well would say everything twice.
+func reportsConfigWarnings() runOption {
+	return func(o *runOptions) { o.ownsConfigWarnings = true }
+}
+
 // runWithDeps execute a command with dependencies.
-func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs {
+func runWithDeps(f func([]string, types.RuntimeCLI) error, opts ...runOption) cobra.PositionalArgs {
+	var o runOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	return func(cmd *cobra.Command, args []string) error {
 		// Setup runtime dependencies.
 		runtime, settingWarnings := newRuntime(cmd.Context())
@@ -192,11 +239,13 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 		// is a warning, not a failure: render it as prose on Diagnostic Output,
 		// styled like any downgraded warning, rather than as a structured log
 		// record or a raw os.Stderr print.
-		for _, w := range configFile.Warnings {
-			writeWarning(os.Stderr, theme, w)
-		}
-		for _, w := range settingWarnings {
-			writeWarning(os.Stderr, theme, w.Error())
+		if !o.ownsConfigWarnings {
+			for _, w := range configFile.Warnings {
+				writeWarning(os.Stderr, theme, w)
+			}
+			for _, w := range settingWarnings {
+				writeWarning(os.Stderr, theme, w.Error())
+			}
 		}
 
 		// Run command with dependencies.

@@ -14,8 +14,10 @@ package clitest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
@@ -95,6 +97,37 @@ func (d *Deps) Diagnostic() string { return ansi.Strip(d.err.String()) }
 // Trace returns the captured debug log records, which are not Diagnostic
 // Output and never appear in it.
 func (d *Deps) Trace() string { return d.log.String() }
+
+// JSONRepos decodes the JSON envelope a command wrote as Result Output and
+// returns the repositories of the project named project, in document order,
+// each keyed by its repository name. It decodes into plain maps rather than
+// the envelope's own types, so a test checks the wire contract against
+// something other than itself. Result Output must be exactly one
+// newline-terminated line, which is what makes the document pipeable.
+func (d *Deps) JSONRepos(project string) map[string]map[string]any {
+	d.t.Helper()
+
+	raw := d.out.String()
+	if n := strings.Count(raw, "\n"); n != 1 || !strings.HasSuffix(raw, "\n") {
+		d.t.Fatalf("Result Output = %q, want one newline-terminated line", raw)
+	}
+	var env map[string]struct {
+		Repos []map[string]any `json:"repos"`
+	}
+	if err := json.Unmarshal([]byte(raw), &env); err != nil {
+		d.t.Fatalf("unmarshal Result Output %q: %v", raw, err)
+	}
+	node, ok := env[project]
+	if !ok {
+		d.t.Fatalf("envelope = %v, want project %q keyed by its name", env, project)
+	}
+	repos := make(map[string]map[string]any, len(node.Repos))
+	for _, repo := range node.Repos {
+		name, _ := repo["name"].(string)
+		repos[name] = repo
+	}
+	return repos
+}
 
 // FakeGit is the base of a command test's fake git client: it answers the one
 // question repository classification asks of git — whether a path is a git

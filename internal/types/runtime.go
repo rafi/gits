@@ -24,6 +24,14 @@ type Runtime struct {
 	Git        git.Client
 	Settings   domain.Settings
 
+	// ConfigWarnings are the non-fatal notices gathered while loading the
+	// config file — an unknown key, a deprecated one, a setting that fell
+	// back to its default. Every command already shows them once on
+	// Diagnostic Output; they are carried here so `gits doctor` can report
+	// them as findings rather than re-reading and re-parsing the file to
+	// rediscover what the loader already knows.
+	ConfigWarnings []string
+
 	// Log is the debug tracer: page fetches, cache hits and misses, git's
 	// stderr. It is never how a user is told something — that is Diagnostic
 	// Output on Err, as prose. Constructed once in cmd/gits and passed here

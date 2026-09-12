@@ -185,3 +185,117 @@ func TestRunFinderOverrides(t *testing.T) {
 		}
 	})
 }
+
+func TestWithPreview(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty opts take the default layout", func(t *testing.T) {
+		t.Parallel()
+
+		f := New(io.Discard)
+		f.WithPreview("gits list {1}", "")
+
+		want := []string{"--preview", "gits list {1}", "--preview-window", defaultPreviewOpts}
+		if !slices.Equal(f.Args, want) {
+			t.Errorf("Args = %q, want %q", f.Args, want)
+		}
+	})
+
+	t.Run("explicit opts size the window", func(t *testing.T) {
+		t.Parallel()
+
+		f := New(io.Discard)
+		f.WithPreview("gits list {1}", "down,40%")
+
+		want := []string{"--preview", "gits list {1}", "--preview-window", "down,40%"}
+		if !slices.Equal(f.Args, want) {
+			t.Errorf("Args = %q, want %q", f.Args, want)
+		}
+	})
+
+	// Caller options are appended, so they come after anything New was given.
+	t.Run("appends to the options New was given", func(t *testing.T) {
+		t.Parallel()
+
+		f := New(io.Discard, "--nth=1")
+		f.WithPreview("cmd", "")
+		f.WithPrompt("project> ")
+
+		want := []string{
+			"--nth=1",
+			"--preview", "cmd",
+			"--preview-window", defaultPreviewOpts,
+			"--prompt", "project> ",
+		}
+		if !slices.Equal(f.Args, want) {
+			t.Errorf("Args = %q, want %q", f.Args, want)
+		}
+	})
+}
+
+func TestWithPrompt(t *testing.T) {
+	t.Parallel()
+
+	f := New(io.Discard)
+	f.WithPrompt("repo> ")
+
+	want := []string{"--prompt", "repo> "}
+	if !slices.Equal(f.Args, want) {
+		t.Errorf("Args = %q, want %q", f.Args, want)
+	}
+}
+
+// GetPreviewSize reads the variables fzf sets for a preview subprocess. Both
+// must be present: a partial pair is reported as no size at all, so a caller
+// falls back to its own default rather than laying out against one dimension.
+func TestGetPreviewSize(t *testing.T) {
+	t.Run("both variables set", func(t *testing.T) {
+		t.Setenv("FZF_PREVIEW_COLUMNS", "120")
+		t.Setenv("FZF_PREVIEW_LINES", "40")
+
+		w, h, err := GetPreviewSize()
+		if err != nil {
+			t.Fatalf("GetPreviewSize: %v", err)
+		}
+		if w != 120 || h != 40 {
+			t.Errorf("GetPreviewSize() = %d, %d, want 120, 40", w, h)
+		}
+	})
+
+	t.Run("neither variable set", func(t *testing.T) {
+		t.Setenv("FZF_PREVIEW_COLUMNS", "")
+		t.Setenv("FZF_PREVIEW_LINES", "")
+
+		w, h, err := GetPreviewSize()
+		if err != nil {
+			t.Fatalf("GetPreviewSize: %v", err)
+		}
+		if w != 0 || h != 0 {
+			t.Errorf("GetPreviewSize() = %d, %d, want 0, 0", w, h)
+		}
+	})
+
+	t.Run("only one variable set is no size", func(t *testing.T) {
+		t.Setenv("FZF_PREVIEW_COLUMNS", "120")
+		t.Setenv("FZF_PREVIEW_LINES", "")
+
+		w, h, err := GetPreviewSize()
+		if err != nil {
+			t.Fatalf("GetPreviewSize: %v", err)
+		}
+		if w != 0 || h != 0 {
+			t.Errorf("GetPreviewSize() = %d, %d, want 0, 0 for a partial pair", w, h)
+		}
+	})
+
+	t.Run("a non-numeric value is an error naming the variable", func(t *testing.T) {
+		t.Setenv("FZF_PREVIEW_COLUMNS", "wide")
+		t.Setenv("FZF_PREVIEW_LINES", "40")
+
+		if _, _, err := GetPreviewSize(); err == nil {
+			t.Fatal("GetPreviewSize error = nil, want a parse failure")
+		} else if !strings.Contains(err.Error(), "FZF_PREVIEW_COLUMNS") {
+			t.Errorf("GetPreviewSize error = %q, want it to name the variable", err)
+		}
+	})
+}
