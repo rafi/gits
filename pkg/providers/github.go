@@ -9,48 +9,31 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/pkg/git"
 )
-
-var gitHubTokenEnvVarNames = []string{
-	"GITHUB_TOKEN",
-	"HOMEBREW_GITHUB_API_TOKEN",
-}
 
 // githubPageDelay softens the request rate between pages.
 const githubPageDelay = 100 * time.Millisecond
 
 type gitHubProvider struct {
 	client          *githubv4.Client
-	sourceType      Provider
 	includeArchived bool
 }
 
-func newGitHubProvider(opts Options) (*gitHubProvider, error) {
-	provider := &gitHubProvider{
-		sourceType:      ProviderGitHub,
-		includeArchived: opts.IncludeArchived,
-	}
-	token := opts.Token
-	if token == "" {
-		token = getFirstEnvValue(gitHubTokenEnvVarNames)
-	}
-	if token == "" {
-		return nil, fmt.Errorf("token is required for %s", provider.sourceType)
-	}
-
+func newGitHubProvider(opts Options) *gitHubProvider {
 	src := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
+		&oauth2.Token{AccessToken: opts.Token},
 	)
 	httpClient := oauth2.NewClient(context.Background(), src)
 	if opts.Timeout > 0 {
 		httpClient.Timeout = opts.Timeout
 	}
-	provider.client = githubv4.NewClient(httpClient)
-	return provider, nil
+	return &gitHubProvider{
+		client:          githubv4.NewClient(httpClient),
+		includeArchived: opts.IncludeArchived,
+	}
 }
 
-func (c *gitHubProvider) LoadRepos(ctx context.Context, ownerName string, _ git.GitClient, project *domain.Project) (err error) {
+func (c *gitHubProvider) LoadRepos(ctx context.Context, ownerName string, project *domain.Project) (err error) {
 	project.Repos, project.ID, err = c.fetchRepos(ctx, ownerName)
 	return err
 }

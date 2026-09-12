@@ -14,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/fsutil"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -33,7 +34,8 @@ type payload struct {
 	Project   domain.Project `json:"project"`
 }
 
-func newCacheFile(ttl time.Duration) Cacher {
+// NewFileCache returns a file-backed cache client with the given ttl.
+func NewFileCache(ttl time.Duration) Cacher {
 	return &File{ttl: ttl}
 }
 
@@ -61,7 +63,7 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 		log.Debug("cache file not found")
 		return false, nil
 	}
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return false, fmt.Errorf("failed to open cache file: %w", err)
 	}
 	defer fp.Close()
@@ -133,26 +135,7 @@ func (cf *File) Save(key string, project domain.Project) error {
 
 	// Write via temp file + rename so an interrupted write can never leave
 	// a truncated cache file behind.
-	tmpFile, err := os.CreateTemp(basePath, ".gits-*")
-	if err != nil {
-		return fmt.Errorf("failed to create cache file: %w", err)
-	}
-	tmpName := tmpFile.Name()
-	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpName)
-	}()
-
-	if _, err := tmpFile.Write(cacheRaw); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := fsutil.WriteFileAtomic(path, cacheRaw, 0o644); err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 	return nil

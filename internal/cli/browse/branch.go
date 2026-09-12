@@ -12,9 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/fzf"
 	"github.com/rafi/gits/pkg/git"
 )
 
@@ -37,87 +35,71 @@ var (
 //   - repo name
 //   - branch name (optional)
 func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
-	// Project
-	if len(args) < 1 {
-		return fmt.Errorf("missing project name")
-	}
-	project, err := loader.GetProject(args[0], deps.Runtime)
+	repo, err := resolveProjectRepo(args, deps)
 	if err != nil {
-		return fmt.Errorf("unable to load project %q: %w", args[0], err)
+		return err
 	}
-
-	// Repository
-	if len(args) < 2 {
-		return fmt.Errorf("missing repo name")
-	}
-	repoName := args[1]
-	foundRepo, found := project.GetRepo(repoName, "")
-	if !found {
-		return fmt.Errorf("repo %s/%s not found", args[0], repoName)
-	}
-
-	// Branch
-	current := ""
+	branch := ""
 	if len(args) > 2 {
-		current = args[2]
-	} else {
-		current, err = deps.Git.CurrentBranch(deps.Ctx, foundRepo.AbsPath)
+		branch = args[2]
+	}
+	return renderBranchOverview(repo, args[1], branch, deps)
+}
+
+// renderBranchOverview renders the branch overview for an already-resolved
+// repository. An empty branch means the currently checked-out one.
+func renderBranchOverview(
+	repo domain.Repository, repoName, branch string, deps types.RuntimeCLI,
+) error {
+	current := branch
+	if current == "" {
+		var err error
+		current, err = deps.Git.CurrentBranch(deps.Ctx, repo.AbsPath)
 		if err != nil {
 			return fmt.Errorf("unable to get current branch: %w", err)
 		}
 	}
 
 	// Remote
-	remotes, err := deps.Git.Remotes(deps.Ctx, foundRepo.AbsPath)
+	remotes, err := deps.Git.Remotes(deps.Ctx, repo.AbsPath)
 	if err != nil {
 		return fmt.Errorf("unable to get remotes: %w", err)
 	}
 
-	// Fzf sets environment variables to detect width/height, see man fzf.
-	width, _, err := fzf.GetPreviewSize()
-	if err != nil {
-		log.Warnf("unable to parse FZF_PREVIEW_COLUMNS: %s", err)
-	}
-
+	width := previewWidth()
 	if width == 0 {
 		width = 80
 	}
 
 	theme := deps.Theme
 
-	chartWidth := 0
 	chartSidePadding := 2
+	panelWidth := width / 2
 
 	branchCurrentStyle := theme.BranchCurrent.
-		Align(lipgloss.Left)
+		Align(lipgloss.Left).
+		Width(panelWidth).
+		PaddingLeft(10)
 
 	panelLeftStyle := theme.Normal.
 		// Border(lipgloss.NormalBorder()).
-		Align(lipgloss.Left)
+		Align(lipgloss.Left).
+		Width(panelWidth).
+		PaddingLeft(0)
 
 	chartStyle := theme.ChartDates.
 		// Border(lipgloss.NormalBorder()).
 		Padding(0, chartSidePadding).
-		Align(lipgloss.Left)
+		Align(lipgloss.Left).
+		Width(panelWidth)
 
-	panelWidth := width / 2
+	chartWidth := panelWidth - 2*chartSidePadding
 
-	branchCurrentStyle = branchCurrentStyle.
-		Width(panelWidth).
-		PaddingLeft(10)
-
-	panelLeftStyle = panelLeftStyle.
-		Width(panelWidth).
-		PaddingLeft(0)
-
-	chartStyle = chartStyle.Width(panelWidth)
-	chartWidth = panelWidth - 2*chartSidePadding
-
-	panelLeft := renderBranchDiffList(foundRepo.AbsPath, current, remotes, deps)
+	panelLeft := renderBranchDiffList(repo.AbsPath, current, remotes, deps)
 	panelLeft = "\n" + branchCurrentStyle.Render(current) + "\n\n" + panelLeft
 
 	// Render commits per day panelRight.
-	panelRight, err := renderBranchChart(deps.Ctx, deps.Git, foundRepo, current, chartWidth)
+	panelRight, err := renderBranchChart(deps.Ctx, deps.Git, repo, current, chartWidth)
 	if err != nil {
 		log.Warnf("unable to render chart: %s", err)
 	}
@@ -126,7 +108,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	doc := strings.Builder{}
 
 	// Header
-	headerStyle := theme.PreviewHeader.Align(lipgloss.Center).Width(width - 2)
+	headerStyle := previewHeader(theme.PreviewHeader, width)
 	doc.WriteString(headerStyle.Render(repoName))
 	doc.WriteString("\n")
 
@@ -142,7 +124,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	docStyle := lipgloss.NewStyle().Padding(0)
 	lipgloss.Println(docStyle.Render(doc.String()))
 
-	commitLog, err := deps.Git.Log(deps.Ctx, foundRepo.AbsPath, current)
+	commitLog, err := deps.Git.Log(deps.Ctx, repo.AbsPath, current)
 	if err != nil {
 		return err
 	}
@@ -152,14 +134,21 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 
 func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) string {
 	doc := strings.Builder{}
+	refs, err := deps.Git.RemoteBranches(deps.Ctx, repoPath)
+	if err != nil {
+		log.Warnf("unable to list remote branches: %s", err)
+	}
+	existing := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		existing[ref] = true
+	}
 	branches := map[string]string{}
 	for _, remote := range remotes {
 		b := append([]string{subjectBranch}, commonReleaseBranches...)
 		for _, branchName := range b {
 			target := fmt.Sprintf("%s/%s", remote, branchName)
-			if deps.Git.HasRemoteBranch(deps.Ctx, repoPath, remote, branchName) {
+			if existing[target] {
 				branches[target] = remote
-				continue
 			}
 		}
 	}
@@ -269,14 +258,8 @@ func renderBranchChart(ctx context.Context, gitClient git.GitClient, repo domain
 // renderDigits returns a string of small numeric characters.
 func renderDigits(num int) string {
 	var digits strings.Builder
-	for _, rune := range strconv.Itoa(num) {
-		char := fmt.Sprintf("%c", rune)
-		i, err := strconv.Atoi(char)
-		if err != nil {
-			log.Warnf("unable to convert %q to int: %s", char, err)
-			break
-		}
-		digits.WriteString(smallNumericCharacters[i])
+	for _, r := range strconv.Itoa(num) {
+		digits.WriteString(smallNumericCharacters[r-'0'])
 	}
 	return digits.String()
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func TestBitbucketLoadReposCancelledCtx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before the call, so no request may be made
 
-	err = provider.LoadRepos(ctx, "acme", nil, &domain.Project{})
+	err = provider.LoadRepos(ctx, "acme", &domain.Project{})
 	if err == nil {
 		t.Fatal("LoadRepos with cancelled ctx = nil error, want context.Canceled")
 	}
@@ -163,5 +164,48 @@ func TestParseReposMalformedNoPanic(t *testing.T) {
 	}
 	if repos[2].URL != "" {
 		t.Errorf("repos[2].URL = %q, want empty (https href had wrong type)", repos[2].URL)
+	}
+}
+
+// TestBitbucketCancellationBetweenPages proves paging is driven by the shared
+// paginate() loop: a context cancelled while page 1 is being served stops the
+// listing before page 2 is ever requested — go-bitbucket's internal
+// auto-pager would fetch it regardless.
+func TestBitbucketCancellationBetweenPages(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var page2Hits atomic.Int32
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Query().Get("page") == "2" {
+				page2Hits.Add(1)
+				fmt.Fprint(w, `{"pagelen":1,"page":2,"values":[{"uuid":"{2}","slug":"b","owner":{"uuid":"{o}"}}]}`)
+				return
+			}
+			cancel() // trip cancellation while page 1 is in flight
+			fmt.Fprintf(w,
+				`{"pagelen":1,"page":1,"next":%q,"values":[{"uuid":"{1}","slug":"a","owner":{"uuid":"{o}"}}]}`,
+				server.URL+r.URL.Path+"?page=2")
+		},
+	))
+	defer server.Close()
+
+	provider, err := newBitbucketProvider(Options{Token: "user:pass"})
+	if err != nil {
+		t.Fatalf("newBitbucketProvider() error = %v", err)
+	}
+	baseURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	provider.client.SetApiBaseURL(*baseURL)
+
+	if _, _, err := provider.fetchRepos(ctx, "acme"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("fetchRepos error = %v, want context.Canceled", err)
+	}
+	if n := page2Hits.Load(); n != 0 {
+		t.Fatalf("page 2 requested %d times after cancellation, want 0", n)
 	}
 }

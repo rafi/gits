@@ -1,11 +1,13 @@
 package add
 
 import (
+	"bytes"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/rafi/gits/internal/fsutil"
 )
 
 // load loads a yaml file into an abstract node.
@@ -19,27 +21,11 @@ func load(filePath string) (yaml.Node, error) {
 	return node, err
 }
 
-// save saves a yaml node into a file, atomically: the temp file is created
-// next to the target so the final rename never crosses filesystems, the
-// original file mode is preserved, and any failure leaves no temp file
-// behind.
+// save saves a yaml node into a file, atomically: the original file mode is
+// preserved, and any failure leaves no temp file behind.
 func save(filePath string, node yaml.Node) error {
-	mode := os.FileMode(0o644)
-	if fi, err := os.Stat(filePath); err == nil {
-		mode = fi.Mode().Perm()
-	}
-
-	tmpFile, err := os.CreateTemp(filepath.Dir(filePath), ".gits-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmpFile.Name()
-	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpName)
-	}()
-
-	enc := yaml.NewEncoder(tmpFile)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(&node); err != nil {
 		return err
@@ -47,13 +33,7 @@ func save(filePath string, node yaml.Node) error {
 	if err := enc.Close(); err != nil {
 		return err
 	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpName, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, filePath)
+	return fsutil.WriteFileAtomicPreserve(filePath, buf.Bytes(), 0o644)
 }
 
 // appendProject appends a project node to the root node.

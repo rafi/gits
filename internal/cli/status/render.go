@@ -3,14 +3,12 @@ package status
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
-	"golang.org/x/term"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
@@ -19,26 +17,12 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// Logical column indexes of the status table. HEAD± is only visible with
-// --stat; rows are always built with every column and projected before render.
-const (
-	colGutter = iota
-	colRepo
-	colBranch
-	colStatus
-	colStat // HEAD± uncommitted line diffs (--stat only)
-	colDelta
-	colUpstream
-	colVersion
-	colCommit
-	colAge
-	colMessage
-)
-
 // renderGroups prints one compact table per project group to out and a
 // summary footer to errW, returning every result error in stable tree order.
-// Active filters (Dirty, Unsynced) drop non-matching rows — error rows stay
-// visible — and projects left with no rows disappear entirely.
+// The traversal (nil slots, error collection, titles, separators) is walk's;
+// this body filters rows — active filters (Dirty, Unsynced) drop non-matching
+// rows, error rows stay visible — and projects left with no rows disappear
+// entirely.
 func renderGroups(
 	out, errW io.Writer,
 	groups []walk.GroupResult,
@@ -46,50 +30,48 @@ func renderGroups(
 	opts Options,
 	deps types.RuntimeCLI,
 ) []error {
-	termWidth := writerWidth(out)
+	termWidth, _ := cli.TermWidth(out)
 	var (
-		errs    []error
-		all     []*repoStatus
-		hidden  int
-		printed int
+		all    []*repoStatus
+		hidden int
 	)
-	for _, g := range groups {
-		var sts []*repoStatus
-		for _, res := range g.Results {
-			if res == nil {
-				continue // not started (cancelled before dequeue)
+	errs := walk.RenderGroups(out, groups, deps, withTitles,
+		func(g walk.GroupResult) (string, bool) {
+			var sts []*repoStatus
+			for _, res := range g.Results {
+				if res == nil {
+					continue
+				}
+				st, ok := res.Payload.(*repoStatus)
+				if !ok {
+					continue
+				}
+				if opts.filtered() && !opts.keep(st) {
+					hidden++
+					continue
+				}
+				sts = append(sts, st)
 			}
-			if res.Err != nil {
-				errs = append(errs, res.Err)
+			if opts.filtered() && len(sts) == 0 {
+				return "", false
 			}
-			st, ok := res.Payload.(*repoStatus)
-			if !ok {
-				continue
+			if len(sts) == 0 {
+				return "", true
 			}
-			if opts.filtered() && !opts.keep(st) {
-				hidden++
-				continue
-			}
-			sts = append(sts, st)
-		}
-		if opts.filtered() && len(sts) == 0 {
-			continue
-		}
-		if withTitles {
-			if printed > 0 {
-				fmt.Fprintln(out)
-			}
-			lipgloss.Fprintln(out, cli.ProjectTitleWithBullet(g.Project, deps.Theme))
-		}
-		printed++
-		if len(sts) == 0 {
-			continue
-		}
-		all = append(all, sts...)
-		lipgloss.Fprintln(out, renderTable(sts, termWidth, opts, deps))
-	}
+			all = append(all, sts...)
+			return renderTable(sts, termWidth, opts, deps), true
+		})
 	renderFooter(errW, all, hidden, deps.Theme)
 	return errs
+}
+
+// tableColumn describes one display-order column of the status table.
+type tableColumn struct {
+	title  string
+	gutter bool // leading glyph column: PaddingLeft(2), PaddingRight(1)
+	right  bool // right-aligned counts
+	flex   bool // may contract when the table is width-capped
+	bare   bool // no trailing padding (last column)
 }
 
 // renderTable renders one project's repositories as a borderless aligned
@@ -99,6 +81,31 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 	th, icons := deps.Theme, deps.Settings.Icons
 	now := time.Now()
 	widths := newSlotWidths(icons)
+	counts := buildCountCells(sts, icons, th)
+
+	// Columns are declared directly in display order; the HEAD± column
+	// participates only with --stat.
+	cols := []tableColumn{
+		{title: "", gutter: true},
+		{title: "Repo", flex: true},
+		{title: "Branch"},
+		{title: "Status"},
+	}
+	if opts.Stat {
+		cols = append(cols, tableColumn{title: "HEAD±", right: true})
+	}
+	cols = append(cols,
+		tableColumn{title: "Δ±", right: true},
+		tableColumn{title: "Upstream⇅", right: true},
+		tableColumn{title: "Version", flex: true},
+		tableColumn{title: "Commit"},
+		tableColumn{title: "Age"},
+		tableColumn{title: "Message", flex: true, bare: true},
+	)
+	headers := make([]string, len(cols))
+	for c, col := range cols {
+		headers[c] = col.title
+	}
 
 	rows := make([][]string, len(sts))
 	for i, st := range sts {
@@ -121,63 +128,47 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 		} else {
 			message = dim(message)
 		}
-		rows[i] = []string{
-			gutter(st, th),
-			title,
-			branch,
-			statusSlots(st, icons, th, widths),
-			"", // HEAD± filled below with per-table sub-widths
-			"", // Δ± filled below
-			"", // Upstream⇅ filled below
+		row := make([]string, 0, len(cols))
+		row = append(row, gutter(st, icons, th), title, branch,
+			statusSlots(st, icons, th, widths))
+		if opts.Stat {
+			row = append(row, counts.stat[i])
+		}
+		rows[i] = append(row,
+			counts.delta[i],
+			counts.upstream[i],
 			dim(st.version),
 			dim(st.commit),
 			dim(shortAge(st.when, now)),
 			message,
-		}
-	}
-	fillCountColumns(rows, sts, icons, th)
-
-	headers := []string{"", "Repo", "Branch", "Status", "HEAD±", "Δ±",
-		"Upstream⇅", "Version", "Commit", "Age", "Message"}
-
-	// Visible column set: HEAD± only participates with --stat. Headers and
-	// rows are projected through it; styling maps back to logical indexes.
-	visible := make([]int, 0, len(headers))
-	for c := range headers {
-		if c == colStat && !opts.Stat {
-			continue
-		}
-		visible = append(visible, c)
-	}
-	pick := func(cells []string) []string {
-		out := make([]string, len(visible))
-		for i, c := range visible {
-			out[i] = cells[c]
-		}
-		return out
-	}
-	shown := make([][]string, len(rows))
-	for i, row := range rows {
-		shown[i] = pick(row)
+		)
 	}
 
-	// Pin the glyph, count and branch columns at their natural width (style
-	// Width marks a column fixed for the resizer): when the table is
-	// width-capped, only the flexible text columns (Repo, Version, Message)
-	// may contract. Sparse count columns would otherwise be shrunk first —
-	// their median width is 0 — and collapse to "…".
+	// Measure every column once. Non-flex columns are pinned at their natural
+	// width (style Width marks a column fixed for the resizer): when the
+	// table is width-capped, only the flexible text columns (Repo, Version,
+	// Message) may contract. Sparse count columns would otherwise be shrunk
+	// first — their median width is 0 — and collapse to "…". The summed
+	// widths also give the natural table width, so the cap decision happens
+	// before the single render.
 	pinned := map[int]int{}
-	for _, col := range []int{colGutter, colBranch, colStatus, colStat,
-		colDelta, colUpstream, colCommit, colAge} {
-		w := lipgloss.Width(headers[col])
+	natural := 0
+	for c, col := range cols {
+		w := lipgloss.Width(col.title)
 		for _, row := range rows {
-			w = max(w, lipgloss.Width(row[col]))
+			w = max(w, lipgloss.Width(row[c]))
 		}
 		pad := 2
-		if col == colGutter {
+		switch {
+		case col.gutter:
 			pad = 3 // PaddingLeft(2) + PaddingRight(1)
+		case col.bare:
+			pad = 0
 		}
-		pinned[col] = w + pad
+		natural += w + pad
+		if !col.flex {
+			pinned[c] = w + pad
+		}
 	}
 
 	t := table.New().
@@ -185,22 +176,23 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 		BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
 		BorderColumn(false).BorderHeader(false).BorderRow(false).
 		Wrap(false).
-		Headers(pick(headers)...).
-		Rows(shown...).
-		StyleFunc(func(row, col int) lipgloss.Style {
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, c int) lipgloss.Style {
 			s := lipgloss.NewStyle().PaddingRight(2)
-			if col < 0 || col >= len(visible) {
+			if c < 0 || c >= len(cols) {
 				return s
 			}
-			switch visible[col] {
-			case colGutter:
+			col := cols[c]
+			switch {
+			case col.gutter:
 				s = s.PaddingLeft(2).PaddingRight(1)
-			case colStat, colDelta, colUpstream:
+			case col.right:
 				s = s.Align(lipgloss.Right)
-			case colMessage:
+			case col.bare:
 				s = s.PaddingRight(0)
 			}
-			if w, ok := pinned[visible[col]]; ok {
+			if w, ok := pinned[c]; ok {
 				s = s.Width(w)
 			}
 			if row == table.HeaderRow {
@@ -209,31 +201,30 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 			return s
 		})
 
-	// Natural width first; when the table overflows the terminal, hand the
-	// width cap to lipgloss, whose resizer contracts the widest columns and
+	// When the natural width overflows the terminal, hand the width cap to
+	// lipgloss, whose resizer contracts the widest flexible columns and
 	// …-truncates their cells (Wrap(false)) so rows never hard-wrap.
-	rendered := t.String()
-	if termWidth > 0 && lipgloss.Width(rendered) > termWidth {
-		rendered = t.Width(termWidth).String()
+	if termWidth > 0 && natural > termWidth {
+		t = t.Width(termWidth)
 	}
-	return rendered
+	return t.String()
 }
 
 // gutter returns the leading row-kind glyph, mapped onto
 // repository states.
-func gutter(st *repoStatus, th config.Theme) string {
+func gutter(st *repoStatus, icons domain.Icons, th config.Theme) string {
 	switch st.repo.State {
 	case domain.RepoStateOK:
 		if st.err != nil {
-			return th.Error.Render("✘")
+			return th.Error.Render(icons.DiffError)
 		}
 		return "+"
 	case domain.RepoStateNoLocal:
 		return th.StatusDim.Render("/")
 	case domain.RepoStateRemote:
-		return th.StatusDim.Render("|")
+		return th.StatusDim.Render(icons.DiffClean)
 	case domain.RepoStateError:
-		return th.Error.Render("✘")
+		return th.Error.Render(icons.DiffError)
 	default:
 		return th.StatusDim.Render("?")
 	}
@@ -310,14 +301,20 @@ func statusSlots(st *repoStatus, icons domain.Icons, th config.Theme, widths slo
 		upstream
 }
 
-// fillCountColumns renders the HEAD±, Δ± and Upstream⇅ cells with per-table
+// countCells holds the HEAD±, Δ± and Upstream⇅ cell text per row.
+type countCells struct {
+	stat     []string
+	delta    []string
+	upstream []string
+}
+
+// buildCountCells renders the HEAD±, Δ± and Upstream⇅ cells with per-table
 // sub-cell padding, so counts right-align on the ones digit across the group.
-func fillCountColumns(
-	rows [][]string,
+func buildCountCells(
 	sts []*repoStatus,
 	icons domain.Icons,
 	th config.Theme,
-) {
+) countCells {
 	type sub struct{ add, del, mod, unt, ahead, behind string }
 	subs := make([]sub, len(sts))
 	var wAdd, wDel, wMod, wUnt, wAhead, wBehind int
@@ -350,14 +347,20 @@ func fillCountColumns(
 		wAhead = max(wAhead, lipgloss.Width(subs[i].ahead))
 		wBehind = max(wBehind, lipgloss.Width(subs[i].behind))
 	}
-	for i := range rows {
-		rows[i][colStat] = joinSubCells(
+	cells := countCells{
+		stat:     make([]string, len(sts)),
+		delta:    make([]string, len(sts)),
+		upstream: make([]string, len(sts)),
+	}
+	for i := range sts {
+		cells.stat[i] = joinSubCells(
 			padLeft(subs[i].add, wAdd), padLeft(subs[i].del, wDel))
-		rows[i][colDelta] = joinSubCells(
+		cells.delta[i] = joinSubCells(
 			padLeft(subs[i].mod, wMod), padLeft(subs[i].unt, wUnt))
-		rows[i][colUpstream] = joinSubCells(
+		cells.upstream[i] = joinSubCells(
 			padLeft(subs[i].ahead, wAhead), padLeft(subs[i].behind, wBehind))
 	}
+	return cells
 }
 
 // joinSubCells joins two padded sub-cells with a single-space gap, collapsing
@@ -434,7 +437,7 @@ func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th config.Theme) {
 		}
 	}
 
-	parts := []string{fmt.Sprintf("%d repo%s", repos, plural(repos))}
+	parts := []string{fmt.Sprintf("%d repo%s", repos, cli.Plural(repos))}
 	if changed > 0 {
 		parts = append(parts, fmt.Sprintf("%d with changes", changed))
 	}
@@ -442,7 +445,7 @@ func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th config.Theme) {
 		parts = append(parts, fmt.Sprintf("%d ahead", ahead))
 	}
 	if errCount > 0 {
-		parts = append(parts, fmt.Sprintf("%d error%s", errCount, plural(errCount)))
+		parts = append(parts, fmt.Sprintf("%d error%s", errCount, cli.Plural(errCount)))
 	}
 	if hidden > 0 {
 		parts = append(parts, fmt.Sprintf("%d hidden", hidden))
@@ -451,24 +454,4 @@ func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th config.Theme) {
 	fmt.Fprintln(w)
 	lipgloss.Fprintln(w, th.StatusFooter.Render(
 		fmt.Sprintf("○ Showing %s", strings.Join(parts, ", "))))
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
-}
-
-// writerWidth returns the terminal width of w, or 0 when w is not a terminal.
-func writerWidth(w io.Writer) int {
-	f, ok := w.(*os.File)
-	if !ok || !term.IsTerminal(int(f.Fd())) {
-		return 0
-	}
-	cols, _, err := term.GetSize(int(f.Fd()))
-	if err != nil {
-		return 0
-	}
-	return cols
 }

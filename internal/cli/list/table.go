@@ -1,7 +1,6 @@
 package list
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"charm.land/lipgloss/v2"
@@ -22,13 +21,9 @@ var (
 // listWide lists projects in a wide table format.
 func listWide(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	single := len(projects) == 1
-	rows := [][]string{}
 	headers := makeTableHeader(projects)
 	headers = append(headers, listWideHeaders...)
-	err := makeTableProjects(projects, single, true, deps.HomeDir, &rows)
-	if err != nil {
-		return fmt.Errorf("unable to draw wide table: %w", err)
-	}
+	rows := makeTableProjects(projects, single, true, deps.HomeDir)
 
 	return printTable(headers, rows, deps.Theme)
 }
@@ -36,12 +31,8 @@ func listWide(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 // listTable lists projects in a table format.
 func listTable(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	single := len(projects) == 1
-	rows := [][]string{}
 	headers := makeTableHeader(projects)
-	err := makeTableProjects(projects, single, false, deps.HomeDir, &rows)
-	if err != nil {
-		return fmt.Errorf("unable to draw table: %w", err)
-	}
+	rows := makeTableProjects(projects, single, false, deps.HomeDir)
 
 	return printTable(headers, rows, deps.Theme)
 }
@@ -72,8 +63,9 @@ func makeTableHeader(projects domain.ProjectListKeyed) (header []string) {
 	return header
 }
 
-// makeTableProjects recursively draws table rows.
-func makeTableProjects(projects domain.ProjectListKeyed, single, wide bool, homeDir string, tableRows *[][]string) error {
+// makeTableProjects recursively builds table rows.
+func makeTableProjects(projects domain.ProjectListKeyed, single, wide bool, homeDir string) [][]string {
+	rows := [][]string{}
 	for _, proj := range projects {
 		// Draw row columns, include project column if listing multiple projects.
 		for _, repo := range proj.Repos {
@@ -86,7 +78,7 @@ func makeTableProjects(projects domain.ProjectListKeyed, single, wide bool, home
 				dir := cli.Path(repo.AbsPath, homeDir)
 				child = append(child, dir)
 			}
-			*tableRows = append(*tableRows, child)
+			rows = append(rows, child)
 		}
 		if len(proj.SubProjects) > 0 {
 			subProjs := make(domain.ProjectListKeyed)
@@ -100,11 +92,8 @@ func makeTableProjects(projects domain.ProjectListKeyed, single, wide bool, home
 				}
 				subProjs[subProj.Name] = subProj
 			}
-			err := makeTableProjects(subProjs, single, wide, homeDir, tableRows)
-			if err != nil {
-				return err
-			}
+			rows = append(rows, makeTableProjects(subProjs, single, wide, homeDir)...)
 		}
 	}
-	return nil
+	return rows
 }

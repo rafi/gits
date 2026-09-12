@@ -15,7 +15,7 @@ import (
 // fakeBrowseGit stubs the GitClient methods the branch preview calls.
 type fakeBrowseGit struct {
 	git.GitClient
-	hasBranch   func(remote, branch string) bool
+	remoteRefs  []string
 	ahead       int
 	behind      int
 	diffErr     error
@@ -23,8 +23,8 @@ type fakeBrowseGit struct {
 	commitErr   error
 }
 
-func (f fakeBrowseGit) HasRemoteBranch(_ context.Context, _, remote, branch string) bool {
-	return f.hasBranch(remote, branch)
+func (f fakeBrowseGit) RemoteBranches(context.Context, string) ([]string, error) {
+	return f.remoteRefs, nil
 }
 
 func (f fakeBrowseGit) Diff(context.Context, string, string, string) (int, int, error) {
@@ -62,7 +62,7 @@ func TestRenderDigits(t *testing.T) {
 }
 
 func TestRenderBranchDiffList(t *testing.T) {
-	onlyMain := func(_, branch string) bool { return branch == "main" }
+	onlyMain := []string{"origin/main"}
 
 	tests := []struct {
 		name        string
@@ -77,7 +77,7 @@ func TestRenderBranchDiffList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := fakeBrowseGit{hasBranch: onlyMain, ahead: tt.ahead, behind: tt.behind}
+			g := fakeBrowseGit{remoteRefs: onlyMain, ahead: tt.ahead, behind: tt.behind}
 			out := renderBranchDiffList("/repo", "main", []string{"origin"}, browseDeps(g))
 			for _, want := range tt.wantSubstrs {
 				if !strings.Contains(out, want) {
@@ -88,8 +88,10 @@ func TestRenderBranchDiffList(t *testing.T) {
 	}
 
 	t.Run("branches listed in stable sorted order", func(t *testing.T) {
-		all := func(_, _ string) bool { return true }
-		g := fakeBrowseGit{hasBranch: all}
+		g := fakeBrowseGit{remoteRefs: []string{
+			"origin/main", "origin/master", "origin/dev", "origin/next",
+			"fork/main", "fork/master", "fork/dev", "fork/next",
+		}}
 		first := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, browseDeps(g))
 		lines := strings.Split(strings.TrimSpace(first), "\n")
 		if len(lines) < 4 {
@@ -104,7 +106,7 @@ func TestRenderBranchDiffList(t *testing.T) {
 	})
 
 	t.Run("diff error renders N/A row instead of blanking panel", func(t *testing.T) {
-		g := fakeBrowseGit{hasBranch: onlyMain, diffErr: context.DeadlineExceeded}
+		g := fakeBrowseGit{remoteRefs: onlyMain, diffErr: context.DeadlineExceeded}
 		deps := browseDeps(g)
 		deps.Settings.Icons.ApplyDefaults()
 		out := renderBranchDiffList("/repo", "main", []string{"origin"}, deps)

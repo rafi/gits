@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// TestWorkingStateIgnoresStderr proves stderr noise emitted during a
-// successful `git status` (forced here via GIT_TRACE) never leaks into the
-// porcelain parse: a clean worktree must report zero staged, unstaged and
-// untracked entries.
-func TestWorkingStateIgnoresStderr(t *testing.T) {
+// TestSnapshotIgnoresStderr proves stderr noise emitted during a successful
+// `git status` (forced here via GIT_TRACE) never leaks into the porcelain
+// parse: a clean worktree must report zero staged, unstaged and untracked
+// entries.
+func TestSnapshotIgnoresStderr(t *testing.T) {
 	dir := setupRepo(t)
 	t.Setenv("GIT_TRACE", "1")
 
@@ -19,12 +19,12 @@ func TestWorkingStateIgnoresStderr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGit: %v", err)
 	}
-	wt, err := g.WorkingState(context.Background(), dir)
+	snap, err := g.Snapshot(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("WorkingState: %v", err)
+		t.Fatalf("Snapshot: %v", err)
 	}
-	if wt.Staged != 0 || wt.Unstaged != 0 || wt.Untracked != 0 {
-		t.Errorf("WorkingState on clean repo with stderr noise = %+v, want zeros", wt)
+	if snap.Staged != 0 || snap.Unstaged != 0 || snap.Untracked != 0 {
+		t.Errorf("Snapshot on clean repo with stderr noise = %+v, want zeros", snap.WorkTree)
 	}
 }
 

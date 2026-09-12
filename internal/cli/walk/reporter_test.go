@@ -45,13 +45,13 @@ func TestNewReporterNonTTYReturnsNop(t *testing.T) {
 
 // TestNopReporterLifecycle exercises the full Reporter call sequence against the
 // no-op implementation, including per-repo trackers: it must accept Start, a
-// RepoStart with its tracker driven and marked, Done×total, SetErrors and a
-// draining Stop without blocking or panicking.
+// RepoStart with its tracker driven and marked, Done×total and a draining
+// Stop without blocking or panicking.
 func TestNopReporterLifecycle(t *testing.T) {
 	const total = 5
 	var r Reporter = &nopReporter{}
 
-	r.Start("fetching", total, 2)
+	r.Start("fetching", total)
 	for i := range total {
 		rt := r.RepoStart("repo")
 		if i%2 == 0 {
@@ -61,7 +61,6 @@ func TestNopReporterLifecycle(t *testing.T) {
 		}
 		r.Done()
 	}
-	r.SetErrors(2)
 
 	done := make(chan struct{})
 	go func() {
@@ -159,11 +158,9 @@ func TestReporterSatisfiedByImpls(t *testing.T) {
 func TestLiveReporterConcurrent(t *testing.T) {
 	const repos = 8
 	r := newLiveReporter(&bytes.Buffer{})
-	r.Start("fetching", repos, 4) // 4 worker rows reused across 8 repos
+	r.Start("fetching", repos)
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
-	errs := 0
 	for i := range repos {
 		wg.Add(1)
 		go func(i int) {
@@ -171,11 +168,6 @@ func TestLiveReporterConcurrent(t *testing.T) {
 			rt := r.RepoStart("repo")
 			if i%3 == 0 {
 				rt.MarkErrored()
-				mu.Lock()
-				errs++
-				n := errs
-				mu.Unlock()
-				r.SetErrors(n)
 			} else {
 				rt.MarkDone()
 			}
@@ -199,7 +191,7 @@ func TestLiveReporterConcurrent(t *testing.T) {
 func TestLiveReporterRedrawsInPlace(t *testing.T) {
 	buf := &syncBuffer{}
 	r := newLiveReporter(buf)
-	r.Start("fetching", 4, 2)
+	r.Start("fetching", 4)
 
 	// Hold two rows live across several 100ms render ticks.
 	rt := r.RepoStart("alpha")

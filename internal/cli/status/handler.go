@@ -3,9 +3,7 @@ package status
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/rafi/gits/domain"
@@ -86,22 +84,16 @@ func ExecStatus(opts Options, args []string, deps types.RuntimeCLI) error {
 
 	if repo != nil {
 		// Single repository: a one-row table without a project title.
-		res := probe(deps.Ctx, project, *repo, deps)
-		groups := []walk.GroupResult{
-			{Project: project, Results: []*walk.RepoResult{&res}},
-		}
+		groups, err := walk.SingleCollect(deps.Ctx, project, *repo, deps, probe)
 		renderGroups(os.Stdout, os.Stderr, groups, false, opts, deps)
-		return res.Err
+		return err
 	}
 
 	// Collect every repository's structured status through the shared walker,
 	// then render the whole tree at once so table columns can be sized.
 	groups, interrupted := walk.Collect(deps.Ctx, project, deps, "checking status", probe)
 	errs := renderGroups(os.Stdout, os.Stderr, groups, true, opts, deps)
-	if interrupted != nil {
-		errs = append(errs, interrupted)
-	}
-	return cli.RenderErrors(errs, true)
+	return cli.RenderErrors(walk.WithInterrupted(errs, interrupted), true)
 }
 
 // statusRepo returns a walk.RepoFunc that probes one repository into a
@@ -115,7 +107,7 @@ func statusRepo(opts Options) walk.RepoFunc {
 	) walk.RepoResult {
 		st := &repoStatus{
 			repo:  repo,
-			title: repoTitleText(repo, project, deps.HomeDir),
+			title: cli.RepoRelPath(project, repo, deps.HomeDir),
 		}
 
 		// Abort if repository is not cloned or has errors.
@@ -126,13 +118,16 @@ func statusRepo(opts Options) walk.RepoFunc {
 			return walk.RepoResult{Payload: st, Err: err}
 		}
 
-		wt, err := deps.Git.WorkingState(ctx, repo.AbsPath)
+		// One porcelain-v2 pass covers worktree counts, branch and upstream
+		// divergence — state that previously took four git invocations.
+		snap, err := deps.Git.Snapshot(ctx, repo.AbsPath)
 		if err != nil {
 			st.err = err
 			st.message = reason(err)
 			return walk.RepoResult{Payload: st, Err: cli.RepoError(err, repo)}
 		}
-		st.staged, st.unstaged, st.untracked = wt.Staged, wt.Unstaged, wt.Untracked
+		st.staged, st.unstaged, st.untracked = snap.Staged, snap.Unstaged, snap.Untracked
+		st.branch = snap.Branch
 
 		if opts.Stat {
 			// Tolerated like Describe: an unborn HEAD leaves the column blank.
@@ -145,16 +140,18 @@ func statusRepo(opts Options) walk.RepoFunc {
 			st.version = version
 		}
 
-		st.branch, _ = deps.Git.CurrentBranch(ctx, repo.AbsPath)
-		upstream, err := deps.Git.UpstreamBranch(ctx, repo.AbsPath)
-		if err != nil || upstream == "" {
-			// No upstream configured: compare against the conventional remote branch.
-			upstream = fmt.Sprintf("origin/%v", st.branch)
-		}
-		if ahead, behind, err := deps.Git.Diff(ctx, repo.AbsPath, st.branch, upstream); err != nil {
-			st.noUpstream = true
+		if snap.HasUpstream {
+			st.ahead, st.behind = snap.Ahead, snap.Behind
+		} else if ref := deps.Git.FallbackRef(ctx, repo.AbsPath, st.branch); ref != "" {
+			// No upstream configured: compare against the matching branch on
+			// the repo's actual remote.
+			if ahead, behind, err := deps.Git.Diff(ctx, repo.AbsPath, st.branch, ref); err == nil {
+				st.ahead, st.behind = ahead, behind
+			} else {
+				st.noUpstream = true
+			}
 		} else {
-			st.ahead, st.behind = ahead, behind
+			st.noUpstream = true
 		}
 
 		if head, err := deps.Git.HeadInfo(ctx, repo.AbsPath); err == nil {
@@ -163,18 +160,6 @@ func statusRepo(opts Options) walk.RepoFunc {
 
 		return walk.RepoResult{Payload: st}
 	}
-}
-
-// repoTitleText is the plain-text repo title: the repo directory relative to
-// its project, with ~ for the home directory (same identity as cli.RepoTitle,
-// without styling).
-func repoTitleText(repo domain.Repository, project domain.Project, homeDir string) string {
-	repoPath := repo.Dir
-	if repoPath == "" {
-		repoPath = repo.AbsPath
-	}
-	repoPath = strings.TrimPrefix(repoPath, project.AbsPath+"/")
-	return cli.Path(repoPath, homeDir)
 }
 
 // reason extracts the bare failure reason for the message cell, avoiding the

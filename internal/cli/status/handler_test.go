@@ -18,12 +18,11 @@ import (
 type fakeGit struct {
 	git.GitClient
 	describe       string
-	workTree       git.WorkTree
-	workTreeErr    error
+	snap           git.Snapshot
+	snapErr        error
 	workingDiff    git.DiffStat
 	workingDiffErr error
-	branch         string
-	upstream       string
+	fallbackRef    string
 	ahead          int
 	behind         int
 	diffErr        error
@@ -35,20 +34,16 @@ func (f fakeGit) Describe(context.Context, string) (string, error) {
 	return f.describe, nil
 }
 
-func (f fakeGit) WorkingState(context.Context, string) (git.WorkTree, error) {
-	return f.workTree, f.workTreeErr
+func (f fakeGit) Snapshot(context.Context, string) (git.Snapshot, error) {
+	return f.snap, f.snapErr
 }
 
 func (f fakeGit) WorkingDiff(context.Context, string) (git.DiffStat, error) {
 	return f.workingDiff, f.workingDiffErr
 }
 
-func (f fakeGit) CurrentBranch(context.Context, string) (string, error) {
-	return f.branch, nil
-}
-
-func (f fakeGit) UpstreamBranch(context.Context, string) (string, error) {
-	return f.upstream, nil
+func (f fakeGit) FallbackRef(context.Context, string, string) string {
+	return f.fallbackRef
 }
 
 func (f fakeGit) Diff(context.Context, string, string, string) (int, int, error) {
@@ -99,7 +94,7 @@ func TestStatusRepoNotCloned(t *testing.T) {
 // TestStatusRepoProbeError: a failure reading the work tree surfaces as a
 // counted error with the reason in the row message.
 func TestStatusRepoProbeError(t *testing.T) {
-	deps := statusDeps(fakeGit{workTreeErr: errors.New("boom")})
+	deps := statusDeps(fakeGit{snapErr: errors.New("boom")})
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
@@ -122,12 +117,14 @@ func TestStatusRepoDirty(t *testing.T) {
 	when := time.Now().Add(-2 * time.Hour)
 	deps := statusDeps(fakeGit{
 		describe: "v1.2.3",
-		workTree: git.WorkTree{Staged: 1, Unstaged: 122, Untracked: 4567},
-		branch:   "main",
-		upstream: "origin/main",
-		ahead:    3,
-		behind:   1,
-		head:     git.Head{Hash: "abc12345", Subject: "Add feature", Time: when},
+		snap: git.Snapshot{
+			Branch:      "main",
+			HasUpstream: true,
+			Ahead:       3,
+			Behind:      1,
+			WorkTree:    git.WorkTree{Staged: 1, Unstaged: 122, Untracked: 4567},
+		},
+		head: git.Head{Hash: "abc12345", Subject: "Add feature", Time: when},
 	})
 	repo := domain.Repository{Name: "acme", Dir: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
@@ -159,8 +156,7 @@ func TestStatusRepoDirty(t *testing.T) {
 func TestStatusRepoClean(t *testing.T) {
 	deps := statusDeps(fakeGit{
 		describe: "v1.2.3",
-		branch:   "main",
-		upstream: "origin/main",
+		snap:     git.Snapshot{Branch: "main", HasUpstream: true},
 		head:     git.Head{Hash: "abc12345", Subject: "Initial commit", Time: time.Now()},
 	})
 	repo := domain.Repository{Name: "acme", Dir: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
@@ -184,8 +180,7 @@ func TestStatusRepoClean(t *testing.T) {
 func TestStatusRepoStat(t *testing.T) {
 	fake := fakeGit{
 		workingDiff: git.DiffStat{Added: 27, Deleted: 8},
-		branch:      "main",
-		upstream:    "origin/main",
+		snap:        git.Snapshot{Branch: "main", HasUpstream: true},
 	}
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
@@ -215,8 +210,9 @@ func TestStatusRepoStat(t *testing.T) {
 // the row.
 func TestStatusRepoNoUpstream(t *testing.T) {
 	deps := statusDeps(fakeGit{
-		branch:  "main",
-		diffErr: errors.New("unknown revision"),
+		snap:        git.Snapshot{Branch: "main"},
+		fallbackRef: "origin/main",
+		diffErr:     errors.New("unknown revision"),
 	})
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
@@ -228,5 +224,43 @@ func TestStatusRepoNoUpstream(t *testing.T) {
 	st := res.Payload.(*repoStatus)
 	if !st.noUpstream {
 		t.Error("expected noUpstream to be set when diff fails")
+	}
+}
+
+// TestStatusRepoFallbackRef: with no upstream configured but a matching
+// branch on a (possibly non-origin) remote, real ahead/behind counts show
+// instead of N/A.
+func TestStatusRepoFallbackRef(t *testing.T) {
+	deps := statusDeps(fakeGit{
+		snap:        git.Snapshot{Branch: "main"},
+		fallbackRef: "upstream/main",
+		ahead:       2,
+		behind:      1,
+	})
+	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
+	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
+
+	res := statusRepo(Options{})(context.Background(), project, repo, deps)
+	if res.Err != nil {
+		t.Fatalf("expected no error, got %v", res.Err)
+	}
+	st := res.Payload.(*repoStatus)
+	if st.noUpstream || st.ahead != 2 || st.behind != 1 {
+		t.Errorf("fallback divergence = %d/%d noUpstream=%v, want 2/1 false",
+			st.ahead, st.behind, st.noUpstream)
+	}
+}
+
+// TestStatusRepoNoRemoteBranch: no upstream and no matching remote branch
+// anywhere leaves the row N/A.
+func TestStatusRepoNoRemoteBranch(t *testing.T) {
+	deps := statusDeps(fakeGit{snap: git.Snapshot{Branch: "main"}})
+	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
+	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
+
+	res := statusRepo(Options{})(context.Background(), project, repo, deps)
+	st := res.Payload.(*repoStatus)
+	if !st.noUpstream {
+		t.Error("expected noUpstream when no remote has the branch")
 	}
 }

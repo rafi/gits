@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"charm.land/lipgloss/v2"
-
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/walk"
@@ -25,65 +23,61 @@ func ExecPull(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
+	fn := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))
+
 	if repo != nil {
-		// Pull a single repository.
-		res := pullRepo(deps.Ctx, project, *repo, deps)
-		lipgloss.Println(cli.IndentMultiline(res.Line))
-		return res.Err
+		return walk.Single(deps.Ctx, project, *repo, deps, fn)
 	}
 
 	// Pull all project repositories through the shared walker.
-	errs := walk.Walk(deps.Ctx, project, deps, "pulling", pullRepo)
+	errs := walk.Walk(deps.Ctx, project, deps, "pulling", fn)
 	return cli.RenderErrors(errs, true)
 }
 
-// pullRepo pulls one repository and returns its rendered result. It is a
-// walk.RepoFunc: safe to call concurrently and never writes to stdout.
-func pullRepo(
-	ctx context.Context,
-	project domain.Project,
-	repo domain.Repository,
-	deps types.RuntimeCLI,
-) walk.RepoResult {
-	line := cli.RepoLine{
-		Title:      cli.PaddedRepoTitle(repo, project, deps),
-		ErrorStyle: deps.Theme.Error,
-	}
+// pullRepo returns a walk.RepoFunc that pulls one repository into a rendered
+// result: safe to call concurrently and never writes to stdout.
+func pullRepo(widths cli.TitleWidths) walk.RepoFunc {
+	return func(
+		ctx context.Context,
+		project domain.Project,
+		repo domain.Repository,
+		deps types.RuntimeCLI,
+	) walk.RepoResult {
+		line := cli.RepoLine{
+			Title:      cli.PaddedRepoTitle(repo, project, widths.For(project), deps),
+			ErrorStyle: deps.Theme.Error,
+		}
 
-	// Abort if repository is not cloned or has errors.
-	if repo.State != domain.RepoStateOK {
-		line.Err = cli.RepoStateWarning(repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
+		// Abort if repository is not cloned or has errors.
+		if repo.State != domain.RepoStateOK {
+			return walk.LineResult(line, cli.RepoStateWarning(repo))
+		}
 
-	currentBranch, err := deps.Git.CurrentBranch(ctx, repo.AbsPath)
-	if err != nil {
-		line.Err = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
+		currentBranch, err := deps.Git.CurrentBranch(ctx, repo.AbsPath)
+		if err != nil {
+			return walk.LineResult(line, cli.RepoError(err, repo))
+		}
 
-	upstream, err := deps.Git.UpstreamBranch(ctx, repo.AbsPath)
-	if err != nil && !errors.Is(err, git.ErrNoUpstream) {
-		// A real failure (e.g. cancellation) keeps its own message instead
-		// of being mislabeled as a missing upstream.
-		line.Err = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
-	if err != nil || upstream == "" {
-		line.Err = cli.RepoError(git.ErrNoUpstream, repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
+		upstream, err := deps.Git.UpstreamBranch(ctx, repo.AbsPath)
+		if err != nil && !errors.Is(err, git.ErrNoUpstream) {
+			// A real failure (e.g. cancellation) keeps its own message instead
+			// of being mislabeled as a missing upstream.
+			return walk.LineResult(line, cli.RepoError(err, repo))
+		}
+		if err != nil || upstream == "" {
+			return walk.LineResult(line, cli.RepoError(git.ErrNoUpstream, repo))
+		}
 
-	output, err := deps.Git.Pull(ctx, repo.AbsPath)
-	if err != nil {
-		line.Err = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
+		output, err := deps.Git.Pull(ctx, repo.AbsPath)
+		if err != nil {
+			return walk.LineResult(line, cli.RepoError(err, repo))
+		}
+		line.Body = fmt.Sprintf(
+			"[%s <- %s] %s",
+			currentBranch,
+			upstream,
+			deps.Theme.GitOutput.Render(output),
+		)
+		return walk.LineResult(line, nil)
 	}
-	line.Body = fmt.Sprintf(
-		"[%s <- %s] %s",
-		currentBranch,
-		upstream,
-		deps.Theme.GitOutput.Render(output),
-	)
-	return walk.RepoResult{Line: line.String(), Err: nil}
 }

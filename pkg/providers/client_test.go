@@ -85,14 +85,10 @@ func TestConstructorsReturnNilOnError(t *testing.T) {
 		t.Setenv(name, "")
 	}
 
-	if p, err := newGitHubProvider(Options{}); err == nil || p != nil {
-		t.Errorf("newGitHubProvider(no token) = (%v, %v), want (nil, error)", p, err)
-	}
-	if p, err := newGitLabProvider(Options{}); err == nil || p != nil {
-		t.Errorf("newGitLabProvider(no token) = (%v, %v), want (nil, error)", p, err)
-	}
-	if p, err := newBitbucketProvider(Options{}); err == nil || p != nil {
-		t.Errorf("newBitbucketProvider(no token) = (%v, %v), want (nil, error)", p, err)
+	for _, provider := range []string{"github", "gitlab", "bitbucket"} {
+		if p, err := NewGitProvider(provider, Options{}); err == nil || p != nil {
+			t.Errorf("NewGitProvider(%q, no token) = (%v, %v), want (nil, error)", provider, p, err)
+		}
 	}
 	if p, err := newBitbucketProvider(Options{Token: "no-colon"}); err == nil || p != nil {
 		t.Errorf("newBitbucketProvider(bad token) = (%v, %v), want (nil, error)", p, err)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/pkg/providers"
 )
 
 // ExecSync cleans the cache for the given projects.
@@ -15,7 +16,7 @@ import (
 //   - project names
 func ExecSync(args []string, deps types.RuntimeCLI) error {
 	for name, p := range deps.Projects {
-		if p.Source == nil || p.Source.Search == "" {
+		if !providers.HasCache(p.Source) {
 			continue
 		}
 		if len(args) > 0 && !slices.Contains(args, name) {

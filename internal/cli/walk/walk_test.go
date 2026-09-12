@@ -295,10 +295,9 @@ type fakeReporter struct {
 	mu                  sync.Mutex
 	repoStarts, done    int
 	marksDone, marksErr int
-	lastErrors          int
 }
 
-func (r *fakeReporter) Start(string, int, int) {}
+func (r *fakeReporter) Start(string, int) {}
 func (r *fakeReporter) RepoStart(string) RepoTracker {
 	r.mu.Lock()
 	r.repoStarts++
@@ -310,19 +309,10 @@ func (r *fakeReporter) Done() {
 	r.done++
 	r.mu.Unlock()
 }
-func (r *fakeReporter) SetErrors(n int) {
-	r.mu.Lock()
-	r.lastErrors = n
-	r.mu.Unlock()
-}
 func (r *fakeReporter) Stop() {}
 
 type fakeRepoTracker struct{ r *fakeReporter }
 
-func (t *fakeRepoTracker) Phase(string)     {}
-func (t *fakeRepoTracker) SetTotal(int64)   {}
-func (t *fakeRepoTracker) SetCurrent(int64) {}
-func (t *fakeRepoTracker) Indeterminate()   {}
 func (t *fakeRepoTracker) MarkDone() {
 	t.r.mu.Lock()
 	t.r.marksDone++
@@ -334,42 +324,42 @@ func (t *fakeRepoTracker) MarkErrored() {
 	t.r.mu.Unlock()
 }
 
-// orderSensitiveReporter records the last error count it finishes processing.
-// SetErrors sleeps *inversely* to n (larger counts return sooner), so if the
-// walker delivers counts after releasing its lock, a larger count can land
-// before a smaller one and the final recorded value regresses below the true
-// failure total. Delivering counts under the lock keeps them monotonic.
-type orderSensitiveReporter struct {
-	peak       int // highest count expected; sets the inverse sleep scale
-	mu         sync.Mutex
-	lastErrors int
-}
+// TestLiveReporterErrorCount verifies the failed-count is owned by the
+// reporter's trackers: N concurrent MarkErrored calls settle on exactly N,
+// double completion marks count once, and MarkDone contributes nothing.
+func TestLiveReporterErrorCount(t *testing.T) {
+	const failures = 8
+	r := newLiveReporter(&bytes.Buffer{})
+	r.Start("testing", failures+1)
 
-func (r *orderSensitiveReporter) Start(string, int, int)       {}
-func (r *orderSensitiveReporter) RepoStart(string) RepoTracker { return nopRepoTracker{} }
-func (r *orderSensitiveReporter) Done()                        {}
-func (r *orderSensitiveReporter) SetErrors(n int) {
-	// Larger counts return faster; absent serialized delivery the smaller
-	// count lands last and wins, regressing the displayed total.
-	if d := time.Duration(r.peak-n) * 5 * time.Millisecond; d > 0 {
-		time.Sleep(d)
+	var wg sync.WaitGroup
+	for i := range failures {
+		tracker := r.RepoStart(fmt.Sprintf("boom%02d", i))
+		wg.Go(func() {
+			tracker.MarkErrored()
+			tracker.MarkErrored() // double completion must count once
+			r.Done()
+		})
 	}
+	okTracker := r.RepoStart("ok")
+	wg.Go(func() {
+		okTracker.MarkDone()
+		r.Done()
+	})
+	wg.Wait()
+	r.Stop()
+
 	r.mu.Lock()
-	r.lastErrors = n
+	got := r.errs
 	r.mu.Unlock()
-}
-func (r *orderSensitiveReporter) Stop() {}
-func (r *orderSensitiveReporter) Last() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.lastErrors
+	if got != failures {
+		t.Fatalf("reporter errs = %d, want %d", got, failures)
+	}
 }
 
-// TestWalkErrorCountMonotonic verifies T4 (#5): with N concurrent failures, the
-// final reported error count equals N regardless of delivery order. The walker
-// must fold the count into the reporter while holding its lock so a late worker
-// can't settle the spinner on a stale, smaller value.
-func TestWalkErrorCountMonotonic(t *testing.T) {
+// TestWalkErrorCount verifies the walker end-to-end: N failing repos leave
+// the live reporter's error count at exactly N with no walker-side counting.
+func TestWalkErrorCount(t *testing.T) {
 	const failures = 8
 	repos := make([]domain.Repository, failures)
 	for i := range repos {
@@ -379,14 +369,17 @@ func TestWalkErrorCountMonotonic(t *testing.T) {
 	fn := func(_ context.Context, _ domain.Project, r domain.Repository, _ types.RuntimeCLI) RepoResult {
 		return RepoResult{Line: lineFor(r), Err: fmt.Errorf("real failure")}
 	}
-	rep := &orderSensitiveReporter{peak: failures}
-	// One worker per repo: all failures race to deliver their count at once.
+	rep := newLiveReporter(&bytes.Buffer{})
+	// One worker per repo: all failures race to mark errored at once.
 	errs := walkReport(context.Background(), project, testDeps(failures), "testing", fn, &bytes.Buffer{}, rep)
 	if len(errs) != failures {
 		t.Fatalf("aggregated errors = %d, want %d", len(errs), failures)
 	}
-	if got := rep.Last(); got != failures {
-		t.Fatalf("final SetErrors = %d, want %d (count regressed under concurrent delivery)", got, failures)
+	rep.mu.Lock()
+	got := rep.errs
+	rep.mu.Unlock()
+	if got != failures {
+		t.Fatalf("reporter errs = %d, want %d", got, failures)
 	}
 }
 
@@ -422,9 +415,6 @@ func TestWalkPerRepoTrackers(t *testing.T) {
 	}
 	if rep.marksDone != 2 {
 		t.Errorf("marksDone = %d, want 2 (success + warning)", rep.marksDone)
-	}
-	if rep.lastErrors != 1 {
-		t.Errorf("lastErrors = %d, want 1", rep.lastErrors)
 	}
 }
 
@@ -464,5 +454,53 @@ func TestCollectGroupOrder(t *testing.T) {
 	want := []string{"r1", "r2", "s1"}
 	if fmt.Sprint(names) != fmt.Sprint(want) {
 		t.Fatalf("payload order = %v, want %v", names, want)
+	}
+}
+
+// TestSingle verifies the single-repo entry: the result line renders with no
+// project header and the repo's error returns as-is, so warnings still
+// downgrade the exit code at the root.
+func TestSingle(t *testing.T) {
+	project := domain.Project{Name: "proj", Repos: []domain.Repository{repo("solo")}}
+
+	var out bytes.Buffer
+	err := singleTo(context.Background(), project, repo("solo"), testDeps(1),
+		echoFunc(nil), &out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.String(), lineFor(repo("solo"))) {
+		t.Fatalf("missing repo line:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "proj") {
+		t.Fatalf("single-repo output must not print the project header:\n%s", out.String())
+	}
+
+	warnFn := func(context.Context, domain.Project, domain.Repository, types.RuntimeCLI) RepoResult {
+		return RepoResult{Line: "warned", Err: types.NewWarning("skip me")}
+	}
+	err = singleTo(context.Background(), project, repo("solo"), testDeps(1), warnFn, &out)
+	if !types.IsWarning(err) {
+		t.Fatalf("warning not passed through: %v", err)
+	}
+}
+
+// TestSingleCollect verifies the grouped single-repo shape used by status: one
+// group holding one result, plus the repo's error.
+func TestSingleCollect(t *testing.T) {
+	project := domain.Project{Name: "proj", Repos: []domain.Repository{repo("solo")}}
+	fn := func(_ context.Context, _ domain.Project, r domain.Repository, _ types.RuntimeCLI) RepoResult {
+		return RepoResult{Payload: r.Name, Err: fmt.Errorf("boom")}
+	}
+
+	groups, err := SingleCollect(context.Background(), project, repo("solo"), testDeps(1), fn)
+	if err == nil || err.Error() != "boom" {
+		t.Fatalf("err = %v, want boom", err)
+	}
+	if len(groups) != 1 || len(groups[0].Results) != 1 {
+		t.Fatalf("groups shape = %+v, want 1 group with 1 result", groups)
+	}
+	if groups[0].Project.Name != "proj" || groups[0].Results[0].Payload != "solo" {
+		t.Fatalf("group content = %+v", groups[0])
 	}
 }

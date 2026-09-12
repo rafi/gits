@@ -9,41 +9,27 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/pkg/git"
 )
-
-var gitLabTokenEnvVarNames = []string{"GITLAB_TOKEN"}
 
 type gitLabProvider struct {
 	client          *gitlab.Client
-	sourceType      Provider
 	includeArchived bool
 }
 
 func newGitLabProvider(opts Options) (*gitLabProvider, error) {
-	token := opts.Token
-	var err error
-	provider := &gitLabProvider{
-		sourceType:      ProviderGitLab,
-		includeArchived: opts.IncludeArchived,
-	}
-	if token == "" {
-		token = getFirstEnvValue(gitLabTokenEnvVarNames)
-	}
-	if token == "" {
-		return nil, fmt.Errorf("token is required for %s", provider.sourceType)
-	}
-
 	clientOpts := []gitlab.ClientOptionFunc{}
 	if opts.Timeout > 0 {
 		clientOpts = append(clientOpts,
 			gitlab.WithHTTPClient(&http.Client{Timeout: opts.Timeout}))
 	}
-	provider.client, err = gitlab.NewClient(token, clientOpts...)
+	client, err := gitlab.NewClient(opts.Token, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create gitlab client: %w", err)
 	}
-	return provider, nil
+	return &gitLabProvider{
+		client:          client,
+		includeArchived: opts.IncludeArchived,
+	}, nil
 }
 
 // skipGitLabProject reports whether a listed project is omitted: empty
@@ -60,15 +46,15 @@ var gitLabListOptions = gitlab.ListOptions{
 	Sort:       "asc",
 }
 
-func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, gitClient git.GitClient, project *domain.Project) error {
+func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, project *domain.Project) error {
 	var err error
 	project.ID = groupID
 
-	g, _, err := c.client.Groups.GetGroup(groupID, nil, gitlab.WithContext(ctx))
-	if err != nil {
-		return fmt.Errorf("gitlab: get group %q: %w", groupID, err)
-	}
 	if project.Name == "" {
+		g, _, err := c.client.Groups.GetGroup(groupID, nil, gitlab.WithContext(ctx))
+		if err != nil {
+			return fmt.Errorf("gitlab: get group %q: %w", groupID, err)
+		}
 		project.Name = g.Name
 	}
 	project.SubProjects, err = c.fetchSubGroups(ctx, project.ID)
@@ -76,7 +62,7 @@ func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, gitClien
 		return err
 	}
 	for i, group := range project.SubProjects {
-		err := c.LoadRepos(ctx, group.ID, gitClient, &project.SubProjects[i])
+		err := c.LoadRepos(ctx, group.ID, &project.SubProjects[i])
 		if err != nil {
 			return err
 		}

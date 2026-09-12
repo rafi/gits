@@ -7,30 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
-func completionDeps() (deps types.Runtime, err error) {
-	cacheClient, err := cache.NewCacheClient("file", configFile.Settings.CacheTTLDuration())
-	if err != nil {
-		return deps, err
-	}
-	gitClient, err := git.NewGit()
-	if err != nil {
-		return deps, err
-	}
-	gitClient.SetNetworkTimeout(configFile.Settings.GitTimeoutDuration())
-	return types.Runtime{
-		Ctx:        context.Background(),
-		Cache:      cacheClient,
-		Git:        &gitClient,
-		Projects:   configFile.Projects,
-		Settings:   configFile.Settings,
-		ConfigPath: configFile.Filename,
-	}, nil
+func completionDeps() (types.Runtime, error) {
+	return newRuntime(context.Background())
 }
 
 // completeProject returns a list of project names for shell completion.
@@ -107,11 +89,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 
 	// Find branches
 	var completions []string
-	g, err := git.NewGit()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
-	}
-	branches, err := g.Branches(context.Background(), repo.AbsPath)
+	branches, err := deps.Git.Branches(deps.Ctx, repo.AbsPath)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

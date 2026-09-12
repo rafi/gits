@@ -50,16 +50,14 @@ type GitClient interface {
 	Branches(ctx context.Context, path string) ([]string, error)
 	AllBranches(ctx context.Context, path string) ([]string, error)
 	Remotes(ctx context.Context, path string) ([]string, error)
-	HasRemoteBranch(ctx context.Context, path, remote, branch string) bool
+	RemoteBranches(ctx context.Context, path string) ([]string, error)
+	FallbackRef(ctx context.Context, path, branch string) string
 	Checkout(ctx context.Context, path, branch string) error
 	CurrentBranch(ctx context.Context, path string) (string, error)
 	UpstreamBranch(ctx context.Context, path string) (string, error)
-	Modified(ctx context.Context, path string) (int, error)
-	Untracked(ctx context.Context, path string) (int, error)
-	WorkingState(ctx context.Context, path string) (WorkTree, error)
+	Snapshot(ctx context.Context, path string) (Snapshot, error)
 	WorkingDiff(ctx context.Context, path string) (DiffStat, error)
 	HeadInfo(ctx context.Context, path string) (Head, error)
-	CurrentPosition(ctx context.Context, path string) (string, error)
 	Describe(ctx context.Context, path string) (string, error)
 	Diff(ctx context.Context, path, branch, target string) (int, int, error)
 }
@@ -123,13 +121,12 @@ func (g *Git) Clone(ctx context.Context, remote string, path string) (string, er
 	return cleanOutput(output), nil
 }
 
-// IsRepo checks if the directory is a git repository.
-func (g *Git) IsRepo(ctx context.Context, path string) bool {
-	ctx, cancel := context.WithTimeout(ctx, localTimeout)
-	defer cancel()
-
-	args := []string{"rev-parse", "--is-inside-work-tree"}
-	_, err := g.Exec(ctx, path, args)
+// IsRepo checks if the directory is a git repository root. Detection is by
+// .git presence — a directory, or a gitfile for worktrees and submodules —
+// so callers probing many candidates (walks, project population) pay a stat
+// instead of a subprocess per directory.
+func (g *Git) IsRepo(_ context.Context, path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil
 }
 

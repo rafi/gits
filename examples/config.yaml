@@ -1,0 +1,276 @@
+---
+# gits — example configuration
+#
+# Copy this file to one of the locations below. gits uses the first one it
+# finds, in this order:
+#
+#   1. ~/.gits.json, ~/.gits.yaml, ~/.gits.yml, ~/.gits.toml
+#   2. $XDG_CONFIG_HOME/gits/config.{json,yaml,yml,toml}
+#      ($XDG_CONFIG_HOME defaults to ~/.config)
+#
+# Or point at any file explicitly with `gits -c /path/to/config.yaml`.
+# JSON and TOML use the same key names as the YAML below.
+#
+# The document is a map of project name → project definition, plus one
+# reserved key: `settings`. Every value in the `settings` block below is set
+# to its built-in default, so this file describes current behavior as-is.
+#
+# Note: provider API tokens are read from the environment only, they have no
+# config key:
+#   GITHUB_TOKEN (or HOMEBREW_GITHUB_API_TOKEN), GITLAB_TOKEN, BITBUCKET_TOKEN
+#
+# Note: color output is a CLI flag (`gits -C auto|always|never`, default
+# `auto`), not a setting. A top-level `color:` key would be parsed as a
+# project.
+
+settings:
+  # Cache repository lists fetched from providers (github/gitlab/bitbucket).
+  # Filesystem sources are never cached. Cache files are written to
+  # $XDG_CACHE_HOME/gits/ (defaults to ~/.cache/gits/).
+  # Refresh them manually with `gits sync`. Default: true.
+  cache: true
+
+  # How long a cache entry stays valid, in Go duration syntax ("30m", "24h").
+  # `0s` makes every lookup a miss, which effectively disables the cache.
+  # An empty or unparseable value logs a warning and falls back to the
+  # default. Default: 168h (7 days).
+  cacheTTL: 168h
+
+  # HTTP timeout for provider API calls. Go duration syntax. Default: 5m.
+  providerTimeout: 5m
+
+  # Timeout for network git operations (clone/fetch/pull). Go duration
+  # syntax. Default: 5m.
+  gitTimeout: 5m
+
+  # Number of concurrent git workers. Values below 1 are clamped to 1.
+  # Default: max(number of CPUs, 2) — machine dependent, so it is left unset
+  # here rather than pinned to a number.
+  # workerCount: 8
+
+  # Include archived repositories when listing from a provider. Applies to
+  # GitHub and GitLab; Bitbucket Cloud has no archived flag. Default: false.
+  includeArchived: false
+
+  # Enable debug logging. The `-v` flag overrides this. Default: false.
+  verbose: false
+
+  # Status icons. Each is a plain string, so you can use any glyph your font
+  # supports. Keys you omit keep their built-in glyph, so overriding just one
+  # or two is fine.
+  icons:
+    modified: "≠"    # Modified file count
+    untracked: "?"   # Untracked files present
+    staged: "+"      # Staged changes present
+    unstaged: "!"    # Unstaged changes present
+    diffError: "✘"   # Failed to read status/diff
+    diffClean: "|"   # Clean working tree, in sync
+    ahead: "⇡"       # Commits ahead of upstream
+    behind: "⇣"      # Commits behind upstream
+    diverged: "⇅"    # Both ahead and behind
+    na: "–"          # Not available, e.g. no upstream
+
+  # Colors and text styles. Each key takes an object with these fields:
+  #
+  #   color  ANSI palette index as a string, "0"–"255", or a hex value
+  #          such as "#A15444".
+  #   align  One of left, right, center. Any other value is a startup
+  #          error, not a warning.
+  #   width  Pad or truncate to this many cells. Only applied when > 0.
+  #   bold   true/false
+  #   faint  true/false
+  #
+  # Caveat: a key you set replaces its default style entirely. Writing
+  # `repoTitle: { bold: true }` drops the default color, so repeat `color`
+  # whenever you override a key. Keys left out are untouched.
+  #
+  # Every key below is set to its built-in default.
+  theme:
+    # General
+    # normal and previewHeader default to unstyled text.
+    # normal: {}
+    # previewHeader: {}
+    bullet: { color: "4" }
+
+    # Project
+    projectTitle: { color: "5", bold: true }
+    provider: { color: "8" }
+    desc: { color: "15" }
+
+    # Repository
+    repoTitle: { color: "4", bold: true }
+    repoPath: { color: "15" }
+    gitOutput: { color: "66" }
+
+    # Branch
+    branchName: { color: "68" }
+    branchCurrent: { color: "4" }
+    branchIndicator: { color: "4", bold: true }
+    remoteName: { color: "1" }
+
+    # Tag
+    tagIndicator: { color: "1", bold: true }
+
+    # Status
+    diff: { color: "140", align: right }
+    error: { color: "1" }
+
+    # Status table. These use the ANSI 16-color palette so the terminal
+    # theme decides the exact shades.
+    statusHeader: { bold: true }
+    statusFlag: { color: "6" }
+    statusAhead: { color: "2" }
+    statusBehind: { color: "1", faint: true }
+    statusAdded: { color: "2" }
+    statusDeleted: { color: "1" }
+    statusDim: { faint: true }
+    statusFooter: { faint: true }
+
+    # List table. The border characters themselves are not configurable.
+    tableBorderStyle: { color: "240" }
+    tableHeader: { color: "73" }
+    tableRowEven: { color: "249" }
+    tableRowOdd: { color: "247" }
+
+    # Chart
+    chartDates: { color: "8" }
+
+# ---------------------------------------------------------------------------
+# Projects
+#
+# Every top-level key other than `settings` is a project name. A project
+# lists its repositories in one of two ways — a `source` that discovers them,
+# or an explicit `repos` list. Use one or the other, never both.
+#
+# The examples below are commented out so this file is safe to copy as a
+# starting point. Uncomment and adapt the ones you need.
+#
+# Available keys for every project:
+#
+#   desc         Optional description, shown in listings.
+#   path         Base directory. Optional when every repo has an absolute
+#                `dir`. Supports ~ expansion.
+#   source       Discover repositories from a provider or the filesystem.
+#   repos        Explicit repository list.
+#   subprojects  Nested projects.
+#   include      Explicit allowlist of repositories.
+#   exclude      Denylist of repositories.
+#   clone        Set to false to skip this project during `gits clone`.
+#
+# A top-level `projects:` key is deprecated and now reports an error. Put
+# projects at the root of the document.
+# ---------------------------------------------------------------------------
+
+# GitHub source: `search` is the owner (user or organization).
+# mygithub:
+#   desc: My GitHub repositories
+#   path: ~/code/github
+#   source:
+#     type: github
+#     search: rafi
+
+# GitLab source: `search` is the numeric group id. Quote it, otherwise YAML
+# parses it as a number.
+# work:
+#   path: ~/code/work
+#   desc: My work GitLab projects
+#   source:
+#     type: gitlab
+#     search: "12345678"
+
+# Bitbucket source: `search` is the owner.
+# mybitbucket:
+#   path: ~/code/bitbucket
+#   source:
+#     type: bitbucket
+#     search: rafi
+
+# Filesystem source: searched recursively for git repositories. When `search`
+# is omitted it defaults to the project `path`.
+# explore:
+#   desc: Exploring projects
+#   path: ~/code/explore
+#   source:
+#     type: filesystem
+#     search: ~/code/explore
+
+# A project with a `path` and no `repos` gets `source.type: filesystem`
+# implicitly, so this is equivalent to the block above.
+# archive:
+#   desc: Archived projects
+#   path: ~/code/archive
+
+# Explicit repository list. Every key of a repo entry:
+#
+#   dir        Local directory. Absolute, ~-expanded, or relative to the
+#              project `path`. Defaults to the last path segment of `src`
+#              with a trailing `.git` stripped.
+#   src        Clone URL. Defaults to the existing local remote, so it can be
+#              omitted for repositories you already cloned.
+#   name       Display name. Defaults to the basename of `dir`, then `src`.
+#   namespace  Optional grouping, displayed as `namespace/name`.
+#   desc       Optional description.
+#
+# Repositories also carry `id` and `url` keys, and projects an `id` key, but
+# those are filled in by providers and there is no reason to write them by
+# hand.
+# myapp:
+#   path: ~/code/myapp
+#   desc: Acme is a really cool app
+#   repos:
+#     - dir: api
+#       src: https://github.com/acme/api.git
+#       namespace: acme
+#       desc: Backend service
+#     - dir: ios
+#       src: https://github.com/acme/ios.git
+#     - dir: web            # src omitted, uses the existing local remote
+#     - src: https://github.com/acme/infra.git   # dir omitted, becomes "infra"
+
+# Absolute directories, no project path needed.
+# dotfiles:
+#   desc: My dotfiles
+#   repos:
+#     - dir: ~/.config
+#       src: git@github.com:rafi/.config.git
+#     - dir: ~/.config/nvim
+#       src: git@github.com:rafi/vim-config.git
+
+# Filtering a source. Both lists match a repository by its name, its
+# namespace, or `namespace/name` — exact matches, not patterns. `exclude`
+# always wins, and a non-empty `include` is exclusive: only what it names is
+# kept. Filters apply to subprojects too.
+# filtered:
+#   path: ~/code/work
+#   source:
+#     type: gitlab
+#     search: "12345678"
+#   exclude:
+#     - acme/legacy-api
+#     - deprecated-tool
+#   # include:
+#   #   - acme/api
+#   #   - acme/web
+
+# Skip a project during `gits clone`. This also skips all of its
+# subprojects. Other commands still see the project.
+# readonly:
+#   path: ~/code/vendor
+#   clone: false
+
+# Subprojects. List entries have no map key, so each one needs `name`. A
+# subproject inherits the parent `source` when it has none, and its `path`
+# defaults to <parent path>/<name>.
+# monorepos:
+#   path: ~/code/org
+#   source:
+#     type: github
+#     search: myorg
+#   subprojects:
+#     - name: frontend        # path becomes ~/code/org/frontend
+#       desc: Web clients     # source inherited from the parent
+#     - name: backend
+#       path: ~/code/services # explicit path wins over the default
+#       repos:
+#         - dir: api
+#           src: git@github.com:myorg/api.git

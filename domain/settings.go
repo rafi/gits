@@ -31,48 +31,38 @@ type Settings struct {
 	WorkerCount     int    `json:"workerCount,omitempty"`
 }
 
+// parseDurationOr parses a Go-duration setting value, falling back to def
+// (with a warning naming the setting) when it is empty or unparseable.
+func parseDurationOr(raw, name string, def time.Duration) time.Duration {
+	if raw == "" {
+		return def
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		log.Warnf("invalid %s %q, using default: %v", name, raw, err)
+		return def
+	}
+	return d
+}
+
 // ProviderTimeoutDuration returns the parsed providerTimeout setting, or
 // DefaultProviderTimeout when it is empty or cannot be parsed as a Go
 // duration (e.g. "90s").
 func (s Settings) ProviderTimeoutDuration() time.Duration {
-	if s.ProviderTimeout == "" {
-		return DefaultProviderTimeout
-	}
-	d, err := time.ParseDuration(s.ProviderTimeout)
-	if err != nil {
-		log.Warnf("invalid providerTimeout %q, using default: %v", s.ProviderTimeout, err)
-		return DefaultProviderTimeout
-	}
-	return d
+	return parseDurationOr(s.ProviderTimeout, "providerTimeout", DefaultProviderTimeout)
 }
 
 // GitTimeoutDuration returns the parsed gitTimeout setting, or
 // DefaultGitTimeout when it is empty or cannot be parsed as a Go duration
 // (e.g. "30m").
 func (s Settings) GitTimeoutDuration() time.Duration {
-	if s.GitTimeout == "" {
-		return DefaultGitTimeout
-	}
-	d, err := time.ParseDuration(s.GitTimeout)
-	if err != nil {
-		log.Warnf("invalid gitTimeout %q, using default: %v", s.GitTimeout, err)
-		return DefaultGitTimeout
-	}
-	return d
+	return parseDurationOr(s.GitTimeout, "gitTimeout", DefaultGitTimeout)
 }
 
 // CacheTTLDuration returns the parsed cacheTTL setting, or DefaultCacheTTL when
 // it is empty or cannot be parsed as a Go duration (e.g. "168h").
 func (s Settings) CacheTTLDuration() time.Duration {
-	if s.CacheTTL == "" {
-		return DefaultCacheTTL
-	}
-	d, err := time.ParseDuration(s.CacheTTL)
-	if err != nil {
-		log.Warnf("invalid cacheTTL %q, using default: %v", s.CacheTTL, err)
-		return DefaultCacheTTL
-	}
-	return d
+	return parseDurationOr(s.CacheTTL, "cacheTTL", DefaultCacheTTL)
 }
 
 type Finder struct {
@@ -97,48 +87,21 @@ type Icons struct {
 // ApplyDefaults fills unset icon fields with the built-in status glyphs, so
 // user YAML only needs to override the ones it changes.
 func (i *Icons) ApplyDefaults() {
-	defaults := Icons{
-		Modified:  "≠",
-		Untracked: "?",
-		Staged:    "+",
-		Unstaged:  "!",
-		DiffError: "✘",
-		DiffClean: "|",
-		Ahead:     "⇡",
-		Behind:    "⇣",
-		Diverged:  "⇅",
-		NA:        "–",
+	def := func(dst *string, v string) {
+		if *dst == "" {
+			*dst = v
+		}
 	}
-	if i.Modified == "" {
-		i.Modified = defaults.Modified
-	}
-	if i.Untracked == "" {
-		i.Untracked = defaults.Untracked
-	}
-	if i.Staged == "" {
-		i.Staged = defaults.Staged
-	}
-	if i.Unstaged == "" {
-		i.Unstaged = defaults.Unstaged
-	}
-	if i.DiffError == "" {
-		i.DiffError = defaults.DiffError
-	}
-	if i.DiffClean == "" {
-		i.DiffClean = defaults.DiffClean
-	}
-	if i.Ahead == "" {
-		i.Ahead = defaults.Ahead
-	}
-	if i.Behind == "" {
-		i.Behind = defaults.Behind
-	}
-	if i.Diverged == "" {
-		i.Diverged = defaults.Diverged
-	}
-	if i.NA == "" {
-		i.NA = defaults.NA
-	}
+	def(&i.Modified, "≠")
+	def(&i.Untracked, "?")
+	def(&i.Staged, "+")
+	def(&i.Unstaged, "!")
+	def(&i.DiffError, "✘")
+	def(&i.DiffClean, "|")
+	def(&i.Ahead, "⇡")
+	def(&i.Behind, "⇣")
+	def(&i.Diverged, "⇅")
+	def(&i.NA, "–")
 }
 
 type Style struct {
@@ -175,10 +138,8 @@ type Theme struct {
 	TagIndicator Style `json:"tagIndicator"`
 
 	// Status
-	Modified  Style `json:"modified"`
-	Untracked Style `json:"untracked"`
-	Diff      Style `json:"diff"`
-	Error     Style `json:"error"`
+	Diff  Style `json:"diff"`
+	Error Style `json:"error"`
 
 	// Status table
 	StatusHeader  Style `json:"statusHeader"`
@@ -195,4 +156,7 @@ type Theme struct {
 	TableHeader      Style `json:"tableHeader"`
 	TableRowEven     Style `json:"tableRowEven"`
 	TableRowOdd      Style `json:"tableRowOdd"`
+
+	// Chart
+	ChartDates Style `json:"chartDates"`
 }

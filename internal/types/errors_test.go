@@ -32,7 +32,7 @@ func TestIsWarning(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"warning", NewWarning("skipped"), true},
-		{"error type", NewError("failed"), false},
+		{"error type", &Warning{Type: ErrorType, Reason: "failed"}, false},
 		{"plain error", io.EOF, false},
 		{"wrapped warning", fmt.Errorf("outer: %w", NewWarning("inner")), true},
 	}

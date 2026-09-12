@@ -71,7 +71,7 @@ func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) ([]erro
 }
 
 func checkoutRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
-	repoTitle := cli.RepoTitle(repo, project.AbsPath, deps.HomeDir, deps.Theme).
+	repoTitle := cli.RepoTitle(repo, project, deps.HomeDir, deps.Theme).
 		Render()
 
 	// Abort if repository is not cloned or has errors.
