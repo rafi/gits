@@ -128,7 +128,7 @@ func TestRunSubProjectOrder(t *testing.T) {
 	root.SubProjects = []domain.Project{sub}
 	d.Projects["root"] = root
 
-	cmd := Command[string]{Verb: "testing", Body: echo(nil)}
+	cmd := Command[string]{Name: "test", Verb: "testing", Body: echo(nil)}
 	got, err := cmd.Run([]string{"root"}, d.RuntimeCLI)
 	if err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
@@ -141,6 +141,9 @@ func TestRunSubProjectOrder(t *testing.T) {
 
 	if got.Project.Name != "root" || len(got.Project.SubProjects) != 1 {
 		t.Fatalf("Project = %+v, want the whole tree the run visited", got.Project)
+	}
+	if got.Command != "test" {
+		t.Errorf("Command = %q, want the command's Name carried on the results", got.Command)
 	}
 	var values, owners []string
 	for _, res := range got.Results {
@@ -410,12 +413,22 @@ func TestRunStateGuard(t *testing.T) {
 			return lineFor(repo.GetName()), nil
 		},
 	}
-	err := run(cmd, []string{"proj"}, d.RuntimeCLI)
-	if err == nil {
-		t.Fatal("Run error = nil, want the guarded repositories to fail the run")
+	res, err := cmd.Run([]string{"proj"}, d.RuntimeCLI)
+	if err != nil {
+		t.Fatalf("Run error = %v, want nil", err)
+	}
+	if err := Lines(res, d.RuntimeCLI); err == nil {
+		t.Fatal("Lines error = nil, want the guarded repositories to fail the run")
 	}
 	if fmt.Sprint(reached) != fmt.Sprint([]string{"api"}) {
 		t.Errorf("body reached %v, want only the ok repository", reached)
+	}
+	// A turned-back repository says so on its result, so a renderer can tell
+	// "never tried" from "tried and failed" without re-deriving the guard.
+	for _, r := range res.Results {
+		if want := r.Repo.GetName() != "api"; r.Guarded != want {
+			t.Errorf("%s Guarded = %v, want %v", r.Repo.GetName(), r.Guarded, want)
+		}
 	}
 	for _, want := range []string{"not cloned", clitest.BrokenReason} {
 		if got := d.Result(); !strings.Contains(got, want) {

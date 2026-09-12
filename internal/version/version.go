@@ -6,8 +6,11 @@ import "strings"
 var (
 	// The version is of the format Major.Minor.Patch[-Prerelease][+BuildMetadata]
 	//
-	// Increment major number for new feature additions and behavioral changes.
-	// Increment minor number for bug fixes and performance enhancements.
+	// Increment major for breaking changes, minor for backwards-compatible
+	// feature additions, patch for bug fixes and performance work.
+	//
+	// GetMajorMinor derives the cache-file key from this value, so a major or
+	// minor bump invalidates every cache; a patch bump does not.
 	version = "v0.11.2"
 
 	// metadata is extra build time data.

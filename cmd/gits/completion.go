@@ -18,6 +18,22 @@ func completionDeps() types.Runtime {
 	return deps
 }
 
+// completeValues offers a fixed set of flag values, filtered by what the user
+// has typed. The set is always passed in from wherever the value is
+// validated — bulk.Formats, list.Formats, config.ColorChoices — so a value
+// can never be offered that the command would then reject.
+func completeValues(values []string) func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		var completions []cobra.Completion
+		for _, v := range values {
+			if strings.HasPrefix(v, toComplete) {
+				completions = append(completions, v)
+			}
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
 // completeProject returns a list of project names for shell completion.
 func completeProject(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	var completions []string

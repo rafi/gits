@@ -11,20 +11,28 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// ExecPull runs pull --ff-only on project repositories, or on a specific repo.
+// ExecPull runs pull --ff-only on project repositories, or on a specific
+// repo, rendering the results as lines or as the JSON envelope.
 //
 // Args: (optional)
 //   - project name
 //   - repo
-func ExecPull(args []string, deps types.RuntimeCLI) error {
+func ExecPull(format string, args []string, deps types.RuntimeCLI) error {
+	// Validate before anything is loaded or selected, so a typo'd format never
+	// costs a provider round-trip or an interactive prompt.
+	if err := bulk.ValidateFormat(format); err != nil {
+		return err
+	}
+
 	res, err := bulk.Command[string]{
+		Name: "pull",
 		Verb: "pulling",
 		Body: pullRepo,
 	}.Run(args, deps)
 	if err != nil {
 		return err
 	}
-	return bulk.Lines(res, deps)
+	return bulk.Render(res, format, deps)
 }
 
 // pullRepo pulls one repository and returns its result line's body.

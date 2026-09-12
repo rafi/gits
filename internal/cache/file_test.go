@@ -332,3 +332,161 @@ func TestCacheFileTracesToItsLogger(t *testing.T) {
 		t.Errorf("a File built without a logger wrote %q, want nothing", buf.String())
 	}
 }
+
+func TestDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+
+	got, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+	want := filepath.Join(dir, "gits")
+	if got != want {
+		t.Errorf("Dir() = %q, want %q", got, want)
+	}
+
+	// Dir and the entries themselves must never name different directories.
+	path, err := cacheFilePath("anykey")
+	if err != nil {
+		t.Fatalf("cacheFilePath: %v", err)
+	}
+	if filepath.Dir(path) != got {
+		t.Errorf("Dir() = %q, but entries go in %q", got, filepath.Dir(path))
+	}
+}
+
+// writeCacheKeyed writes a cache file under an arbitrary key, so Entries can
+// be given several at once.
+func writeCacheKeyed(t *testing.T, key string, f payload) {
+	t.Helper()
+	path, err := cacheFilePath(key)
+	if err != nil {
+		t.Fatalf("cacheFilePath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+func TestEntries(t *testing.T) {
+	ttl := time.Hour
+
+	// A missing cache directory means nothing has been cached yet, which is
+	// not a failure: `gits doctor` reports it as an absence.
+	t.Run("missing directory is not an error", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "nothing-here"))
+
+		entries, err := Entries(ttl)
+		if err != nil {
+			t.Fatalf("Entries: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("Entries() = %d entries, want 0", len(entries))
+		}
+	})
+
+	t.Run("describes each entry and sorts by key", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		live := version.GetMajorMinor()
+		now := time.Now().Format(cacheTimeFormat)
+		old := time.Now().Add(-2 * time.Hour).Format(cacheTimeFormat)
+
+		writeCacheKeyed(t, "zzz-live", payload{Version: live, Timestamp: now})
+		writeCacheKeyed(t, "aaa-expired", payload{Version: live, Timestamp: old})
+		writeCacheKeyed(t, "mmm-oldversion", payload{Version: "v0.0", Timestamp: now})
+
+		// Neither of these is a cache entry: one is not JSON-suffixed, the
+		// other is a directory.
+		dir, err := Dir()
+		if err != nil {
+			t.Fatalf("Dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "sub.json"), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+
+		entries, err := Entries(ttl)
+		if err != nil {
+			t.Fatalf("Entries: %v", err)
+		}
+		if len(entries) != 3 {
+			t.Fatalf("Entries() = %d entries, want 3 (%+v)", len(entries), entries)
+		}
+
+		wantKeys := []string{"aaa-expired", "mmm-oldversion", "zzz-live"}
+		for i, want := range wantKeys {
+			if entries[i].Key != want {
+				t.Errorf("entries[%d].Key = %q, want %q — entries sort by key", i, entries[i].Key, want)
+			}
+		}
+		if got := entries[0].Unusable; got != "expired" {
+			t.Errorf("expired entry Unusable = %q, want %q", got, "expired")
+		}
+		// A version mismatch busts an entry regardless of its age, so it is
+		// reported ahead of expiry.
+		if got := entries[1].Unusable; !strings.Contains(got, "v0.0") {
+			t.Errorf("old-version entry Unusable = %q, want it to name v0.0", got)
+		}
+		if got := entries[2].Unusable; got != "" {
+			t.Errorf("live entry Unusable = %q, want empty", got)
+		}
+		if entries[2].Version != live {
+			t.Errorf("live entry Version = %q, want %q", entries[2].Version, live)
+		}
+		if entries[2].CachedAt.IsZero() {
+			t.Error("live entry CachedAt is zero, want the cached timestamp")
+		}
+	})
+
+	t.Run("a corrupt file is reported, not fatal", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		path, err := cacheFilePath("broken")
+		if err != nil {
+			t.Fatalf("cacheFilePath: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		entries, err := Entries(ttl)
+		if err != nil {
+			t.Fatalf("Entries: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("Entries() = %d entries, want 1", len(entries))
+		}
+		if entries[0].Unusable != "corrupt" {
+			t.Errorf("Unusable = %q, want %q", entries[0].Unusable, "corrupt")
+		}
+	})
+
+	t.Run("an unparsable timestamp is reported", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		writeCacheKeyed(t, "notime", payload{Version: version.GetMajorMinor(), Timestamp: "whenever"})
+
+		entries, err := Entries(ttl)
+		if err != nil {
+			t.Fatalf("Entries: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("Entries() = %d entries, want 1", len(entries))
+		}
+		if entries[0].Unusable != "unreadable timestamp" {
+			t.Errorf("Unusable = %q, want %q", entries[0].Unusable, "unreadable timestamp")
+		}
+	})
+}

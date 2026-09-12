@@ -115,8 +115,9 @@ func (r rows) visible(p domain.Project, opts Options) (sts []*repoStatus, hidden
 //   - repo or sub-project name
 func ExecStatus(format string, opts Options, args []string, deps types.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
-	// costs a provider round-trip or an interactive prompt.
-	if err := validateFormat(format); err != nil {
+	// costs a provider round-trip or an interactive prompt. The accepted
+	// formats are the ones every Bulk Command takes.
+	if err := bulk.ValidateFormat(format); err != nil {
 		return err
 	}
 
@@ -128,7 +129,7 @@ func ExecStatus(format string, opts Options, args []string, deps types.RuntimeCL
 		return err
 	}
 
-	if format == "json" {
+	if format == bulk.FormatJSON {
 		// The json form prints no error epilogue and exits zero for
 		// per-repository conditions: a repository's condition is data in the
 		// document rather than the command's outcome. An interrupted run

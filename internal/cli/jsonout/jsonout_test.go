@@ -274,3 +274,119 @@ func TestWriteEndsWithNewline(t *testing.T) {
 		t.Errorf("Write(empty) = %q, want %q", got, "{}\n")
 	}
 }
+
+// TestOutcomeMarshalsOneField: an Outcome is one of three things, and the
+// document says which by carrying exactly that key — an empty `output`
+// beside an error would read as a command that ran and said nothing.
+func TestOutcomeMarshalsOneField(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		outcome Outcome
+		want    string
+	}{
+		{"output", Outcome{Output: "Already up to date."}, `{"output":"Already up to date."}`},
+		{"empty output", Outcome{}, `{"output":""}`},
+		{"skipped", Outcome{Skipped: "no upstream"}, `{"skipped":"no upstream"}`},
+		{"error", Outcome{Error: "boom"}, `{"error":"boom"}`},
+		// A failed command may have said something before failing; the
+		// failure is the outcome and the output travels inside it.
+		{"error wins", Outcome{Output: "partial", Error: "boom"}, `{"error":"boom"}`},
+		{"skipped wins over output", Outcome{Output: "x", Skipped: "s"}, `{"skipped":"s"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := json.Marshal(tt.outcome)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(raw) != tt.want {
+				t.Errorf("Outcome = %s, want %s", raw, tt.want)
+			}
+		})
+	}
+}
+
+// TestRepositoryNestsOutcomeUnderCommand: the outcome sits under the
+// command's own name, after the repository's identity and state, so the key
+// says which command ran — as `status` does for the working tree.
+func TestRepositoryNestsOutcomeUnderCommand(t *testing.T) {
+	t.Parallel()
+
+	repo := Repository{
+		Name: "api", State: domain.RepoStateOK,
+		Command: "pull", Outcome: &Outcome{Output: "Already up to date."},
+	}
+	raw, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `{"name":"api","state":"ok","pull":{"output":"Already up to date."}}`
+	if string(raw) != want {
+		t.Errorf("Repository = %s, want %s", raw, want)
+	}
+
+	// A key that needs escaping is escaped as any JSON string is.
+	repo.Command = `we"ird`
+	raw, err = json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	if _, ok := got[`we"ird`].(map[string]any); !ok {
+		t.Errorf("Repository = %s, want the outcome under the escaped key", raw)
+	}
+}
+
+// TestRepositoryOutcomeNeedsCommand: an outcome with no key to nest under is
+// a renderer's bug, and is refused rather than emitted nameless.
+func TestRepositoryOutcomeNeedsCommand(t *testing.T) {
+	t.Parallel()
+
+	repo := Repository{Name: "api", Outcome: &Outcome{Output: "x"}}
+	if _, err := json.Marshal(repo); err == nil {
+		t.Fatal("marshal = nil, want a refusal for an Outcome without a Command")
+	}
+}
+
+// TestRepositoryWithoutOutcomeIsUnchanged: the `list` and `status` documents
+// are byte-identical to what the plain struct encoding produces, so adding
+// the outcome cannot have moved a byte in either. The status object is the
+// deepest nesting `status` emits, so it is the one worth comparing.
+func TestRepositoryWithoutOutcomeIsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	when := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	repos := []Repository{
+		{Name: "api", Src: "git@host:acme/api.git", State: domain.RepoStateOK},
+		{Name: "web", State: domain.RepoStateError, Reason: "no path"},
+		{Name: "tools", State: domain.RepoStateOK, Status: &Status{
+			Branch: "main", Staged: 1, Compared: true,
+			Upstream: &Upstream{Name: "origin/main", Tracked: true},
+			Head:     &Head{Added: 1, Deleted: 2},
+			Commit:   &Commit{Hash: "abc", Subject: "x", Time: when},
+		}},
+		{Name: "broken", State: domain.RepoStateOK, Status: &Status{Error: "boom"}},
+		// Command alone, with nothing to nest, is not emitted either.
+		{Name: "named", State: domain.RepoStateOK, Command: "pull"},
+	}
+	type alias Repository
+	for _, repo := range repos {
+		got, err := json.Marshal(repo)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", repo.Name, err)
+		}
+		want, err := json.Marshal(alias(repo))
+		if err != nil {
+			t.Fatalf("marshal alias %s: %v", repo.Name, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("Repository %s = %s, want the plain encoding %s", repo.Name, got, want)
+		}
+	}
+}

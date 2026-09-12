@@ -1,26 +1,12 @@
 package status
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/jsonout"
 )
-
-// validateFormat rejects everything but the two formats `status` has.
-// `list`'s other styles (name, tree, wide) are shapes `status` has no meaning
-// for, and quietly falling back to the table would answer a question the user
-// did not ask.
-func validateFormat(format string) error {
-	switch format {
-	case "table", "json":
-		return nil
-	default:
-		return fmt.Errorf("unknown output format %q, want table or json", format)
-	}
-}
 
 // renderJSON writes the run's results as the envelope `list -o json` shares,
 // with each probed repository's working-tree data nested under it. The

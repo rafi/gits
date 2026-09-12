@@ -13,6 +13,7 @@ func TestRepositoryGetName(t *testing.T) {
 		{"name wins", Repository{Name: "foo", Dir: "/x/dir", Src: "git@h:o/src.git"}, "foo"},
 		{"dir base when no name", Repository{Dir: "/x/y/dir"}, "dir"},
 		{"src base when no name or dir", Repository{Src: "git@host:owner/src"}, "src"},
+		{"src base drops .git, matching the derived dir", Repository{Src: "git@host:owner/src.git"}, "src"},
 		{"unnamed fallback", Repository{}, "<unnamed>"},
 	}
 	for _, tt := range tests {
@@ -117,5 +118,30 @@ func TestRepositoryKeyIdentifiesWithinATree(t *testing.T) {
 	if unresolved1.Key() == unresolved2.Key() {
 		t.Errorf("Key() = %q for both, want the name to separate pathless repositories",
 			unresolved1.Key())
+	}
+}
+
+// TestRepositoryGetNameMatchesDirName pins that the Repo Src fallback names a
+// repository the same way its local directory is derived from that same Src.
+// They diverged on a ".git" suffix, so a `src:`-only repository listed as
+// "one.git" while living in "one", and `gits cd acme one` could not find it.
+func TestRepositoryGetNameMatchesDirName(t *testing.T) {
+	t.Parallel()
+
+	for _, src := range []string{
+		"git@example.com:acme/one.git",
+		"https://github.com/rafi/gits.git",
+		"https://github.com/rafi/rafi.github.io",
+		"/local/path/to/repo",
+	} {
+		t.Run(src, func(t *testing.T) {
+			t.Parallel()
+
+			repo := Repository{Src: src}
+			if got, want := repo.GetName(), RepoDirName(src); got != want {
+				t.Errorf("GetName() = %q, want %q — the display name must match the derived directory",
+					got, want)
+			}
+		})
 	}
 }

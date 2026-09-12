@@ -156,20 +156,28 @@ func populateProject(project *domain.Project, deps types.Runtime, o options) err
 
 	switch {
 	case emptySource && len(project.Repos) > 0 && project.Path == "":
-		// Process repos individually if project doesn't have a path.
-		var err error
-		for repoIdx, repo := range project.Repos {
-			project.Repos[repoIdx], err = providers.NewFilesystemRepo(
-				repo.Dir,
-				repo.Src,
-			)
-			if err != nil {
-				return err
-			}
-		}
+		// A project with no `path:` carries repositories that each state
+		// their own location. There is nothing to discover: they are already
+		// exactly what the config declared, so they are left alone.
+		//
+		// This branch used to rebuild each one through
+		// providers.NewFilesystemRepo(dir, src), which returns a repository
+		// describing a *discovered* clone — name derived from the directory,
+		// nothing else carried. That silently discarded the configured name,
+		// description, namespace, ID and URL, none of which the same
+		// repository loses under a project that does declare a `path:`, and
+		// left a repository with no `dir:` named filepath.Base("") — the
+		// literal ".". Classification below reports an unusable path as this
+		// repository's Repo State and Reason, the way it does for every other
+		// project shape, rather than failing the whole project here.
 
-	case emptySource && len(project.Repos) == 0:
+	case emptySource && len(project.Repos) == 0 && project.Path != "":
 		// Default source type of a project _with_ path is "filesystem".
+		// Without a path there is nothing to search: such a project either
+		// only groups Sub-projects, each of which states its own location,
+		// or is empty. Defaulting it to filesystem discovery anyway failed
+		// validation, telling the user to set `search:` on a source they
+		// never declared.
 		if project.Source == nil {
 			project.Source = &domain.ProviderSource{}
 		}
@@ -190,11 +198,44 @@ func populateProject(project *domain.Project, deps types.Runtime, o options) err
 		}
 	}
 
+	// A Sub-project that declares a Provider Source of its own is discovered
+	// from it, the same way the root project is. Only a declared source is
+	// loaded: the source a sub-project *inherits* is copied later, by
+	// expandPaths, and discovering through it would walk the parent's search
+	// a second time and duplicate every repository the parent already found.
+	if err := loadSubProjectSources(project, deps, o); err != nil {
+		return err
+	}
+
 	// Load any remote sources, and check repositories state.
 	computeState(deps.Ctx, deps.Log, project, deps.Git)
 
 	// Filter by user include/exclude config values.
 	project.Filter()
+	return nil
+}
+
+// loadSubProjectSources discovers every Sub-project that declares its own
+// Provider Source, depth-first, so a source at any nesting level is asked for
+// its repositories. A sub-project with no source of its own is left alone,
+// along with everything beneath it.
+func loadSubProjectSources(project *domain.Project, deps types.Runtime, o options) error {
+	filesystemType := string(providers.ProviderFilesystem)
+	for idx := range project.SubProjects {
+		sub := &project.SubProjects[idx]
+		if sub.Source == nil || sub.Source.Type == "" {
+			continue
+		}
+		if sub.Source.Search == "" && sub.Source.Type == filesystemType {
+			sub.Source.Search = sub.Path
+		}
+		if err := getSource(sub, deps, o); err != nil {
+			return err
+		}
+		if err := loadSubProjectSources(sub, deps, o); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

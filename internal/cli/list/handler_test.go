@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -80,10 +81,20 @@ const wantReason = "relative `dir:` \"web\" requires the project to set `path:`"
 // TestExecListWritesResultOutput proves every output format writes what it
 // renders to Result Output and nothing to Diagnostic Output. A format still
 // naming a process stream would leave the captured Result Output empty.
+//
+// It iterates Formats() — the same slice the -o flag's help text and shell
+// completion are built from — so a style that is offered but does not render
+// fails here rather than at the user's Tab key.
 func TestExecListWritesResultOutput(t *testing.T) {
 	t.Parallel()
 
-	for _, format := range []string{"name", "tree", "table", "wide", "json"} {
+	if got := Formats(); !slices.Equal(got, []string{"json", "name", "table", "tree", "wide"}) {
+		// Not fatal: the loop below is what proves each style renders, and a
+		// deliberately added style should be seen to render before this line
+		// is updated.
+		t.Errorf("Formats() = %v, want the five styles sorted", got)
+	}
+	for _, format := range Formats() {
 		t.Run(format, func(t *testing.T) {
 			t.Parallel()
 
@@ -477,6 +488,75 @@ func TestExecListTracingStaysOutOfOutput(t *testing.T) {
 	} {
 		if strings.Contains(out, "level=") || strings.Contains(out, "msg=") {
 			t.Errorf("%s = %q, want no log records in it", name, out)
+		}
+	}
+}
+
+// TestExecListPathlessProjectKeepsIdentity covers ticket 32 at the command's
+// entry point: a project that declares no `path:` — the shape
+// examples/simple.yaml's `rafi` project uses, where each repository states its
+// own absolute `dir:` — must render every configured field. The loader used to
+// rebuild these repositories from just their Dir and Src, so the JSON envelope
+// showed a name derived from the directory and no description or namespace at
+// all.
+func TestExecListPathlessProjectKeepsIdentity(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	deps := clitest.New(t, clitest.FakeGit{})
+	deps.Projects["acme"] = domain.Project{
+		Repos: []domain.Repository{{
+			Name:      "dotfiles",
+			Namespace: "rafi",
+			Desc:      "my dotfiles",
+			Dir:       dir,
+			Src:       "git@example.com:acme/one.git",
+		}},
+	}
+
+	if err := ExecList("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecList error = %v, want nil", err)
+	}
+
+	repos := deps.JSONRepos("acme")
+	repo, ok := repos["dotfiles"]
+	if !ok {
+		t.Fatalf("repos = %v, want one keyed by its configured name %q", repos, "dotfiles")
+	}
+	for _, f := range []struct{ key, want string }{
+		{"namespace", "rafi"},
+		{"desc", "my dotfiles"},
+		{"src", "git@example.com:acme/one.git"},
+		{"dir", dir},
+	} {
+		if got, _ := repo[f.key].(string); got != f.want {
+			t.Errorf("%s = %q, want %q", f.key, got, f.want)
+		}
+	}
+}
+
+// TestExecListPathlessRepoNamedFromSrc covers the degenerate half of ticket
+// 32: a repository with neither a name nor a `dir:` was titled ".", the
+// basename of an empty path, instead of being named from its Repo Src.
+func TestExecListPathlessRepoNamedFromSrc(t *testing.T) {
+	t.Parallel()
+
+	deps := clitest.New(t, clitest.FakeGit{})
+	deps.Projects["acme"] = domain.Project{
+		Repos: []domain.Repository{{Src: "git@example.com:acme/one.git"}},
+	}
+
+	if err := ExecList("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecList error = %v, want nil", err)
+	}
+
+	out := deps.Result()
+	if !strings.Contains(out, "one") {
+		t.Errorf("Result Output = %q, want the repository named from its Src", out)
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), ".") {
+			t.Errorf("Result Output has a row titled %q, want the Src-derived name", line)
 		}
 	}
 }

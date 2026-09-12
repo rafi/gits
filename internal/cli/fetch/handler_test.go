@@ -60,7 +60,7 @@ func TestExecFetchProject(t *testing.T) {
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecFetch([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecFetch("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecFetch error = %v, want nil", err)
 	}
 
@@ -87,7 +87,7 @@ func TestExecFetchSingleRepo(t *testing.T) {
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecFetch([]string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecFetch("table", []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecFetch error = %v, want nil", err)
 	}
 
@@ -114,7 +114,7 @@ func TestExecFetchSkipsNonOKRepositories(t *testing.T) {
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecFetch([]string{"acme"}, deps.RuntimeCLI)
+	err := ExecFetch("table", []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecFetch error = nil, want the skipped repositories to fail the run")
 	}
@@ -144,7 +144,7 @@ func TestExecFetchFailureReportsEpilogue(t *testing.T) {
 	g := &fakeGit{err: errors.New("network down")}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecFetch([]string{"acme"}, deps.RuntimeCLI)
+	err := ExecFetch("table", []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecFetch error = nil, want the failed repository to fail the run")
 	}
@@ -157,5 +157,82 @@ func TestExecFetchFailureReportsEpilogue(t *testing.T) {
 	got := deps.Diagnostic()
 	if !strings.Contains(got, "1 error:") || !strings.Contains(got, "network down") {
 		t.Errorf("Diagnostic Output = %q, want the error epilogue", got)
+	}
+}
+
+// TestExecFetchJSON covers `gits fetch -o json acme`: what fetch made of each
+// repository nests under `fetch` as exactly one of output or error, and a
+// repository the state guard turned back carries its state and no such
+// object. Neither condition fails the run or prints an epilogue in this
+// format. Fetch has no documented pass-over, so `skipped` never appears.
+func TestExecFetchJSON(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		git  *fakeGit
+		key  string
+		want string
+	}{
+		{"fetched", &fakeGit{out: "up to date"}, "output", "up to date"},
+		{"failed", &fakeGit{err: errors.New("network down")}, "error", "network down"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			deps := clitest.New(t, tc.git).WithProject("acme",
+				clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
+
+			if err := ExecFetch("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+				t.Fatalf("ExecFetch error = %v, want nil: a repository's condition is data", err)
+			}
+			if got := deps.Diagnostic(); got != "" {
+				t.Errorf("Diagnostic Output = %q, want no epilogue", got)
+			}
+
+			repos := deps.JSONRepos("acme")
+			outcome, ok := repos["api"]["fetch"].(map[string]any)
+			if !ok {
+				t.Fatalf("api = %v, want the outcome under \"fetch\"", repos["api"])
+			}
+			// The body's text is what the table shows, which for fetch
+			// carries the repository's path ahead of git's report whenever
+			// the display path is not the whole of it.
+			if got, _ := outcome[tc.key].(string); len(outcome) != 1 || !strings.HasSuffix(got, tc.want) {
+				t.Errorf("api.fetch = %v, want only %q ending in %q", outcome, tc.key, tc.want)
+			}
+			for name, state := range map[string]string{"gone": "not-cloned", "bad": "error"} {
+				if repos[name]["state"] != state {
+					t.Errorf("%s.state = %v, want %s", name, repos[name]["state"], state)
+				}
+				if _, found := repos[name]["fetch"]; found {
+					t.Errorf("%s = %v, want no outcome for a repository fetch never ran for",
+						name, repos[name])
+				}
+			}
+			if repos["bad"]["reason"] != clitest.BrokenReason {
+				t.Errorf("bad.reason = %v, want the Reason it was classified with", repos["bad"]["reason"])
+			}
+		})
+	}
+}
+
+// TestExecFetchUnknownFormat covers a format other than table or json being
+// rejected before anything is loaded.
+func TestExecFetchUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{out: "up to date"}
+	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
+
+	err := ExecFetch("wide", []string{"acme"}, deps.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "unknown output format") {
+		t.Fatalf("ExecFetch(\"wide\") error = %v, want the format rejected", err)
+	}
+	if len(g.Fetched()) != 0 {
+		t.Errorf("fetched %v, want nothing reached before the format was checked", g.Fetched())
+	}
+	if got := deps.Result() + deps.Diagnostic(); got != "" {
+		t.Errorf("output = %q, want nothing rendered", got)
 	}
 }

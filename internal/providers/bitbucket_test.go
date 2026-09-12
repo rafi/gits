@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +16,120 @@ import (
 
 	"github.com/rafi/gits/domain"
 )
+
+// TestBitbucketTokenForms proves each documented credential reaches Bitbucket
+// as the request that credential is defined by, asserted on the wire rather
+// than on which constructor was called: an `email:api-token` (and the legacy
+// `user:app-password`, which is the same request) as HTTP basic auth, and a
+// bare API token as a bearer. Atlassian has retired app passwords in favor of
+// API tokens, so the bearer form is the one a new user will have.
+func TestBitbucketTokenForms(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		token string
+		// wantUser is the basic-auth user expected, or "" for bearer.
+		wantUser   string
+		wantSecret string
+	}{
+		{
+			name:       "email and api token authenticate as basic",
+			token:      "me@example.com:api-token",
+			wantUser:   "me@example.com",
+			wantSecret: "api-token",
+		},
+		{
+			name:       "legacy user and app password still authenticate as basic",
+			token:      "user:app-password",
+			wantUser:   "user",
+			wantSecret: "app-password",
+		},
+		{
+			name:       "a bare api token authenticates as bearer",
+			token:      "api-token",
+			wantSecret: "api-token",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotAuth atomic.Value
+			server := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					gotAuth.Store(r.Header.Get("Authorization"))
+					w.Header().Set("Content-Type", "application/json")
+					fmt.Fprint(w, `{"pagelen":10,"page":1,"values":[]}`)
+				},
+			))
+			defer server.Close()
+
+			provider, err := newBitbucketProvider(Options{Token: tt.token})
+			if err != nil {
+				t.Fatalf("newBitbucketProvider(%q) error = %v", tt.token, err)
+			}
+			baseURL, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatalf("url.Parse: %v", err)
+			}
+			provider.client.SetApiBaseURL(*baseURL)
+
+			if _, _, err := provider.fetchRepos(context.Background(), "acme"); err != nil {
+				t.Fatalf("fetchRepos() error = %v", err)
+			}
+
+			auth, _ := gotAuth.Load().(string)
+			if auth == "" {
+				t.Fatal("request carried no Authorization header")
+			}
+			if tt.wantUser == "" {
+				if want := "Bearer " + tt.wantSecret; auth != want {
+					t.Fatalf("Authorization = %q, want %q", auth, want)
+				}
+				return
+			}
+			if !strings.HasPrefix(auth, "Basic ") {
+				t.Fatalf("Authorization = %q, want HTTP basic auth", auth)
+			}
+			req := &http.Request{Header: http.Header{"Authorization": {auth}}}
+			user, secret, ok := req.BasicAuth()
+			if !ok {
+				t.Fatalf("Authorization = %q, which does not decode as basic auth", auth)
+			}
+			if user != tt.wantUser || secret != tt.wantSecret {
+				t.Errorf("basic auth = %q:%q, want %q:%q",
+					user, secret, tt.wantUser, tt.wantSecret)
+			}
+		})
+	}
+}
+
+// TestBitbucketTokenRejected proves a token that names no credential either
+// scheme can send is refused at construction, rather than becoming a 401 on
+// the first request or authenticating as someone else.
+func TestBitbucketTokenRejected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{"empty", ""},
+		{"separator only", ":"},
+		{"no user half", ":api-token"},
+		{"no secret half", "me@example.com:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := newBitbucketProvider(Options{Token: tt.token}); err == nil {
+				t.Fatalf("newBitbucketProvider(%q) = nil error, want one", tt.token)
+			}
+		})
+	}
+}
 
 // TestBitbucketProviderTimeout proves the providerTimeout setting reaches the
 // underlying HTTP client, which go-bitbucket otherwise leaves unbounded.

@@ -21,9 +21,11 @@ Use as a git clone manager, and while developing on multiple git repositories.
 
 - [x] GitHub/GitLab/Bitbucket/filesystem support with cache
 - [x] Interactive browsing of projects/repositories/branches/tags
-- [x] Clone/fetch/pull/push for multiple repositories
+- [x] Clone/fetch/pull/push, or run any command, in multiple repositories
 - [x] Show one-line status with icons for all repositories
 - [x] List projects as table/tree/json/name
+- [x] JSON output for status and every bulk command, one shared document
+- [x] `gits doctor` checks your config and environment for problems
 - [x] Checkout branches interactively
 - [x] Configurable by YAML/JSON/TOML
 
@@ -126,6 +128,8 @@ Available Commands:
 - `cd` —       Get repository path
 - `checkout` — Traverse repositories and optionally checkout branch
 - `clone` —    Clone all repositories for specified project(s)
+- `doctor` —   Report configuration and environment problems
+- `exec` —     Run a command in every repository
 - `fetch` —    Fetch and prune from all remotes
 - `help` —     Help about any command
 - `list` —     List all projects or their repositories
@@ -151,12 +155,28 @@ gits list           # list all projects
 gits list acme      # list all project 'acme' repositories
 
 gits status acme    # show status for project 'acme' repositories
+gits status acme x  # show status for the repository 'x' in project 'acme'
+gits status acme x/ # show status for the sub-project 'x' — note the slash
 gits status ~/code  # show status for all repositories at path
 gits status .       # show status for all repositories at current path
 ```
 
 To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your shell
 `~/.bashrc` or `~/.zshrc`, and use `cdgit` to navigate to a repository.
+
+### Shell completion
+
+`gits completion <bash|zsh|fish|powershell>` prints a completion script. Follow
+the sub-command's own help for where your shell expects it.
+
+Tab completes project names, a project's repositories and a repository's
+branches, and the values of `-o`/`--output` and `-C`/`--color`. Each command
+offers exactly the output styles it accepts, so `gits list -o <Tab>` offers
+five and `gits status -o <Tab>` offers two.
+
+Completion never waits on the network and never prompts: repository names come
+from the cache, so a provider-backed project with a cold cache simply offers
+none until `gits sync` has run.
 
 ### Pushing
 
@@ -185,18 +205,50 @@ There is deliberately no way to reach `--force`, `--force-with-lease`,
 is not recoverable the way one against a single remote is. See
 [ADR-0002](./docs/adr/0002-push-safety-model.md).
 
+### Running a command everywhere
+
+`gits exec` runs one command in every repository of a project. Everything after
+`--` is the command; everything before it names the project and, optionally, a
+single repository.
+
+```bash
+gits exec acme -- git gc --quiet     # in every repository of 'acme'
+gits exec acme api -- git log -n 1   # in one repository
+```
+
+The command is run directly, without a shell, so nothing in a path or a
+repository name can be re-interpreted as syntax. Write the shell yourself when
+you want pipes, redirection or globbing:
+
+```bash
+gits exec acme -- sh -c 'git log -1 --format=%s | tr a-z A-Z'
+```
+
+Each child runs with its repository as the working directory, and with three
+variables exported: `GITS_PROJECT`, `GITS_REPO` and `GITS_REPO_PATH`.
+
+A repository with no local clone is passed over, like every other bulk
+command. A non-zero exit is that repository's error: it is shown on its line,
+listed in the epilogue, and makes `gits exec` itself exit non-zero. There is no
+timeout of its own — `settings.gitTimeout` bounds git's network operations, not
+your command — and Ctrl-C cancels every child still running.
+
 ### JSON output
 
-`list` and `status` both take `-o json` and emit the same document: an object
-keyed by project name, carrying the project tree and every repository's
-identity and state. `list -o json` stops there; `status -o json` additionally
-nests the working-tree data it gathered under each repository.
+`list`, `status`, and the bulk commands `pull`, `fetch`, `push`, `clone` and
+`exec` all take `-o json` and emit the same document: an object keyed by
+project name, carrying the project tree and every repository's identity and
+state. `list -o json` stops there; `status -o json` additionally nests the
+working-tree data it gathered under each repository, and a bulk command nests
+what it made of each repository under its own name.
 
 ```bash
 gits list -o json                      # the project tree, no git commands run
 gits status -o json acme               # the same tree, plus work-tree data
 gits status -o json --dirty acme       # only repositories with local changes
 gits status -o json --stat acme        # adds head.added / head.deleted
+gits pull -o json acme                 # the same tree, plus each pull's outcome
+gits exec -o json acme -- git gc       # the same tree, plus each child's output
 ```
 
 Each repository reports one of five `state` values:
@@ -247,6 +299,82 @@ error would read as a clean work tree. `status -o json` exits zero for these
 per-repository conditions; they are data in this format. The table format is
 unchanged, and still exits non-zero.
 
+A bulk command's outcome object is keyed by the command's name and holds
+exactly one of three keys, so a consumer can tell "done" from "nothing to do
+here" from "this failed" without parsing prose:
+
+```jsonc
+{
+  "acme": {
+    "name": "acme", "path": "~/code/acme",
+    "repos": [
+      { "name": "api", "state": "ok",
+        "pull": { "output": "[main <- origin/main] Already up to date." } },
+      { "name": "web", "state": "ok",
+        "pull": { "skipped": "skipped: no upstream tracking branch found" } },
+      { "name": "docs", "state": "ok",
+        "pull": { "error": "fatal: unable to access 'https://…'" } },
+      { "name": "tools", "state": "not-cloned" }
+    ]
+  }
+}
+```
+
+| Key       | Meaning                                                              |
+| --------- | -------------------------------------------------------------------- |
+| `output`  | the command ran and this is what it printed, with no terminal styling |
+| `skipped` | the documented pass-over the table shows on the line: a branch with no upstream, a repository already cloned |
+| `error`   | the command failed on this repository                                |
+
+A repository the command never ran for — one whose state it does not act on,
+or one never started because the run was interrupted — carries its `state`
+and no outcome object at all, so the key's absence says "not tried" and its
+presence says which command tried. Like `status -o json`, a bulk command's
+JSON form exits zero for every per-repository condition and prints no error
+epilogue; only an interrupted run fails, because the document is incomplete
+and nothing inside it says so. The line format is unchanged, and still exits
+non-zero on a failed repository.
+
+### Checking your configuration
+
+`gits doctor` reports what is wrong with your configuration and environment,
+in one place:
+
+```console
+$ gits doctor
+info    config using ~/.gits.yaml
+error   config unknown config key "acme.pth" in ~/.gits.yaml, ignored
+error   acme.one no `path:` on the project and no `dir:` on the repository, so there is nowhere for it to live
+warning vim `path: ~/code/vim` does not exist yet; `gits clone` will create it
+info    git git version 2.55.0 (/opt/homebrew/bin/git)
+info    finder 0.74.3 (Homebrew) (/opt/homebrew/bin/fzf)
+info    cache directory ~/.cache/gits
+warning cache.github-acme written by gits v0.10, will be refetched (cached 9d ago)
+info    cache.github-rafi cached 1d ago, valid for 168h0m0s
+```
+
+It checks unknown config keys, project paths that do not exist, repositories
+the config gives no local home, the `git` and finder binaries with their
+versions, and every cached project against `settings.cacheTTL`. It exits
+non-zero if any finding is an error, so CI can gate on it, and takes `-o json`
+like the other commands.
+
+No provider is ever contacted, so `doctor` never waits on the network or
+prompts for a token passphrase.
+
+Unknown keys are also reported on every ordinary run, since a misspelled key
+is otherwise silent — YAML has no way to know that `pth:` was meant to be
+`path:`, and the key is simply ignored:
+
+```console
+$ gits list acme
+unknown config key "acme.pth" in ~/.gits.yaml, ignored
+```
+
+That notice goes to stderr, so piping or redirecting a command's output is
+unaffected. Note keys are matched case-insensitively, so `cachettl` still
+works and is not reported; only a genuinely unrecognized key is.
+
 ## Configuration
 
 Configuration file must be present at `~/.gits.yaml` or
@@ -278,6 +406,10 @@ projectname:          # Project name
     - dir: foo        # Optional, default: repository name
       src: git@...    # Optional, default: repository remote URL
     - ...
+  include: [...]      # Optional allowlist of repositories
+  exclude: [...]      # Optional denylist of repositories
+  clone: true         # Optional, set false to skip during `gits clone`
+  subprojects: [...]  # Optional nested projects
 
 anotherproject:
   ...
@@ -291,6 +423,91 @@ anotherproject:
 > `rafi.github` and now maps to `rafi.github.io`. If you cloned such a repo
 > with an older version, rename the directory (or set `dir:` explicitly) to
 > match.
+
+### Filtering repositories
+
+`include` and `exclude` narrow the repositories a project contributes, which
+is most useful against a `source` you do not control. Both lists match a
+repository three ways — its name, its namespace, or `namespace/name` — as
+exact strings, not patterns or globs:
+
+```yaml
+work:
+  path: ~/code/work
+  source:
+    type: gitlab
+    search: "12345678"
+  exclude:
+    - acme/legacy-api   # namespace/name
+    - deprecated-tool   # name
+  # include:            # when non-empty, only what it names is kept
+  #   - acme/api
+  #   - acme/web
+```
+
+`exclude` always wins over `include`, and a non-empty `include` is exclusive:
+everything it does not name is dropped. Both apply to sub-projects too.
+
+### Skipping a project during clone
+
+`clone: false` passes over a project when `gits clone` runs, along with every
+sub-project beneath it. Every other command still sees the project normally:
+
+```yaml
+vendor:
+  path: ~/code/vendor
+  clone: false
+```
+
+### Sub-projects
+
+A project can nest others under `subprojects`. Entries are a list rather than
+a map, so each one carries its own `name`:
+
+```yaml
+org:
+  path: ~/code/org
+  repos:
+    - dir: platform
+  subprojects:
+    - name: frontend        # path becomes ~/code/org/frontend
+      desc: Web clients
+      repos:
+        - dir: web
+          src: git@github.com:myorg/web.git
+    - name: backend
+      path: ~/code/services # an explicit path wins over the default
+      source:               # discovered on its own, like a top-level project
+        type: github
+        search: myorg-backend
+```
+
+A sub-project inherits what it does not declare: a `path` of
+`<parent path>/<name>`, and its parent's `source`. A parent with no `path`
+passes none down, so a sub-project under one needs absolute `dir` entries or
+a `path` of its own. A project that declares nothing but `subprojects` is
+fine — it groups them and contributes no repositories itself.
+
+An inherited `source` tells `gits` what kind of origin the sub-project's
+repositories have — so a provider-backed one with no local clone is reported
+as `remote-only` rather than as an error — but it does not discover anything
+a second time. Give a sub-project its own `source` when it should be
+discovered separately, or list its repositories under `repos`.
+
+> [!NOTE]
+> A project with a `path:` and no `repos:` is searched recursively, and that
+> search descends into its sub-projects' directories too. If a sub-project
+> also lists those repositories, they appear twice. Give such a parent an
+> explicit `repos:` list, or point the sub-projects at directories outside
+> the parent's path.
+
+Address a sub-project by giving its name a trailing slash, which is what tells
+`gits` you mean a sub-project and not a repository:
+
+```bash
+gits status org frontend/   # the sub-project 'frontend'
+gits status org web         # the repository 'web'
+```
 
 ### Settings
 
@@ -333,7 +550,7 @@ settings:
   gitlab:
     tokenCommand: op read op://private/gitlab/token
   bitbucket:
-    token: my-user:my-app-password     # username:app-password
+    tokenCommand: pass tokens/bitbucket
 ```
 
 For each provider the first of these wins:
@@ -346,6 +563,21 @@ For each provider the first of these wins:
    command is an error — there is no silent fallback.
 3. Environment: `GITHUB_TOKEN` (or `HOMEBREW_GITHUB_API_TOKEN`),
    `GITLAB_TOKEN`, `BITBUCKET_TOKEN`.
+
+Bitbucket takes an [Atlassian API token](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/)
+in either of two forms:
+
+```yaml
+settings:
+  bitbucket:
+    token: me@example.com:my-api-token   # Atlassian account email and token
+    # token: my-api-token                # the token alone
+```
+
+Give it the `read:repository:bitbucket` and `read:workspace:bitbucket` scopes,
+which is all discovery reads. A legacy `username:app-password` still works
+wherever Bitbucket still honors it, but Atlassian has deprecated app passwords
+in favor of API tokens, so prefer a token for anything new.
 
 Cached projects (see `cache`) don't need a token until the cache expires or
 `gits sync` refreshes it.

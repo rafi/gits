@@ -7,7 +7,8 @@
 // between the whole tree and a single repository, the Repo State guard, the
 // bounded worker pool with live progress, stable tree ordering and
 // interruption accounting. Run hands back the collected results; Lines is the
-// stock renderer for them, and a command with its own output shape renders
+// stock renderer for them, JSON the machine-readable one, and Render picks
+// between the two by the -o flag; a command with its own output shape renders
 // them itself and closes with Epilogue.
 //
 // Result Output and Diagnostic Output are read from the caller's dependencies;
@@ -30,6 +31,10 @@ import (
 // repository: the rendered body text for the commands using Lines, a
 // structured value for one rendering its own output.
 type Command[T any] struct {
+	// Name is the command's own name ("pull"): the key its per-repository
+	// outcome nests under in the JSON envelope. A command that never renders
+	// JSON may leave it empty.
+	Name string
 	// Verb labels the run in the live progress reporter ("pulling").
 	Verb string
 	// Accepts are the Repo States the body is willing to receive. A nil set
@@ -77,6 +82,12 @@ type Result[T any] struct {
 	Repo  Repo
 	Value T
 	Err   error
+	// Guarded reports that the state guard turned the repository back: Err
+	// is its state error, and the body never ran. A renderer that
+	// distinguishes "the command failed here" from "the command was never
+	// tried here" reads this rather than re-deriving it from the state,
+	// since which states are acceptable is the command's to declare.
+	Guarded bool
 }
 
 // Results is everything a renderer receives: the tree the run visited, one
@@ -85,6 +96,8 @@ type Result[T any] struct {
 // started — canceled before it was dequeued — has no result; Interrupted
 // says how many there were.
 type Results[T any] struct {
+	// Command is the Name of the command that ran.
+	Command string
 	// Project is the pruned tree the run visited. For a single named
 	// repository it holds that repository alone, with no sub-projects. It is
 	// the zero value when the named project was skipped.
@@ -130,13 +143,17 @@ func (c Command[T]) Run(args []string, deps types.RuntimeCLI) (Results[T], error
 	if !kept {
 		// The named project is skipped, so there is nothing to run. prune has
 		// already said so as Diagnostic Output.
-		return Results[T]{}, nil
+		return Results[T]{Command: c.Name}, nil
 	}
 
+	var res Results[T]
 	if repo != nil {
-		return c.single(deps.Ctx, project, *repo, deps), nil
+		res = c.single(deps.Ctx, project, *repo, deps)
+	} else {
+		res = c.collect(deps.Ctx, project, deps)
 	}
-	return c.collect(deps.Ctx, project, deps), nil
+	res.Command = c.Name
+	return res, nil
 }
 
 // single runs the body for one named repository. The tree it reports is the
@@ -184,6 +201,7 @@ func (c Command[T]) one(ctx context.Context, repo Repo, deps types.RuntimeCLI) R
 	res := Result[T]{Repo: repo}
 	if !c.accepts(repo.State) {
 		res.Err = cli.StateError(repo.Repository)
+		res.Guarded = true
 		return res
 	}
 	res.Value, res.Err = c.Body(ctx, repo, deps)

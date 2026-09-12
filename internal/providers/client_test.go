@@ -96,7 +96,9 @@ func TestConstructorsReturnNilOnError(t *testing.T) {
 			t.Errorf("NewGitProvider(%q, no token) = (%v, %v), want (nil, error)", provider, p, err)
 		}
 	}
-	if p, err := newBitbucketProvider(Options{Token: "no-colon"}); err == nil || p != nil {
+	// A colon-less token is the Bitbucket bearer form and so is valid; a bare
+	// separator names no credential either scheme can send.
+	if p, err := newBitbucketProvider(Options{Token: ":"}); err == nil || p != nil {
 		t.Errorf("newBitbucketProvider(bad token) = (%v, %v), want (nil, error)", p, err)
 	}
 }

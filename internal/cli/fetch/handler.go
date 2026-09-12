@@ -11,20 +11,28 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// ExecFetch runs fetch on project repositories, or on a specific repo.
+// ExecFetch runs fetch on project repositories, or on a specific repo,
+// rendering the results as lines or as the JSON envelope.
 //
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecFetch(args []string, deps types.RuntimeCLI) error {
+func ExecFetch(format string, args []string, deps types.RuntimeCLI) error {
+	// Validate before anything is loaded or selected, so a typo'd format never
+	// costs a provider round-trip or an interactive prompt.
+	if err := bulk.ValidateFormat(format); err != nil {
+		return err
+	}
+
 	res, err := bulk.Command[string]{
+		Name: "fetch",
 		Verb: "fetching",
 		Body: fetchRepo,
 	}.Run(args, deps)
 	if err != nil {
 		return err
 	}
-	return bulk.Lines(res, deps)
+	return bulk.Render(res, format, deps)
 }
 
 // fetchRepo fetches one repository and returns its result line's body.

@@ -93,6 +93,31 @@ filesystem directory scan and a provider's pagination are each a walk, and
 neither is this — so using them here asks the reader to work out which one is
 meant.
 
+### Finding
+
+One thing `gits doctor` has to say about the configuration or the
+environment: a **Subject** that was inspected, a **Level**, and a sentence.
+
+A Finding is not a **Repo State**. State describes one **Repository**'s local
+presence and is computed for every command; a Finding describes a defect in
+what the user wrote or in what is installed, and only `doctor` produces one.
+The two overlap for exactly one repository condition — a config that gives a
+repository no local home is both an `error` state and a Finding — and they say
+it to different audiences: the state tells a command to pass the repository
+over, the Finding tells the user which line of their config to change.
+
+**Level** is one of `error`, `warning` or `info`, and is wire vocabulary: the
+`-o json` document carries these strings. An `error` exits non-zero; the other
+two do not.
+
+**Subject** names what was inspected, so Findings stay greppable: a config
+key, a binary, a project by its path through the tree (`acme/tools`), or a
+repository within one (`acme.api`).
+
+Avoid: "check" for the output. A check is the act; a Finding is what it
+produced. Avoid "diagnostic", which collides with **Diagnostic Output** —
+Findings are **Result Output**, since they are what `doctor` was asked for.
+
 ## Output
 
 ### Result Output

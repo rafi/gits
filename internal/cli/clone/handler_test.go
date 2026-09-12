@@ -78,7 +78,7 @@ func TestExecCloneProject(t *testing.T) {
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecClone("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
 
@@ -109,7 +109,7 @@ func TestExecCloneSingleRepo(t *testing.T) {
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-	if err := ExecClone([]string{"acme", "gone"}, deps.RuntimeCLI); err != nil {
+	if err := ExecClone("table", []string{"acme", "gone"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
 
@@ -132,7 +132,7 @@ func TestExecCloneSkipsErrorState(t *testing.T) {
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecClone([]string{"acme"}, deps.RuntimeCLI)
+	err := ExecClone("table", []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecClone error = nil, want the defective repository to fail the run")
 	}
@@ -158,7 +158,7 @@ func TestExecCloneFailureReportsEpilogue(t *testing.T) {
 	g := &fakeGit{err: errors.New("repository not found")}
 	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"))
 
-	err := ExecClone([]string{"acme"}, deps.RuntimeCLI)
+	err := ExecClone("table", []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecClone error = nil, want the failed repository to fail the run")
 	}
@@ -200,7 +200,7 @@ func TestExecCloneRemoteOnly(t *testing.T) {
 		Repos:  []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
 	}}
 
-	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecClone("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil — remote-only is a pass-over", err)
 	}
 
@@ -237,7 +237,7 @@ func TestExecCloneSkippedProject(t *testing.T) {
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := skipping(t, g, clitest.NotCloned("gone"))
 
-	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecClone("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
 
@@ -265,7 +265,7 @@ func TestExecCloneSkippedProjectSingleRepo(t *testing.T) {
 	g := &fakeGit{out: "Cloning into 'gone'…"}
 	deps := skipping(t, g, clitest.NotCloned("gone"))
 
-	if err := ExecClone([]string{"acme", "gone"}, deps.RuntimeCLI); err != nil {
+	if err := ExecClone("table", []string{"acme", "gone"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
 
@@ -301,7 +301,7 @@ func TestExecCloneSkippedSubProject(t *testing.T) {
 	root.SubProjects = []domain.Project{skipped}
 	deps.Projects["acme"] = root
 
-	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecClone("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
 
@@ -320,5 +320,97 @@ func TestExecCloneSkippedSubProject(t *testing.T) {
 	}
 	if got := deps.Diagnostic(); !strings.Contains(got, "Skipping skip") {
 		t.Errorf("Diagnostic Output = %q, want the skipped sub-project named", got)
+	}
+}
+
+// TestExecCloneJSON covers `gits clone -o json acme` for each condition a
+// repository can end in: cloned, already cloned (a pass-over), and failed.
+// What clone made of each nests under `clone` as exactly one of output,
+// skipped or error. Unlike the other Bulk Commands a not-cloned repository is
+// clone's input, so it carries an outcome; a repository with a defective
+// configuration is the one the guard turns back, and carries its state and
+// reason with no such object. None of it fails the run or prints an epilogue
+// in this format.
+func TestExecCloneJSON(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := clitest.New(t, g).WithProject("acme",
+		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
+
+	if err := ExecClone("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil: a repository's condition is data", err)
+	}
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want no epilogue", got)
+	}
+
+	repos := deps.JSONRepos("acme")
+	gone, ok := repos["gone"]["clone"].(map[string]any)
+	if !ok || len(gone) != 1 || gone["output"] != "Cloning into 'gone'…" {
+		t.Errorf("gone.clone = %v, want only the clone's output", repos["gone"]["clone"])
+	}
+	api, ok := repos["api"]["clone"].(map[string]any)
+	if skipped, _ := api["skipped"].(string); !ok || len(api) != 1 ||
+		!strings.HasPrefix(skipped, "already cloned at ") {
+		t.Errorf("api.clone = %v, want only the already-cloned pass-over as skipped", repos["api"]["clone"])
+	}
+	bad := repos["bad"]
+	if bad["state"] != "error" || bad["reason"] != clitest.BrokenReason {
+		t.Errorf("bad = %v, want the error state and its reason", bad)
+	}
+	if _, found := bad["clone"]; found {
+		t.Errorf("bad = %v, want no outcome for a repository the guard turned back", bad)
+	}
+
+	// A failed clone is that repository's error.
+	g = &fakeGit{err: errors.New("repository not found")}
+	deps = clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"))
+	if err := ExecClone("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil: a repository's failure is data", err)
+	}
+	got, ok := deps.JSONRepos("acme")["gone"]["clone"].(map[string]any)
+	if !ok || len(got) != 1 || got["error"] != "repository not found" {
+		t.Errorf("gone.clone = %v, want only the error", got)
+	}
+}
+
+// TestExecCloneJSONSkippedProject: a project configured not to clone renders
+// an empty envelope, since nothing ran, and the skip is still reported as
+// Diagnostic Output where a consumer of the document never sees it.
+func TestExecCloneJSONSkippedProject(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := skipping(t, g, clitest.NotCloned("gone"))
+
+	if err := ExecClone("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil", err)
+	}
+	if got := deps.Result(); got != "{}\n" {
+		t.Errorf("Result Output = %q, want an empty envelope", got)
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "Skipping acme") {
+		t.Errorf("Diagnostic Output = %q, want the skipped project named", got)
+	}
+}
+
+// TestExecCloneUnknownFormat covers a format other than table or json being
+// rejected before anything is loaded or cloned.
+func TestExecCloneUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"))
+
+	err := ExecClone("tree", []string{"acme"}, deps.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "unknown output format") {
+		t.Fatalf("ExecClone(\"tree\") error = %v, want the format rejected", err)
+	}
+	if got := g.Clones(); len(got) != 0 {
+		t.Errorf("clones = %+v, want none reached before the format was checked", got)
+	}
+	if got := deps.Result() + deps.Diagnostic(); got != "" {
+		t.Errorf("output = %q, want nothing rendered", got)
 	}
 }
