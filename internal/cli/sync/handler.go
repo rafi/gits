@@ -2,7 +2,6 @@ package sync
 
 import (
 	"fmt"
-	"os"
 	"slices"
 
 	"github.com/rafi/gits/internal/loader"
@@ -22,10 +21,7 @@ func ExecSync(args []string, deps types.RuntimeCLI) error {
 			continue
 		}
 		if err := deps.Cache.Flush(p); err != nil {
-			if !os.IsNotExist(err) {
-				return fmt.Errorf("unable to remove cache: %w", err)
-			}
-			continue
+			return fmt.Errorf("unable to remove cache: %w", err)
 		}
 		fmt.Printf("Cleaned %q project cache.\n", name)
 	}

@@ -18,8 +18,9 @@ type bitbucketProvider struct {
 	sourceType Provider
 }
 
-func newBitbucketProvider(token string) (*bitbucketProvider, error) {
+func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
 	provider := &bitbucketProvider{sourceType: ProviderBitbucket}
+	token := opts.Token
 	if token == "" {
 		token = getFirstEnvValue(bitbucketTokenEnvVarNames)
 	}
@@ -35,23 +36,38 @@ func newBitbucketProvider(token string) (*bitbucketProvider, error) {
 	if err != nil {
 		return provider, fmt.Errorf("bitbucket auth failed: %w", err)
 	}
-	provider.client.LimitPages = 1
+	// LimitPages stays 0 (unlimited) so every page is fetched; a larger
+	// page size reduces round-trips for big accounts.
+	provider.client.Pagelen = 100
+	// go-bitbucket's default HTTP client has no timeout, so a hung API
+	// call would block forever.
+	if opts.Timeout > 0 {
+		provider.client.HttpClient.Timeout = opts.Timeout
+	}
 	return provider, nil
 }
 
-func (c *bitbucketProvider) LoadRepos(_ context.Context, ownerName string, _ git.GitClient, project *domain.Project) error {
+func (c *bitbucketProvider) LoadRepos(ctx context.Context, ownerName string, _ git.GitClient, project *domain.Project) error {
 	var err error
-	project.Repos, project.ID, err = c.fetchRepos(ownerName)
+	project.Repos, project.ID, err = c.fetchRepos(ctx, ownerName)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *bitbucketProvider) fetchRepos(ownerName string) ([]domain.Repository, string, error) {
+func (c *bitbucketProvider) fetchRepos(ctx context.Context, ownerName string) ([]domain.Repository, string, error) {
+	// go-bitbucket hardcodes context.Background internally, so honor the
+	// caller's context at the boundaries we control.
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	listOpts := &bitbucket.RepositoriesOptions{Owner: ownerName}
 	result, err := c.client.Repositories.ListForAccount(listOpts)
 	if err != nil {
+		return nil, "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	repos, ownerID := parseRepos(result.Items, ownerName)

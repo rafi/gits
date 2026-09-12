@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
@@ -58,10 +59,12 @@ func GetProject(name string, deps types.Runtime) (domain.Project, error) {
 // isPath checks if a string is a path.
 func isPath(path string) bool {
 	path, _ = homedir.Expand(path)
-	if len(path) == 0 {
+	switch {
+	case path == "":
 		return false
-	}
-	if path == "." || path[0:1] == "/" || path[0:2] == "./" || path[0:2] == "../" {
+	case path == ".", path[0] == '/':
+		return true
+	case strings.HasPrefix(path, "./"), strings.HasPrefix(path, "../"):
 		return true
 	}
 	return false
@@ -157,7 +160,10 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 		}
 	}
 	if !hasCache {
-		c, err := providers.NewGitProvider(source.Type, "")
+		c, err := providers.NewGitProvider(source.Type, providers.Options{
+			IncludeArchived: deps.Settings.IncludeArchived,
+			Timeout:         deps.Settings.ProviderTimeoutDuration(),
+		})
 		if err != nil {
 			return fmt.Errorf("failed to create provider: %w", err)
 		}
@@ -216,14 +222,16 @@ func computeState(ctx context.Context, project *domain.Project, git git.GitClien
 		if project.Source != nil {
 			r.Type = project.Source.Type
 		}
-		if r.Type != string(providers.ProviderFilesystem) {
-			r.State = domain.RepoStateRemote
-		}
-
-		r.State = domain.RepoStateOK
+		isRemote := r.Type != "" && r.Type != string(providers.ProviderFilesystem)
 
 		if r.Dir == "" && project.AbsPath == "" {
-			r.State = domain.RepoStateNoLocal
+			// No local destination can be derived: provider repos are
+			// remote-only, anything else has no local copy to show.
+			if isRemote {
+				r.State = domain.RepoStateRemote
+			} else {
+				r.State = domain.RepoStateNoLocal
+			}
 			continue
 		}
 
@@ -233,8 +241,16 @@ func computeState(ctx context.Context, project *domain.Project, git git.GitClien
 			r.Reason = err.Error()
 			continue
 		}
-		if r.AbsPath == "" {
-			r.State = domain.RepoStateRemote
+
+		// Check existence before running any git command, so a missing
+		// clone never carries a leftover error reason.
+		if _, err := os.Stat(r.AbsPath); os.IsNotExist(err) {
+			r.State = domain.RepoStateNoLocal
+			continue
+		}
+		if !git.IsRepo(ctx, r.AbsPath) {
+			r.State = domain.RepoStateError
+			r.Reason = "Unable to load repo"
 			continue
 		}
 
@@ -243,17 +259,11 @@ func computeState(ctx context.Context, project *domain.Project, git git.GitClien
 			if err != nil {
 				r.State = domain.RepoStateError
 				r.Reason = err.Error()
+				continue
 			}
 		}
 
-		if _, err := os.Stat(r.AbsPath); os.IsNotExist(err) {
-			r.State = domain.RepoStateNoLocal
-		} else if !git.IsRepo(ctx, r.AbsPath) {
-			r.State = domain.RepoStateError
-			r.Reason = "Unable to load repo"
-			continue
-		}
-
+		r.State = domain.RepoStateOK
 	}
 
 	// Sort sub-projects and repositories alphabetically.

@@ -14,7 +14,7 @@ import (
 )
 
 func completionDeps() (deps types.Runtime, err error) {
-	cacheClient, err := cache.NewCacheClient("file")
+	cacheClient, err := cache.NewCacheClient("file", configFile.Settings.CacheTTLDuration())
 	if err != nil {
 		return deps, err
 	}

@@ -56,8 +56,10 @@ func TestPromptRepoBranchesErrorDoesNotExit(t *testing.T) {
 	)
 	func() {
 		defer func() {
-			if r := recover(); r != nil && r != errFakeExit {
-				panic(r)
+			if r := recover(); r != nil {
+				if err, ok := r.(error); !ok || !errors.Is(err, errFakeExit) {
+					panic(r)
+				}
 			}
 		}()
 		got, err = promptRepo("title", "/path", deps)

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/shurcooL/githubv4"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 
 	"github.com/rafi/gits/domain"
@@ -18,13 +17,21 @@ var gitHubTokenEnvVarNames = []string{
 	"HOMEBREW_GITHUB_API_TOKEN",
 }
 
+// githubPageDelay softens the request rate between pages.
+const githubPageDelay = 100 * time.Millisecond
+
 type gitHubProvider struct {
-	client     *githubv4.Client
-	sourceType Provider
+	client          *githubv4.Client
+	sourceType      Provider
+	includeArchived bool
 }
 
-func newGitHubProvider(token string) (*gitHubProvider, error) {
-	provider := &gitHubProvider{sourceType: ProviderGitHub}
+func newGitHubProvider(opts Options) (*gitHubProvider, error) {
+	provider := &gitHubProvider{
+		sourceType:      ProviderGitHub,
+		includeArchived: opts.IncludeArchived,
+	}
+	token := opts.Token
 	if token == "" {
 		token = getFirstEnvValue(gitHubTokenEnvVarNames)
 	}
@@ -36,95 +43,86 @@ func newGitHubProvider(token string) (*gitHubProvider, error) {
 		&oauth2.Token{AccessToken: token},
 	)
 	httpClient := oauth2.NewClient(context.Background(), src)
+	if opts.Timeout > 0 {
+		httpClient.Timeout = opts.Timeout
+	}
 	provider.client = githubv4.NewClient(httpClient)
 	return provider, nil
 }
 
 func (c *gitHubProvider) LoadRepos(ctx context.Context, ownerName string, _ git.GitClient, project *domain.Project) (err error) {
 	project.Repos, project.ID, err = c.fetchRepos(ctx, ownerName)
-	if err != nil {
-		return err
-	}
-	if len(project.Repos) == 0 {
-		return fmt.Errorf("no repositories found")
-	}
-	return nil
+	return err
 }
 
+// fetchRepos lists every repository of a user or organization via the
+// repositoryOwner connection, which unlike the search API has no 1,000
+// result cap and covers both account types with one query.
 func (c *gitHubProvider) fetchRepos(ctx context.Context, ownerName string) ([]domain.Repository, string, error) {
 	var q struct {
-		Search struct {
-			Edges []struct {
-				Node struct {
-					Repository struct {
-						ID    githubv4.String
-						Name  githubv4.String
-						Owner struct {
-							ID    githubv4.String
-							Login githubv4.String
-						}
-						Description githubv4.String
-						URL         githubv4.String
-						SSHURL      githubv4.String
-						IsArchived  githubv4.Boolean
-					} `graphql:"... on Repository"`
+		RepositoryOwner *struct {
+			ID           githubv4.String
+			Login        githubv4.String
+			Repositories struct {
+				Nodes []struct {
+					ID          githubv4.String
+					Name        githubv4.String
+					Description githubv4.String
+					URL         githubv4.String
+					SSHURL      githubv4.String
 				}
-			}
-			PageInfo struct {
-				EndCursor   githubv4.String
-				HasNextPage bool
-			}
-			RepositoryCount githubv4.Int
-		} `graphql:"search(first: $count, after: $cursor, query: $query, type: REPOSITORY)"`
+				PageInfo struct {
+					EndCursor   githubv4.String
+					HasNextPage bool
+				}
+			} `graphql:"repositories(first: $count, after: $cursor, isArchived: $isArchived, ownerAffiliations: OWNER)"`
+		} `graphql:"repositoryOwner(login: $owner)"`
 	}
 
-	searchQuery := map[string]any{
-		"query": githubv4.String(
-			fmt.Sprintf(`org:%s`, githubv4.String(ownerName)),
-		),
-		"count": githubv4.Int(100),
+	// isArchived=false filters archived repositories server-side; null
+	// lifts the filter. The explicit OWNER affiliation matters too: the
+	// API default also includes repos the owner merely collaborates on.
+	var isArchived *githubv4.Boolean
+	if !c.includeArchived {
+		isArchived = githubv4.NewBoolean(false)
+	}
+	vars := map[string]any{
+		"owner":      githubv4.String(ownerName),
+		"count":      githubv4.Int(100),
+		"isArchived": isArchived,
 		// Null as first argument to get first page.
 		"cursor": (*githubv4.String)(nil),
 	}
 
-	ownerID := ""
 	repos := []domain.Repository{}
-	pageNum := 0
-	for {
-		pageNum++
-		log.Infof("Fetching GitHub repositories for %q (%d)…", ownerName, pageNum)
-
-		err := c.client.Query(ctx, &q, searchQuery)
-		if err != nil {
-			return repos, ownerID, err
+	ownerID := ""
+	what := fmt.Sprintf("GitHub repositories for %q", ownerName)
+	err := paginate(ctx, what, githubPageDelay, func(int) (bool, error) {
+		if err := c.client.Query(ctx, &q, vars); err != nil {
+			return false, err
+		}
+		owner := q.RepositoryOwner
+		if owner == nil {
+			return false, fmt.Errorf(
+				"%q is not a known github user or organization", ownerName)
 		}
 
-		if len(q.Search.Edges) == 0 || q.Search.RepositoryCount == 0 {
-			break
-		}
-		if ownerID == "" {
-			ownerID = string(q.Search.Edges[0].Node.Repository.Owner.ID)
-		}
-
-		for _, edge := range q.Search.Edges {
-			repo := edge.Node.Repository
-			if repo.IsArchived {
-				continue
-			}
+		for _, node := range owner.Repositories.Nodes {
 			repos = append(repos, domain.Repository{
-				ID:        string(repo.ID),
-				Name:      string(repo.Name),
-				Namespace: string(repo.Owner.Login),
-				Src:       string(repo.SSHURL),
-				URL:       string(repo.URL),
-				Desc:      string(repo.Description),
+				ID:        string(node.ID),
+				Name:      string(node.Name),
+				Namespace: string(owner.Login),
+				Src:       string(node.SSHURL),
+				URL:       string(node.URL),
+				Desc:      string(node.Description),
 			})
 		}
-		if !q.Search.PageInfo.HasNextPage {
-			break
+		if !owner.Repositories.PageInfo.HasNextPage {
+			ownerID = string(owner.ID)
+			return false, nil
 		}
-		searchQuery["cursor"] = githubv4.NewString(q.Search.PageInfo.EndCursor)
-		time.Sleep(time.Millisecond * 100)
-	}
-	return repos, ownerID, nil
+		vars["cursor"] = githubv4.NewString(owner.Repositories.PageInfo.EndCursor)
+		return true, nil
+	})
+	return repos, ownerID, err
 }

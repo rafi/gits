@@ -111,6 +111,23 @@ anotherproject:
   ...
 ```
 
+### Settings
+
+Built-in behavior is configured under the reserved `settings:` key:
+
+```yaml
+settings:
+  cacheTTL: 168h   # How long provider caches stay valid. Go duration
+                   # syntax (e.g. "24h", "30m"). Default: 168h (7 days).
+                   # Invalid or empty values fall back to the default.
+  workerCount: 8   # Concurrent git workers. Default: max(NumCPU/2, 2).
+  verbose: false   # Enable debug logging.
+  includeArchived: false  # Include archived repositories when listing
+                          # from providers. Default: false.
+  providerTimeout: 5m     # HTTP timeout for provider API calls. Go
+                          # duration syntax. Default: 5m.
+```
+
 ## Config Examples
 
 Each project in the following example is defined differently:

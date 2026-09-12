@@ -23,17 +23,8 @@ func ExecBrowse(args []string, deps types.RuntimeCLI) error {
 	}
 
 	// Use the project name if provided, and branch too.
-	projName := ""
 	repoFullName := repo.GetNameWithNamespace()
-	branch := ""
-	switch len(args) {
-	case 3:
-		branch = args[2]
-	case 0:
-		projName = project.Name
-	default:
-		projName = args[0]
-	}
+	projName, branch := browseTarget(args, project)
 
 	if branch == "" {
 		// Interactively select a branch.
@@ -43,4 +34,19 @@ func ExecBrowse(args []string, deps types.RuntimeCLI) error {
 		}
 	}
 	return ExecBranchOverview([]string{projName, repoFullName, branch}, deps)
+}
+
+// browseTarget resolves the project name and explicit branch from the
+// command arguments. The project name comes from the first argument whenever
+// one is given — including the 3-arg form — and otherwise from the
+// interactively selected project. An empty branch means "select one".
+func browseTarget(args []string, project domain.Project) (projName, branch string) {
+	projName = project.Name
+	if len(args) > 0 {
+		projName = args[0]
+	}
+	if len(args) == 3 {
+		branch = args[2]
+	}
+	return projName, branch
 }

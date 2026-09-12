@@ -2,8 +2,10 @@ package cache
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,20 +17,24 @@ import (
 	"github.com/rafi/gits/internal/version"
 )
 
-const (
-	cacheTimeFormat = time.RFC3339
-	cacheTTL        = 7 * 24 * time.Hour
-)
+const cacheTimeFormat = time.RFC3339
 
+// File is the file-backed cache client. Its ttl comes from the cacheTTL
+// setting: an explicit "0s" disables caching entirely (every Get is a miss).
 type File struct {
+	ttl time.Duration
+}
+
+// payload is the on-disk cache format.
+type payload struct {
 	Version   string         `json:"version"`
 	Timestamp string         `json:"timestamp"`
 	Checksum  string         `json:"checksum"`
 	Project   domain.Project `json:"project"`
 }
 
-func newCacheFile() (Cacher, error) {
-	cf := &File{}
+func newCacheFile(ttl time.Duration) (Cacher, error) {
+	cf := &File{ttl: ttl}
 	return cf, nil
 }
 
@@ -67,29 +73,32 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 		return false, fmt.Errorf("failed to read cache file: %w", err)
 	}
 
-	// Parse the JSON content
-	err = json.Unmarshal(content, cf)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse cache file: %w", err)
+	// Parse the JSON content into a local value so one read can never leak
+	// state into the next. A corrupt cache file (interrupted write, disk
+	// full) is a miss to be refreshed, never a hard error.
+	var p payload
+	if err := json.Unmarshal(content, &p); err != nil {
+		log.Warnf("ignoring corrupt cache file %s: %v", path, err)
+		return false, nil
 	}
 
 	// Bust cache if version or checksum mismatch
-	if cf.Version != version.GetMajorMinor() {
+	if p.Version != version.GetMajorMinor() {
 		log.Debugf(
 			"version mismatch %s != %s. busting cache.",
-			cf.Version,
+			p.Version,
 			version.GetMajorMinor(),
 		)
 		return false, nil
 	}
-	if cf.Checksum != project.Hash {
+	if p.Checksum != project.Hash {
 		log.Debug("checksum mismatch. busting cache.")
 		return false, nil
 	}
 
-	// Bust cache if expired
-	cutoff := time.Now().Add(-cacheTTL)
-	cachedAt, err := time.Parse(cacheTimeFormat, cf.Timestamp)
+	// Bust cache if expired; a zero ttl expires everything immediately.
+	cutoff := time.Now().Add(-cf.ttl)
+	cachedAt, err := time.Parse(cacheTimeFormat, p.Timestamp)
 	if err != nil {
 		log.Warnf("failed to parse cache timestamp: %v", err)
 		return false, nil
@@ -98,7 +107,7 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 		log.Debug("cache expired")
 		return false, nil
 	}
-	*project = cf.Project
+	*project = p.Project
 	return true, nil
 }
 
@@ -109,37 +118,51 @@ func (cf *File) Save(key string, project domain.Project) error {
 	}
 
 	basePath := filepath.Dir(path)
-	if _, err := os.Stat(path); err != nil && os.IsNotExist(err) {
-		if err := os.MkdirAll(basePath, 0755); err != nil {
-			return fmt.Errorf("failed to create cache directory: %w", err)
-		}
+	if err := os.MkdirAll(basePath, 0o755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	var cacheRaw []byte
-	cf.Timestamp = time.Now().Format(cacheTimeFormat)
-	cf.Project = project
-	cf.Version = version.GetMajorMinor()
-	cf.Checksum = project.Hash
-
-	cacheRaw, err = json.Marshal(cf)
+	cacheRaw, err := json.Marshal(payload{
+		Version:   version.GetMajorMinor(),
+		Timestamp: time.Now().Format(cacheTimeFormat),
+		Checksum:  project.Hash,
+		Project:   project,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to parse cache file: %w", err)
+		return fmt.Errorf("failed to encode cache file: %w", err)
 	}
 
-	fp, err := os.Create(path)
+	// Write via temp file + rename so an interrupted write can never leave
+	// a truncated cache file behind.
+	tmpFile, err := os.CreateTemp(basePath, ".gits-*")
 	if err != nil {
 		return fmt.Errorf("failed to create cache file: %w", err)
 	}
-	defer fp.Close()
+	tmpName := tmpFile.Name()
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpName)
+	}()
 
-	_, err = fp.Write(cacheRaw)
-	if err != nil {
-		return fmt.Errorf("failed to read cache file: %w", err)
+	if _, err := tmpFile.Write(cacheRaw); err != nil {
+		return fmt.Errorf("failed to write cache file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to write cache file: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return fmt.Errorf("failed to write cache file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 	return nil
 }
 
 func (cf *File) Flush(project domain.Project) error {
+	if project.Source == nil {
+		return fmt.Errorf("project %q has no source", project.Name)
+	}
 	if err := project.Source.Validate(); err != nil {
 		return err
 	}
@@ -147,13 +170,9 @@ func (cf *File) Flush(project domain.Project) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(cachePath); err == nil {
-		err := os.Remove(cachePath)
-		if err != nil {
-			return fmt.Errorf("failed to remove cache file: %w", err)
-		}
-	} else {
-		return err
+	// An absent cache file means there is nothing to flush.
+	if err := os.Remove(cachePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("failed to remove cache file: %w", err)
 	}
 	return nil
 }

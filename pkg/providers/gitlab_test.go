@@ -14,7 +14,7 @@ import (
 // the very first call (GetGroup) promptly with context.Canceled instead of
 // hitting the network.
 func TestGitLabLoadReposCancelledCtx(t *testing.T) {
-	p, err := newGitLabProvider("dummy-token")
+	p, err := newGitLabProvider(Options{Token: "dummy-token"})
 	if err != nil {
 		t.Fatalf("newGitLabProvider: %v", err)
 	}

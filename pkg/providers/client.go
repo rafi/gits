@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/pkg/git"
@@ -22,14 +23,22 @@ type gitProvider interface {
 	LoadRepos(ctx context.Context, id string, gitClient git.GitClient, project *domain.Project) error
 }
 
-func NewGitProvider(providerName, token string) (gitProvider, error) {
+// Options carries user settings into provider construction. Token falls back
+// to provider-specific environment variables when empty.
+type Options struct {
+	Token           string
+	IncludeArchived bool
+	Timeout         time.Duration
+}
+
+func NewGitProvider(providerName string, opts Options) (gitProvider, error) {
 	switch Provider(providerName) {
 	case ProviderGitHub:
-		return newGitHubProvider(token)
+		return newGitHubProvider(opts)
 	case ProviderGitLab:
-		return newGitLabProvider(token)
+		return newGitLabProvider(opts)
 	case ProviderBitbucket:
-		return newBitbucketProvider(token)
+		return newBitbucketProvider(opts)
 	case ProviderFilesystem:
 		return newFilesystemProvider()
 	default:

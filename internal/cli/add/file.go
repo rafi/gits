@@ -3,6 +3,7 @@ package add
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,28 +19,41 @@ func load(filePath string) (yaml.Node, error) {
 	return node, err
 }
 
-// save saves a yaml node into a file.
+// save saves a yaml node into a file, atomically: the temp file is created
+// next to the target so the final rename never crosses filesystems, the
+// original file mode is preserved, and any failure leaves no temp file
+// behind.
 func save(filePath string, node yaml.Node) error {
-	tmpFile, err := os.CreateTemp("", "gits")
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(filePath); err == nil {
+		mode = fi.Mode().Perm()
+	}
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(filePath), ".gits-*")
 	if err != nil {
 		return err
 	}
-	defer tmpFile.Close()
+	tmpName := tmpFile.Name()
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpName)
+	}()
 
 	enc := yaml.NewEncoder(tmpFile)
 	enc.SetIndent(2)
 	if err := enc.Encode(&node); err != nil {
 		return err
 	}
-
 	if err := enc.Close(); err != nil {
 		return err
 	}
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
-
-	return os.Rename(tmpFile.Name(), filePath)
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, filePath)
 }
 
 // appendProject appends a project node to the root node.
