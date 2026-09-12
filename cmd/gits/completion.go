@@ -22,11 +22,13 @@ func completionDeps() (deps types.Runtime, err error) {
 	if err != nil {
 		return deps, err
 	}
+	gitClient.SetNetworkTimeout(configFile.Settings.GitTimeoutDuration())
 	return types.Runtime{
 		Ctx:        context.Background(),
 		Cache:      cacheClient,
 		Git:        &gitClient,
 		Projects:   configFile.Projects,
+		Settings:   configFile.Settings,
 		ConfigPath: configFile.Filename,
 	}, nil
 }
@@ -48,7 +50,7 @@ func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) (
 		return completeProject(cmd, args, toComplete)
 	}
 	// Max 2 args: project, repo.
-	if len(args) > 3 {
+	if len(args) >= 2 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
@@ -81,7 +83,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 		return completeProjectRepo(cmd, args, toComplete)
 	}
 	// Max 3 args: project, repo, branch.
-	if len(args) > 3 {
+	if len(args) >= 3 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 

@@ -18,18 +18,27 @@ import (
 )
 
 // ExecOrphan discovers orphaned repositories, ones that are not known to the
-// project provider.
+// project provider. With a repo argument, the scan is scoped to that
+// repository's work tree and reports git repositories embedded inside it.
 //
 // Args: (optional)
 //   - project name
-//   - sub-project name
+//   - repo or sub-project name
 func ExecOrphan(args []string, deps types.RuntimeCLI) error {
-	project, _, err := cli.ParseArgs(args, true, deps)
+	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
 
-	repos, err := findOrphanedRepos(deps.Ctx, project, deps.Git)
+	var repos []domain.Repository
+	if repo != nil {
+		if repo.State != domain.RepoStateOK {
+			return cli.AbortOnRepoState(*repo, deps.Theme.Error)
+		}
+		repos, err = findNestedRepos(deps.Ctx, repo.AbsPath, deps.Git)
+	} else {
+		repos, err = findOrphanedRepos(deps.Ctx, project, deps.Git)
+	}
 	if err != nil {
 		return err
 	}
@@ -44,6 +53,44 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 	}
 
 	return nil
+}
+
+// findNestedRepos scans a repository's work tree for embedded git
+// repositories — directories with their own .git — which no provider knows
+// about. Detection is by .git presence, not rev-parse: inside a work tree
+// every subdirectory reports --is-inside-work-tree.
+func findNestedRepos(ctx context.Context, root string, gitClient git.GitClient) ([]domain.Repository, error) {
+	orphanRepos := []domain.Repository{}
+	walkErr := godirwalk.Walk(root, &godirwalk.Options{
+		Unsorted:            false,
+		FollowSymbolicLinks: false,
+		Callback: func(path string, de *godirwalk.Dirent) error {
+			if !de.IsDir() || path == root {
+				return nil
+			}
+			if de.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			// A stat error simply means no .git here: keep descending.
+			if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+				repo, err := providers.NewFilesystemRepo(ctx, path, "", gitClient)
+				if err != nil {
+					return err
+				}
+				orphanRepos = append(orphanRepos, repo)
+				return filepath.SkipDir
+			}
+			return nil
+		},
+		ErrorCallback: func(path string, err error) godirwalk.ErrorAction {
+			log.Warnf("skipping %s: %s", path, err)
+			return godirwalk.SkipNode
+		},
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return orphanRepos, nil
 }
 
 // makeRepoMap recursively creates a map of known repository paths.

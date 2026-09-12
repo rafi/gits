@@ -3,6 +3,7 @@ package sync
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
@@ -26,9 +27,12 @@ func ExecSync(args []string, deps types.RuntimeCLI) error {
 		fmt.Printf("Cleaned %q project cache.\n", name)
 	}
 
-	_, err := loader.GetProjects(args, deps.Runtime)
+	projs, err := loader.GetProjects(args, deps.Runtime)
 	if err != nil {
 		return fmt.Errorf("unable to list projects: %w", err)
+	}
+	if len(args) > 0 && len(projs) == 0 {
+		return types.NewWarning("no projects found matching %q", strings.Join(args, ", "))
 	}
 	return nil
 }

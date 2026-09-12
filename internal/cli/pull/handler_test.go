@@ -118,3 +118,34 @@ func TestPullRepoBranchError(t *testing.T) {
 		t.Fatal("branch failure should count as a real error")
 	}
 }
+
+// TestPullRepoUpstreamFailureNotMislabeled: an UpstreamBranch failure that is
+// not ErrNoUpstream (e.g. cancellation) must surface as itself, not as the
+// misleading "no upstream tracking branch found".
+func TestPullRepoUpstreamFailureNotMislabeled(t *testing.T) {
+	deps := pullDeps(fakeGit{branch: "main", upstreamErr: context.Canceled})
+	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
+
+	res := pullRepo(context.Background(), project, okRepo(), deps)
+	if res.Err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(res.Err.Error(), "no upstream") {
+		t.Fatalf("cancellation mislabeled as no-upstream: %v", res.Err)
+	}
+	if !errors.Is(res.Err, context.Canceled) {
+		t.Fatalf("error %v does not wrap context.Canceled", res.Err)
+	}
+}
+
+// TestPullRepoNoUpstreamWarnsAsBefore: a genuine no-upstream still yields the
+// friendly sentinel message.
+func TestPullRepoNoUpstreamWarnsAsBefore(t *testing.T) {
+	deps := pullDeps(fakeGit{branch: "main", upstreamErr: git.ErrNoUpstream})
+	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
+
+	res := pullRepo(context.Background(), project, okRepo(), deps)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "no upstream") {
+		t.Fatalf("want no-upstream message, got %v", res.Err)
+	}
+}

@@ -2,6 +2,7 @@ package clone
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/rafi/gits/domain"
@@ -52,23 +53,6 @@ func TestCloneRepoStateError(t *testing.T) {
 	}
 }
 
-// TestCloneRepoAlreadyCloned: an existing path yields a warning that does not
-// count as a failure, preserving the exit-0 behavior.
-func TestCloneRepoAlreadyCloned(t *testing.T) {
-	dir := t.TempDir()
-	deps := cloneDeps(fakeGit{})
-	repo := domain.Repository{Name: "acme", AbsPath: dir, State: domain.RepoStateNoLocal}
-	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
-
-	res := cloneRepo(context.Background(), project, repo, deps)
-	if res.Err == nil {
-		t.Fatal("expected an already-cloned warning")
-	}
-	if cli.RenderErrors([]error{res.Err}, true) != nil {
-		t.Fatal("already-cloned should be a warning, not a counted error")
-	}
-}
-
 // TestPruneSkipped: a project with Clone=false keeps its header node but drops
 // its repos and entire subtree, so the walker clones nothing under it.
 func TestPruneSkipped(t *testing.T) {
@@ -103,5 +87,25 @@ func TestPruneSkipped(t *testing.T) {
 	// The original tree must be left untouched (prune returns a copy).
 	if len(root.SubProjects[0].Repos) != 1 {
 		t.Fatal("pruneSkipped mutated the original tree")
+	}
+}
+
+// TestCloneRepoAlreadyCloned: Git.Clone's ErrTargetExists sentinel maps to
+// the friendly "already cloned" warning (exit 0), with no duplicate stat
+// guard in the handler.
+func TestCloneRepoAlreadyCloned(t *testing.T) {
+	deps := cloneDeps(fakeGit{err: git.ErrTargetExists})
+	repo := domain.Repository{Name: "acme", AbsPath: "/nonexistent/acme", State: domain.RepoStateNoLocal}
+	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
+
+	res := cloneRepo(context.Background(), project, repo, deps)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "already cloned") {
+		t.Fatalf("want already-cloned warning, got %v", res.Err)
+	}
+	if !types.IsWarning(res.Err) {
+		t.Fatalf("already-cloned must be a warning, got %v", res.Err)
+	}
+	if cli.RenderErrors([]error{res.Err}, true) != nil {
+		t.Fatal("already-cloned should be a warning, not a counted error")
 	}
 }

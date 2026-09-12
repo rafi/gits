@@ -29,10 +29,22 @@ const (
 
 var listOutput = "table"
 
+var statusOpts status.Options
+
 func init() {
 	listCmd.
 		PersistentFlags().
 		StringVarP(&listOutput, "output", "o", listOutput, "output style (json, name, table, tree, wide)")
+
+	statusCmd.
+		PersistentFlags().
+		BoolVar(&statusOpts.Stat, "stat", false, "show HEAD± column with uncommitted line diffs")
+	statusCmd.
+		PersistentFlags().
+		BoolVar(&statusOpts.Dirty, "dirty", false, "show only repos with uncommitted changes")
+	statusCmd.
+		PersistentFlags().
+		BoolVar(&statusOpts.Unsynced, "unsynced", false, "show only repos ahead or behind upstream")
 
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(branchOverviewCmd)
@@ -148,7 +160,9 @@ var statusCmd = &cobra.Command{
 	Short:             "Show Git repositories short status",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE:              runWithDeps(status.ExecStatus),
+	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+		return status.ExecStatus(statusOpts, args, deps)
+	}),
 }
 
 var syncCmd = &cobra.Command{

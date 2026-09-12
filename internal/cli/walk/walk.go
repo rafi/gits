@@ -7,7 +7,6 @@ package walk
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,8 +30,16 @@ type RepoFunc func(
 
 // RepoResult is the outcome of a single repo's work.
 type RepoResult struct {
-	Line string // fully rendered output for this repo (may be multi-line)
-	Err  error  // nil, a real error, or a *types.Warning
+	Line    string // fully rendered output for this repo (may be multi-line)
+	Payload any    // structured result for callers rendering via Collect
+	Err     error  // nil, a real error, or a *types.Warning
+}
+
+// GroupResult is one project's collected results in stable tree order. A nil
+// slot means the repo was never started (cancelled before dequeue).
+type GroupResult struct {
+	Project domain.Project
+	Results []*RepoResult
 }
 
 // task is one unit of work: a repo plus its owning project and a stable index
@@ -63,6 +70,20 @@ func Walk(
 	return walkTo(ctx, project, deps, verb, fn, os.Stdout, os.Stderr)
 }
 
+// Collect runs fn over every repo like Walk, but returns the buffered results
+// grouped per project instead of rendering lines, for callers that need the
+// whole tree before formatting (e.g. status table column sizing). The error
+// is non-nil when the run was interrupted before every repo was processed.
+func Collect(
+	ctx context.Context,
+	project domain.Project,
+	deps types.RuntimeCLI,
+	verb string,
+	fn RepoFunc,
+) ([]GroupResult, error) {
+	return collectReport(ctx, project, deps, verb, fn, NewReporter(os.Stderr))
+}
+
 // walkTo is Walk with injectable result/progress writers, for testing.
 func walkTo(
 	ctx context.Context,
@@ -87,6 +108,27 @@ func walkReport(
 	resultsW io.Writer,
 	reporter Reporter,
 ) []error {
+	groups, interrupted := collectReport(ctx, project, deps, verb, fn, reporter)
+	errs := render(resultsW, groups, deps)
+	if interrupted != nil {
+		errs = append(errs, interrupted)
+	}
+	return errs
+}
+
+// collectReport is the shared worker-pool core: it runs fn over the flattened
+// tree with live progress and returns every result grouped per project. On
+// context cancellation the returned error names how many repos were never
+// processed, so interrupted runs fail loudly instead of reporting partial
+// success.
+func collectReport(
+	ctx context.Context,
+	project domain.Project,
+	deps types.RuntimeCLI,
+	verb string,
+	fn RepoFunc,
+	reporter Reporter,
+) ([]GroupResult, error) {
 	groups, tasks := flatten(project)
 	results := make([]*RepoResult, len(tasks))
 
@@ -141,7 +183,27 @@ feed:
 	// progress never races stdout output (AC-4a).
 	reporter.Stop()
 
-	return render(resultsW, groups, results, deps)
+	grouped := make([]GroupResult, len(groups))
+	for gi, g := range groups {
+		gr := GroupResult{Project: g.project}
+		for _, idx := range g.taskIdxs {
+			gr.Results = append(gr.Results, results[idx])
+		}
+		grouped[gi] = gr
+	}
+
+	var interrupted error
+	if ctx.Err() != nil {
+		skipped := 0
+		for _, res := range results {
+			if res == nil {
+				skipped++
+			}
+		}
+		interrupted = fmt.Errorf(
+			"interrupted: %d of %d repositories not processed", skipped, len(results))
+	}
+	return grouped, interrupted
 }
 
 // flatten walks the project tree depth-first (a project's repos before its
@@ -173,8 +235,7 @@ func flatten(root domain.Project) ([]group, []task) {
 // and returns the aggregated errors in the same order.
 func render(
 	w io.Writer,
-	groups []group,
-	results []*RepoResult,
+	groups []GroupResult,
 	deps types.RuntimeCLI,
 ) []error {
 	var errs []error
@@ -182,9 +243,8 @@ func render(
 		if gi > 0 {
 			fmt.Fprintln(w)
 		}
-		lipgloss.Fprintln(w, cli.ProjectTitleWithBullet(g.project, deps.Theme))
-		for _, idx := range g.taskIdxs {
-			res := results[idx]
+		lipgloss.Fprintln(w, cli.ProjectTitleWithBullet(g.Project, deps.Theme))
+		for _, res := range g.Results {
 			if res == nil {
 				continue // not started (cancelled before dequeue)
 			}
@@ -200,12 +260,5 @@ func render(
 // isFailure reports whether err counts as a real failure (not a warning) for
 // the live progress error count, mirroring cli.RenderErrors(_, true).
 func isFailure(err error) bool {
-	if err == nil {
-		return false
-	}
-	var w *types.Warning
-	if errors.As(err, &w) && w.Type == types.WarningType {
-		return false
-	}
-	return true
+	return err != nil && !types.IsWarning(err)
 }

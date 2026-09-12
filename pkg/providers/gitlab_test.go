@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	gitlab "gitlab.com/gitlab-org/api/client-go"
+
 	"github.com/rafi/gits/domain"
 )
 
@@ -37,5 +39,32 @@ func TestGitLabLoadReposCancelledCtx(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("LoadRepos did not abort promptly on a cancelled context")
+	}
+}
+
+// TestSkipGitLabProject proves settings.includeArchived is honored: archived
+// projects are listed when it is set, while empty repositories are always
+// skipped (nothing to clone).
+func TestSkipGitLabProject(t *testing.T) {
+	tests := []struct {
+		name            string
+		archived, empty bool
+		includeArchived bool
+		want            bool
+	}{
+		{"normal project kept", false, false, false, false},
+		{"archived skipped by default", true, false, false, true},
+		{"archived kept when included", true, false, true, false},
+		{"empty always skipped", false, true, true, true},
+		{"archived and empty skipped", true, true, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &gitlab.Project{Archived: tt.archived, EmptyRepo: tt.empty}
+			if got := skipGitLabProject(p, tt.includeArchived); got != tt.want {
+				t.Errorf("skipGitLabProject(archived=%v, empty=%v, include=%v) = %v, want %v",
+					tt.archived, tt.empty, tt.includeArchived, got, tt.want)
+			}
+		})
 	}
 }

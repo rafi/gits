@@ -33,9 +33,8 @@ type payload struct {
 	Project   domain.Project `json:"project"`
 }
 
-func newCacheFile(ttl time.Duration) (Cacher, error) {
-	cf := &File{ttl: ttl}
-	return cf, nil
+func newCacheFile(ttl time.Duration) Cacher {
+	return &File{ttl: ttl}
 }
 
 func cacheFilePath(key string) (string, error) {

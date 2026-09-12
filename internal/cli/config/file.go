@@ -65,8 +65,9 @@ func NewConfigFromFile(filePath string, cfg *File) error {
 // (git, fzf) honor it too.
 func (f *File) applyDefaults() {
 	if f.Settings.WorkerCount == 0 {
-		f.Settings.WorkerCount = max(runtime.NumCPU()/2, 2)
+		f.Settings.WorkerCount = max(runtime.NumCPU(), 2)
 	}
+	f.Settings.Icons.ApplyDefaults()
 
 	switch f.Color {
 	case ColorOptionNever.String():

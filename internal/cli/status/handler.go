@@ -2,9 +2,11 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
-
-	"charm.land/lipgloss/v2"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
@@ -12,117 +14,175 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// ExecStatus displays an icon based status of all repositories.
+// repoStatus is one repository's structured status, populated concurrently by
+// the walker (statusRepo) and rendered as a table row by render.go.
+type repoStatus struct {
+	repo   domain.Repository
+	title  string
+	branch string
+
+	staged    int
+	unstaged  int
+	untracked int
+
+	added   int // uncommitted line insertions vs HEAD (--stat)
+	deleted int // uncommitted line deletions vs HEAD (--stat)
+
+	ahead      int
+	behind     int
+	noUpstream bool
+
+	version string
+	commit  string
+	message string
+	when    time.Time
+
+	err error
+}
+
+// changed reports whether the work tree has any local changes.
+func (s *repoStatus) changed() bool {
+	return s.staged+s.unstaged+s.untracked > 0
+}
+
+// unsynced reports whether the branch is ahead or behind its upstream. Repos
+// without an upstream are not unsynced — there is nothing to sync with.
+func (s *repoStatus) unsynced() bool {
+	return s.ahead > 0 || s.behind > 0
+}
+
+// Options are the status command's display flags.
+type Options struct {
+	Stat     bool // show the HEAD± column of uncommitted line diffs
+	Dirty    bool // show only repos with uncommitted changes
+	Unsynced bool // show only repos ahead or behind upstream
+}
+
+// filtered reports whether any row filter is active.
+func (o Options) filtered() bool {
+	return o.Dirty || o.Unsynced
+}
+
+// keep reports whether st matches at least one active filter: combined
+// filters are a union, and rows with errors always stay visible.
+func (o Options) keep(st *repoStatus) bool {
+	if st.err != nil {
+		return true
+	}
+	return o.Dirty && st.changed() || o.Unsynced && st.unsynced()
+}
+
+// ExecStatus displays a compact status table of all repositories.
 //
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecStatus(args []string, deps types.RuntimeCLI) error {
+func ExecStatus(opts Options, args []string, deps types.RuntimeCLI) error {
 	project, repo, err := cli.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
+	probe := statusRepo(opts)
 
 	if repo != nil {
-		// Display status for a single repository.
-		res := statusRepo(deps.Ctx, project, *repo, deps)
-		lipgloss.Println(cli.IndentMultiline(res.Line))
+		// Single repository: a one-row table without a project title.
+		res := probe(deps.Ctx, project, *repo, deps)
+		groups := []walk.GroupResult{
+			{Project: project, Results: []*walk.RepoResult{&res}},
+		}
+		renderGroups(os.Stdout, os.Stderr, groups, false, opts, deps)
 		return res.Err
 	}
 
-	// Display status for all project repositories through the shared walker,
-	// which buffers each repo's line and prints them in stable tree order.
-	errs := walk.Walk(deps.Ctx, project, deps, "checking status", statusRepo)
+	// Collect every repository's structured status through the shared walker,
+	// then render the whole tree at once so table columns can be sized.
+	groups, interrupted := walk.Collect(deps.Ctx, project, deps, "checking status", probe)
+	errs := renderGroups(os.Stdout, os.Stderr, groups, true, opts, deps)
+	if interrupted != nil {
+		errs = append(errs, interrupted)
+	}
 	return cli.RenderErrors(errs, true)
 }
 
-// statusRepo builds one repository's status line and returns it. It is a
-// walk.RepoFunc: safe to call concurrently and never writes to stdout, so the
-// per-repo git probes no longer race each other onto the terminal.
-func statusRepo(
-	ctx context.Context,
-	project domain.Project,
-	repo domain.Repository,
-	deps types.RuntimeCLI,
-) walk.RepoResult {
-	// Status is several quick local probes; the row spins until the line is
-	// ready (AC-4).
-	title := cli.PaddedRepoTitle(repo, project, deps).Align(lipgloss.Right)
-
-	// Abort if repository is not cloned or has errors.
-	if repo.State != domain.RepoStateOK {
-		errStyle := deps.Theme.Error.PaddingLeft(8)
-		line, err := cli.RepoStateError(repo, errStyle)
-		return walk.RepoResult{Line: fmt.Sprintf("%s %s", title, line), Err: err}
-	}
-
-	version, err := deps.Git.Describe(ctx, repo.AbsPath)
-	if err != nil {
-		version = ""
-	}
-
-	var count int
-	modified := ""
-	if count, err = deps.Git.Modified(ctx, repo.AbsPath); err != nil {
-		return statusError(title, repo, err, deps)
-	} else if count > 0 {
-		modified = fmt.Sprintf("≠%d", count)
-	}
-	untracked := ""
-	if count, err = deps.Git.Untracked(ctx, repo.AbsPath); err != nil {
-		return statusError(title, repo, err, deps)
-	} else if count > 0 {
-		untracked = fmt.Sprintf("?%d", count)
-	}
-
-	branch, _ := deps.Git.CurrentBranch(ctx, repo.AbsPath)
-	upstream, err := deps.Git.UpstreamBranch(ctx, repo.AbsPath)
-	if err != nil || upstream == "" {
-		// No upstream configured: compare against the conventional remote branch.
-		upstream = fmt.Sprintf("origin/%v", branch)
-	}
-
-	diff := ""
-	ahead, behind, err := deps.Git.Diff(ctx, repo.AbsPath, branch, upstream)
-	switch {
-	case err != nil:
-		diff = "-"
-	case ahead == 0 && behind == 0:
-		diff = "✓"
-	default:
-		if ahead > 0 {
-			diff = fmt.Sprintf("▲%d", ahead)
+// statusRepo returns a walk.RepoFunc that probes one repository into a
+// structured status: safe to call concurrently and never writes to stdout.
+func statusRepo(opts Options) walk.RepoFunc {
+	return func(
+		ctx context.Context,
+		project domain.Project,
+		repo domain.Repository,
+		deps types.RuntimeCLI,
+	) walk.RepoResult {
+		st := &repoStatus{
+			repo:  repo,
+			title: repoTitleText(repo, project, deps.HomeDir),
 		}
-		if behind > 0 {
-			diff = fmt.Sprintf("%s▼%d", diff, behind)
+
+		// Abort if repository is not cloned or has errors.
+		if repo.State != domain.RepoStateOK {
+			err := cli.RepoStateWarning(repo)
+			st.err = err
+			st.message = reason(err)
+			return walk.RepoResult{Payload: st, Err: err}
 		}
-	}
 
-	currentRef, err := deps.Git.CurrentPosition(ctx, repo.AbsPath)
-	if err != nil {
-		currentRef = "N/A"
-	}
+		wt, err := deps.Git.WorkingState(ctx, repo.AbsPath)
+		if err != nil {
+			st.err = err
+			st.message = reason(err)
+			return walk.RepoResult{Payload: st, Err: cli.RepoError(err, repo)}
+		}
+		st.staged, st.unstaged, st.untracked = wt.Staged, wt.Unstaged, wt.Untracked
 
-	body := fmt.Sprintf("%s %s %s %s %s",
-		deps.Theme.Modified.Render(modified),
-		deps.Theme.Untracked.Render(untracked),
-		deps.Theme.Diff.Render(diff),
-		version,
-		currentRef,
-	)
-	return walk.RepoResult{Line: fmt.Sprintf("%s %s", title, body)}
+		if opts.Stat {
+			// Tolerated like Describe: an unborn HEAD leaves the column blank.
+			if ds, err := deps.Git.WorkingDiff(ctx, repo.AbsPath); err == nil {
+				st.added, st.deleted = ds.Added, ds.Deleted
+			}
+		}
+
+		if version, err := deps.Git.Describe(ctx, repo.AbsPath); err == nil {
+			st.version = version
+		}
+
+		st.branch, _ = deps.Git.CurrentBranch(ctx, repo.AbsPath)
+		upstream, err := deps.Git.UpstreamBranch(ctx, repo.AbsPath)
+		if err != nil || upstream == "" {
+			// No upstream configured: compare against the conventional remote branch.
+			upstream = fmt.Sprintf("origin/%v", st.branch)
+		}
+		if ahead, behind, err := deps.Git.Diff(ctx, repo.AbsPath, st.branch, upstream); err != nil {
+			st.noUpstream = true
+		} else {
+			st.ahead, st.behind = ahead, behind
+		}
+
+		if head, err := deps.Git.HeadInfo(ctx, repo.AbsPath); err == nil {
+			st.commit, st.message, st.when = head.Hash, head.Subject, head.Time
+		}
+
+		return walk.RepoResult{Payload: st}
+	}
 }
 
-// statusError renders a status line whose body is a failed git probe.
-func statusError(
-	title lipgloss.Style,
-	repo domain.Repository,
-	err error,
-	deps types.RuntimeCLI,
-) walk.RepoResult {
-	wrapped := cli.RepoError(err, repo)
-	return walk.RepoResult{
-		Line: fmt.Sprintf("%s %s", title, deps.Theme.Error.Render(err.Error())),
-		Err:  wrapped,
+// repoTitleText is the plain-text repo title: the repo directory relative to
+// its project, with ~ for the home directory (same identity as cli.RepoTitle,
+// without styling).
+func repoTitleText(repo domain.Repository, project domain.Project, homeDir string) string {
+	repoPath := repo.Dir
+	if repoPath == "" {
+		repoPath = repo.AbsPath
 	}
+	repoPath = strings.TrimPrefix(repoPath, project.AbsPath+"/")
+	return cli.Path(repoPath, homeDir)
+}
+
+// reason extracts the bare failure reason for the message cell, avoiding the
+// repo-name/path repetition types.Warning.Error() adds for error listings.
+func reason(err error) string {
+	var w *types.Warning
+	if errors.As(err, &w) && w.Reason != "" {
+		return w.Reason
+	}
+	return err.Error()
 }

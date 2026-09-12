@@ -47,3 +47,24 @@ func TestSettingsCacheTTLDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsGitTimeoutDuration(t *testing.T) {
+	const def = 5 * time.Minute
+	tests := []struct {
+		name    string
+		timeout string
+		want    time.Duration
+	}{
+		{"empty falls back to default", "", def},
+		{"valid duration parsed", "30m", 30 * time.Minute},
+		{"invalid falls back to default", "not-a-duration", def},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Settings{GitTimeout: tt.timeout}
+			if got := s.GitTimeoutDuration(); got != tt.want {
+				t.Errorf("GitTimeoutDuration() with %q = %v, want %v", tt.timeout, got, tt.want)
+			}
+		})
+	}
+}

@@ -78,10 +78,7 @@ func TestRenderBranchDiffList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := fakeBrowseGit{hasBranch: onlyMain, ahead: tt.ahead, behind: tt.behind}
-			out, err := renderBranchDiffList("/repo", "main", []string{"origin"}, browseDeps(g))
-			if err != nil {
-				t.Fatalf("renderBranchDiffList: %v", err)
-			}
+			out := renderBranchDiffList("/repo", "main", []string{"origin"}, browseDeps(g))
 			for _, want := range tt.wantSubstrs {
 				if !strings.Contains(out, want) {
 					t.Errorf("output missing %q\ngot: %q", want, out)
@@ -90,10 +87,31 @@ func TestRenderBranchDiffList(t *testing.T) {
 		})
 	}
 
-	t.Run("diff error propagates", func(t *testing.T) {
+	t.Run("branches listed in stable sorted order", func(t *testing.T) {
+		all := func(_, _ string) bool { return true }
+		g := fakeBrowseGit{hasBranch: all}
+		first := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, browseDeps(g))
+		lines := strings.Split(strings.TrimSpace(first), "\n")
+		if len(lines) < 4 {
+			t.Fatalf("expected multiple branch lines, got %d:\n%s", len(lines), first)
+		}
+		for range 10 {
+			again := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, browseDeps(g))
+			if again != first {
+				t.Fatalf("output order not stable across renders:\n%q\nvs\n%q", first, again)
+			}
+		}
+	})
+
+	t.Run("diff error renders N/A row instead of blanking panel", func(t *testing.T) {
 		g := fakeBrowseGit{hasBranch: onlyMain, diffErr: context.DeadlineExceeded}
-		if _, err := renderBranchDiffList("/repo", "main", []string{"origin"}, browseDeps(g)); err == nil {
-			t.Error("renderBranchDiffList = nil error, want propagated Diff error")
+		deps := browseDeps(g)
+		deps.Settings.Icons.ApplyDefaults()
+		out := renderBranchDiffList("/repo", "main", []string{"origin"}, deps)
+		for _, want := range []string{deps.Settings.Icons.NA, "origin", "main"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output missing %q\ngot: %q", want, out)
+			}
 		}
 	})
 }

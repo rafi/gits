@@ -2,6 +2,7 @@ package pull
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"charm.land/lipgloss/v2"
@@ -36,29 +37,6 @@ func ExecPull(args []string, deps types.RuntimeCLI) error {
 	return cli.RenderErrors(errs, true)
 }
 
-type PullResponse struct {
-	currentBranch string
-	upstream      string
-	output        string
-	title         lipgloss.Style
-	error         error
-	errorStyle    lipgloss.Style
-}
-
-func (r PullResponse) String() string {
-	if r.error != nil {
-		return fmt.Sprintf("%s %s", r.title, r.errorStyle.Render(r.error.Error()))
-	}
-
-	return fmt.Sprintf(
-		"%s [%s <- %s] %s",
-		r.title.Render(),
-		r.currentBranch,
-		r.upstream,
-		r.output,
-	)
-}
-
 // pullRepo pulls one repository and returns its rendered result. It is a
 // walk.RepoFunc: safe to call concurrently and never writes to stdout.
 func pullRepo(
@@ -67,35 +45,45 @@ func pullRepo(
 	repo domain.Repository,
 	deps types.RuntimeCLI,
 ) walk.RepoResult {
-	resp := PullResponse{
-		title:      cli.PaddedRepoTitle(repo, project, deps),
-		errorStyle: deps.Theme.Error,
+	line := cli.RepoLine{
+		Title:      cli.PaddedRepoTitle(repo, project, deps),
+		ErrorStyle: deps.Theme.Error,
 	}
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		resp.error = cli.RepoStateWarning(repo)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
+		line.Err = cli.RepoStateWarning(repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
 	}
 
-	var err error
-	resp.currentBranch, err = deps.Git.CurrentBranch(ctx, repo.AbsPath)
+	currentBranch, err := deps.Git.CurrentBranch(ctx, repo.AbsPath)
 	if err != nil {
-		resp.error = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
+		line.Err = cli.RepoError(err, repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
 	}
 
-	resp.upstream, err = deps.Git.UpstreamBranch(ctx, repo.AbsPath)
-	if err != nil || resp.upstream == "" {
-		resp.error = cli.RepoError(git.ErrNoUpstream, repo)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
+	upstream, err := deps.Git.UpstreamBranch(ctx, repo.AbsPath)
+	if err != nil && !errors.Is(err, git.ErrNoUpstream) {
+		// A real failure (e.g. cancellation) keeps its own message instead
+		// of being mislabeled as a missing upstream.
+		line.Err = cli.RepoError(err, repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
+	}
+	if err != nil || upstream == "" {
+		line.Err = cli.RepoError(git.ErrNoUpstream, repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
 	}
 
-	resp.output, err = deps.Git.Pull(ctx, repo.AbsPath)
+	output, err := deps.Git.Pull(ctx, repo.AbsPath)
 	if err != nil {
-		resp.error = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: resp.String(), Err: resp.error}
+		line.Err = cli.RepoError(err, repo)
+		return walk.RepoResult{Line: line.String(), Err: line.Err}
 	}
-	resp.output = deps.Theme.GitOutput.Render(resp.output)
-	return walk.RepoResult{Line: resp.String(), Err: nil}
+	line.Body = fmt.Sprintf(
+		"[%s <- %s] %s",
+		currentBranch,
+		upstream,
+		deps.Theme.GitOutput.Render(output),
+	)
+	return walk.RepoResult{Line: line.String(), Err: nil}
 }

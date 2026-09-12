@@ -3,6 +3,7 @@ package fzf
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,13 @@ import (
 )
 
 const fzfBin = "fzf"
+
+var (
+	// ErrAborted is returned when the user cancels the finder (Esc/Ctrl-C).
+	ErrAborted = errors.New("selection aborted")
+	// ErrNoMatch is returned when fzf exits without a match.
+	ErrNoMatch = errors.New("no match")
+)
 
 type FZF struct {
 	Args []string
@@ -55,30 +63,39 @@ func (f *FZF) WithPrompt(label string) {
 	f.Args = append(f.Args, "--prompt", label)
 }
 
-// Run executes fzf with given args and stdin.
-func (f *FZF) Run(stdin bytes.Buffer) (string, error) {
+// Run executes fzf with given args and stdin. Cancelling by the user maps to
+// ErrAborted, and an empty match to ErrNoMatch, so callers can exit quietly.
+func (f *FZF) Run(ctx context.Context, stdin bytes.Buffer) (string, error) {
 	_, err := exec.LookPath(fzfBin)
 	if err != nil {
 		return "", fmt.Errorf("%s not found in PATH", fzfBin)
 	}
 
-	// Default options
-	args := append(f.Args, defaultOpts...)
+	// Defaults first so any conflicting caller option wins (fzf is
+	// last-flag-wins); copying also avoids aliasing the caller's slice.
+	args := append([]string{}, defaultOpts...)
 	if os.Getenv("FZF_DEFAULT_OPTS") == "" {
 		args = append(args, defaultLayoutOpts...)
 	}
+	args = append(args, f.Args...)
 
 	// Run shell command with stdin
-	var cmdOut, cmdErr bytes.Buffer
-	fzf := exec.CommandContext(context.TODO(), fzfBin, args...)
+	var cmdOut bytes.Buffer
+	fzf := exec.CommandContext(ctx, fzfBin, args...)
 	fzf.Stdin = &stdin
 	fzf.Stdout = &cmdOut
 	fzf.Stderr = os.Stderr
 	if err := fzf.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			switch exitErr.ExitCode() {
+			case 130:
+				return "", ErrAborted
+			case 1:
+				return "", ErrNoMatch
+			}
+		}
 		return "", err
-	}
-	if cmdErr.Len() > 0 {
-		return "", fmt.Errorf("error: %s", cmdErr.String())
 	}
 	return strings.TrimSpace(cmdOut.String()), nil
 }

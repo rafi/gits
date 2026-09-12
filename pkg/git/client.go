@@ -1,13 +1,16 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -16,11 +19,20 @@ import (
 // ErrNoUpstream is returned when a branch has no upstream tracking branch.
 var ErrNoUpstream = errors.New("no upstream tracking branch found")
 
+// ErrTargetExists is returned by Clone when the target directory already
+// exists — usually an existing clone, or leftovers from an interrupted one.
+var ErrTargetExists = errors.New(
+	"directory already exists — remove it if a previous clone was interrupted")
+
 const (
-	// networkTimeout is used for operations that involve network calls.
-	networkTimeout = 5 * time.Minute
-	// localTimeout is used for local git operations.
+	// defaultNetworkTimeout bounds network operations (clone/fetch/pull)
+	// unless overridden via SetNetworkTimeout (settings.gitTimeout).
+	defaultNetworkTimeout = 5 * time.Minute
+	// localTimeout is used for local read-only git queries.
 	localTimeout = 30 * time.Second
+	// terminateGrace is how long a signalled git process gets to clean up
+	// (e.g. remove a partial clone directory) before being killed.
+	terminateGrace = 10 * time.Second
 )
 
 // GitClient is the set of git operations the application depends on. It is
@@ -36,6 +48,7 @@ type GitClient interface {
 	CommitDates(ctx context.Context, path, branch string, days int) ([]string, error)
 	Refs(ctx context.Context, path string) ([]string, error)
 	Branches(ctx context.Context, path string) ([]string, error)
+	AllBranches(ctx context.Context, path string) ([]string, error)
 	Remotes(ctx context.Context, path string) ([]string, error)
 	HasRemoteBranch(ctx context.Context, path, remote, branch string) bool
 	Checkout(ctx context.Context, path, branch string) error
@@ -43,17 +56,22 @@ type GitClient interface {
 	UpstreamBranch(ctx context.Context, path string) (string, error)
 	Modified(ctx context.Context, path string) (int, error)
 	Untracked(ctx context.Context, path string) (int, error)
+	WorkingState(ctx context.Context, path string) (WorkTree, error)
+	WorkingDiff(ctx context.Context, path string) (DiffStat, error)
+	HeadInfo(ctx context.Context, path string) (Head, error)
 	CurrentPosition(ctx context.Context, path string) (string, error)
 	Describe(ctx context.Context, path string) (string, error)
 	Diff(ctx context.Context, path, branch, target string) (int, int, error)
 }
 
 type Git struct {
-	bin string
+	bin        string
+	netTimeout time.Duration
 }
 
 // NewGit returns a new Git client.
 func NewGit() (g Git, err error) {
+	g.netTimeout = defaultNetworkTimeout
 	// Find executable path.
 	g.bin, err = exec.LookPath("git")
 	if err != nil {
@@ -62,10 +80,29 @@ func NewGit() (g Git, err error) {
 	return g, err
 }
 
+// SetNetworkTimeout overrides the timeout applied to network operations
+// (clone/fetch/pull); non-positive values keep the default.
+func (g *Git) SetNetworkTimeout(d time.Duration) {
+	if d > 0 {
+		g.netTimeout = d
+	}
+}
+
+// networkTimeout returns the effective network-operation timeout, guarding
+// zero-value Git instances built without NewGit.
+func (g *Git) networkTimeout() time.Duration {
+	if g.netTimeout <= 0 {
+		return defaultNetworkTimeout
+	}
+	return g.netTimeout
+}
+
 // Clone clones repository to filesystem.
 func (g *Git) Clone(ctx context.Context, remote string, path string) (string, error) {
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		return "", fmt.Errorf("directory already exists")
+	if _, err := os.Stat(path); err == nil {
+		return "", ErrTargetExists
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
 	}
 
 	basePath := filepath.Dir(path)
@@ -76,10 +113,10 @@ func (g *Git) Clone(ctx context.Context, remote string, path string) (string, er
 		log.Debugf("Created directory %s", basePath)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, networkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, g.networkTimeout())
 	defer cancel()
 
-	output, err := g.Exec(ctx, basePath, []string{"clone", "--end-of-options", remote, path})
+	output, err := g.ExecCombined(ctx, basePath, []string{"clone", "--end-of-options", remote, path})
 	if err != nil {
 		return "", fmt.Errorf("unable to clone: %w", err)
 	}
@@ -112,11 +149,11 @@ func (g *Git) Remote(ctx context.Context, path string) (string, error) {
 
 // Fetch fetches all remotes, tags and prunes deleted branches.
 func (g *Git) Fetch(ctx context.Context, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, networkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, g.networkTimeout())
 	defer cancel()
 
 	args := []string{"fetch", "--all", "--tags", "--prune", "--force"}
-	output, err := g.Exec(ctx, path, args)
+	output, err := g.ExecCombined(ctx, path, args)
 	if err != nil {
 		return "", fmt.Errorf("error during fetch: %w", err)
 	}
@@ -125,11 +162,11 @@ func (g *Git) Fetch(ctx context.Context, path string) (string, error) {
 
 // Pull fetches from remote and merges the current branch.
 func (g *Git) Pull(ctx context.Context, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, networkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, g.networkTimeout())
 	defer cancel()
 
 	args := []string{"pull", "--ff-only", "--stat", "--no-verbose"}
-	output, err := g.Exec(ctx, path, args)
+	output, err := g.ExecCombined(ctx, path, args)
 	if err != nil {
 		return "", fmt.Errorf("error during pull: %w", err)
 	}
@@ -195,15 +232,56 @@ func (g *Git) Refs(ctx context.Context, path string) ([]string, error) {
 	return splitLines(cleanOutput(output)), nil
 }
 
-// Exec executes git command-line with provided arguments. On failure the
-// combined stdout/stderr of git is folded into the returned error so callers
-// surface the actual git message (e.g. "fatal: could not read from remote
-// repository") instead of a bare "exit status 1".
-func (g *Git) Exec(ctx context.Context, path string, args []string) ([]byte, error) {
+// command builds the git invocation for path; every execution path goes
+// through here. On context cancellation git is terminated gracefully
+// (SIGTERM with a kill grace period) so its own cleanup handlers run —
+// e.g. removing a partially cloned directory — instead of the default
+// SIGKILL which leaves junk behind.
+func (g *Git) command(ctx context.Context, path string, args []string) *exec.Cmd {
 	args = append([]string{"-C", path}, args...)
-
 	cmd := exec.CommandContext(ctx, g.bin, args...)
-	cmdOut, err := cmd.CombinedOutput()
+	cmd.Cancel = func() error {
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			return cmd.Process.Kill()
+		}
+		return nil
+	}
+	cmd.WaitDelay = terminateGrace
+	return cmd
+}
+
+// Exec executes git command-line with provided arguments and returns stdout
+// only, so stderr noise (warnings, traces) can never corrupt parse paths
+// like the status porcelain. On failure git's stderr (or stdout when stderr
+// is empty) is folded into the returned error so callers surface the actual
+// git message (e.g. "fatal: could not read from remote repository") instead
+// of a bare "exit status 1"; on success stderr is debug-logged.
+func (g *Git) Exec(ctx context.Context, path string, args []string) ([]byte, error) {
+	var stdout, stderr bytes.Buffer
+	cmd := g.command(ctx, path, args)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := cleanOutput(stderr.Bytes())
+		if msg == "" {
+			msg = cleanOutput(stdout.Bytes())
+		}
+		if msg != "" {
+			return stdout.Bytes(), fmt.Errorf("%s: %w", msg, err)
+		}
+		return stdout.Bytes(), err
+	}
+	if msg := cleanOutput(stderr.Bytes()); msg != "" {
+		log.Debugf("git -C %s: stderr: %s", path, msg)
+	}
+	return stdout.Bytes(), nil
+}
+
+// ExecCombined executes git and returns stdout and stderr interleaved, for
+// user-facing output of commands like clone/fetch/pull that write progress
+// and summaries to stderr. Never use it for output that gets parsed.
+func (g *Git) ExecCombined(ctx context.Context, path string, args []string) ([]byte, error) {
+	cmdOut, err := g.command(ctx, path, args).CombinedOutput()
 	if err != nil {
 		if msg := cleanOutput(cmdOut); msg != "" {
 			return cmdOut, fmt.Errorf("%s: %w", msg, err)
