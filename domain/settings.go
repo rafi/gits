@@ -33,38 +33,38 @@ type Style struct {
 
 type Theme struct {
 	// General
-	Normal        Style `json:"normal,omitempty"`
-	Bullet        Style `json:"bullet,omitempty"`
-	PreviewHeader Style `json:"previewHeader,omitempty"`
+	Normal        Style `json:"normal"`
+	Bullet        Style `json:"bullet"`
+	PreviewHeader Style `json:"previewHeader"`
 
 	// Project
-	ProjectTitle Style `json:"projectTitle,omitempty"`
-	Provider     Style `json:"provider,omitempty"`
-	Desc         Style `json:"desc,omitempty"`
+	ProjectTitle Style `json:"projectTitle"`
+	Provider     Style `json:"provider"`
+	Desc         Style `json:"desc"`
 
 	// Repository
-	RepoTitle Style `json:"repoTitle,omitempty"`
-	RepoPath  Style `json:"repoPath,omitempty"`
-	GitOutput Style `json:"gitOutput,omitempty"`
+	RepoTitle Style `json:"repoTitle"`
+	RepoPath  Style `json:"repoPath"`
+	GitOutput Style `json:"gitOutput"`
 
 	// Branch
-	BranchName      Style `json:"branchName,omitempty"`
-	BranchCurrent   Style `json:"branchCurrent,omitempty"`
-	BranchIndicator Style `json:"branchIndicator,omitempty"`
-	RemoteName      Style `json:"remoteName,omitempty"`
+	BranchName      Style `json:"branchName"`
+	BranchCurrent   Style `json:"branchCurrent"`
+	BranchIndicator Style `json:"branchIndicator"`
+	RemoteName      Style `json:"remoteName"`
 
 	// Tag
-	TagIndicator Style `json:"tagIndicator,omitempty"`
+	TagIndicator Style `json:"tagIndicator"`
 
 	// Status
-	Modified  Style `json:"modified,omitempty"`
-	Untracked Style `json:"untracked,omitempty"`
-	Diff      Style `json:"diff,omitempty"`
-	Error     Style `json:"error,omitempty"`
+	Modified  Style `json:"modified"`
+	Untracked Style `json:"untracked"`
+	Diff      Style `json:"diff"`
+	Error     Style `json:"error"`
 
 	// Table
-	TableBorderStyle Style `json:"tableBorderStyle,omitempty"`
-	TableHeader      Style `json:"tableHeader,omitempty"`
-	TableRowEven     Style `json:"tableRowEven,omitempty"`
-	TableRowOdd      Style `json:"tableRowOdd,omitempty"`
+	TableBorderStyle Style `json:"tableBorderStyle"`
+	TableHeader      Style `json:"tableHeader"`
+	TableRowEven     Style `json:"tableRowEven"`
+	TableRowOdd      Style `json:"tableRowOdd"`
 }

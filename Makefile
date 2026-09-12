@@ -93,10 +93,11 @@ test: test-style ## Run all tests.
 test: test-unit
 
 .PHONY: test-unit
+test-unit: export CGO_ENABLED = 1
 test-unit: ## Run only unit-tests.
 	@echo
-	@echo "==> Running unit tests <=="
-	go test $(GOFLAGS) -run $(TESTS) $(PKG) $(TESTFLAGS)
+	@echo "==> Running unit tests (race detector) <=="
+	go test -race $(GOFLAGS) -run $(TESTS) $(PKG) $(TESTFLAGS)
 
 .PHONY: test-style
 test-style: $(GOLANGCI_LINT) ## Run golang-ci linter.

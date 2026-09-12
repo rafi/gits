@@ -25,7 +25,7 @@ type Repository struct {
 // RepoState represents the state of a repository.
 type RepoState string
 
-var (
+const (
 	RepoStateUnknown RepoState = "Unknown"
 	RepoStateError   RepoState = "Error"
 	RepoStateRemote  RepoState = "Remote"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -17,8 +18,14 @@ func completionDeps() (deps types.Runtime, err error) {
 	if err != nil {
 		return deps, err
 	}
+	gitClient, err := git.NewGit()
+	if err != nil {
+		return deps, err
+	}
 	return types.Runtime{
+		Ctx:        context.Background(),
 		Cache:      cacheClient,
+		Git:        &gitClient,
 		Projects:   configFile.Projects,
 		ConfigPath: configFile.Filename,
 	}, nil
@@ -102,11 +109,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
-	gitRepo, err := g.Open(repo.AbsPath)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
-	}
-	branches, err := gitRepo.Branches()
+	branches, err := g.Branches(context.Background(), repo.AbsPath)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

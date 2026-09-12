@@ -123,7 +123,8 @@ func SelectProject(deps types.RuntimeCLI) (string, error) {
 	for name, project := range deps.Projects {
 		project.Name = name
 		projectTitle := ProjectTitle(project, deps.Theme)
-		buffer.WriteString(projectTitle + "\n")
+		buffer.WriteString(projectTitle)
+		buffer.WriteByte('\n')
 	}
 
 	// Run fzf with the sub-command 'list' as preview.
@@ -153,7 +154,8 @@ func SelectRepo(
 	buffer := bytes.Buffer{}
 	repos := project.ListReposWithNamespace()
 	for _, repo := range repos {
-		buffer.WriteString(style.Render(repo) + "\n")
+		buffer.WriteString(style.Render(repo))
+		buffer.WriteByte('\n')
 	}
 
 	// rootProject is empty when a root project is provided.
@@ -185,7 +187,7 @@ func SelectBranch(
 	repo domain.Repository,
 	deps types.RuntimeCLI,
 ) (string, error) {
-	refs, err := deps.Git.Refs(repo.AbsPath)
+	refs, err := deps.Git.Refs(deps.Ctx, repo.AbsPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to open repo: %w", err)
 	}
@@ -199,7 +201,8 @@ func SelectBranch(
 	for _, ref := range refs {
 		ref = strings.Replace(ref, "refs/tags/", tagLabel, 1)
 		ref = strings.Replace(ref, "refs/heads/", branchLabel, 1)
-		buffer.WriteString(ref + "\n")
+		buffer.WriteString(ref)
+		buffer.WriteByte('\n')
 	}
 
 	repoFullName := repo.GetNameWithNamespace()

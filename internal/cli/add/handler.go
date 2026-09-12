@@ -43,7 +43,7 @@ func ExecAdd(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	remoteURL, err := deps.Git.Remote(cwd)
+	remoteURL, err := deps.Git.Remote(deps.Ctx, cwd)
 	if err != nil {
 		return fmt.Errorf("failed adding repo: %w", err)
 	}
@@ -78,14 +78,14 @@ func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
 		remoteURL := args[1]
 		baseName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
 		cwd = filepath.Join(cwd, baseName)
-		output, err := deps.Git.Clone(remoteURL, cwd)
+		output, err := deps.Git.Clone(deps.Ctx, remoteURL, cwd)
 		if err != nil {
 			fmt.Println(output)
 			return "", err
 		}
 	}
 
-	if !deps.Git.IsRepo(cwd) {
+	if !deps.Git.IsRepo(deps.Ctx, cwd) {
 		return "", fmt.Errorf("not a git repository: %s", cwd)
 	}
 	return cwd, nil

@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -38,7 +39,7 @@ func newBitbucketProvider(token string) (*bitbucketProvider, error) {
 	return provider, nil
 }
 
-func (c *bitbucketProvider) LoadRepos(ownerName string, _ git.Git, project *domain.Project) error {
+func (c *bitbucketProvider) LoadRepos(_ context.Context, ownerName string, _ git.GitClient, project *domain.Project) error {
 	var err error
 	project.Repos, project.ID, err = c.fetchRepos(ownerName)
 	if err != nil {
@@ -53,14 +54,24 @@ func (c *bitbucketProvider) fetchRepos(ownerName string) ([]domain.Repository, s
 	if err != nil {
 		return nil, "", err
 	}
+	repos, ownerID := parseRepos(result.Items, ownerName)
+	return repos, ownerID, nil
+}
 
+// parseRepos converts untrusted Bitbucket API items into repositories. The
+// Owner and Links maps are decoded from JSON as map[string]any, so every type
+// assertion is comma-ok and a mismatch skips that field rather than panicking
+// the whole process.
+func parseRepos(items []bitbucket.Repository, ownerName string) ([]domain.Repository, string) {
 	ownerID := ownerName
-	if len(result.Items) > 0 {
-		ownerID = result.Items[0].Owner["uuid"].(string)
+	if len(items) > 0 {
+		if uuid, ok := items[0].Owner["uuid"].(string); ok {
+			ownerID = uuid
+		}
 	}
 
 	repos := []domain.Repository{}
-	for _, item := range result.Items {
+	for _, item := range items {
 		repo := domain.Repository{
 			ID:        item.Uuid,
 			Name:      item.Slug,
@@ -68,18 +79,28 @@ func (c *bitbucketProvider) fetchRepos(ownerName string) ([]domain.Repository, s
 			Desc:      item.Description,
 		}
 
-		links := item.Links["clone"].([]interface{})
+		links, ok := item.Links["clone"].([]any)
+		if !ok {
+			repos = append(repos, repo)
+			continue
+		}
 		for _, link := range links {
-			linkName := link.(map[string]interface{})["name"]
-			linkHRef := link.(map[string]interface{})["href"]
-			switch linkName {
+			linkMap, ok := link.(map[string]any)
+			if !ok {
+				continue
+			}
+			href, ok := linkMap["href"].(string)
+			if !ok {
+				continue
+			}
+			switch linkMap["name"] {
 			case "ssh":
-				repo.Src = linkHRef.(string)
+				repo.Src = href
 			case "https":
-				repo.URL = linkHRef.(string)
+				repo.URL = href
 			}
 		}
 		repos = append(repos, repo)
 	}
-	return repos, ownerID, nil
+	return repos, ownerID
 }

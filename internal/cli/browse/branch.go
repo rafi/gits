@@ -1,12 +1,13 @@
 package browse
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
@@ -51,24 +52,19 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 		return fmt.Errorf("repo %s/%s not found", args[0], repoName)
 	}
 
-	repo, err := deps.Git.Open(foundRepo.AbsPath)
-	if err != nil {
-		return fmt.Errorf("unable to open repo: %w", err)
-	}
-
 	// Branch
 	current := ""
 	if len(args) > 2 {
 		current = args[2]
 	} else {
-		current, err = repo.CurrentBranch()
+		current, err = deps.Git.CurrentBranch(deps.Ctx, foundRepo.AbsPath)
 		if err != nil {
 			return fmt.Errorf("unable to get current branch: %w", err)
 		}
 	}
 
 	// Remote
-	remotes, err := repo.Remotes()
+	remotes, err := deps.Git.Remotes(deps.Ctx, foundRepo.AbsPath)
 	if err != nil {
 		return fmt.Errorf("unable to get remotes: %w", err)
 	}
@@ -116,14 +112,14 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 		chartWidth = panelWidth - 2*chartSidePadding
 	}
 
-	panelLeft, err := renderBranchDiffList(repo, foundRepo.AbsPath, current, remotes, deps)
+	panelLeft, err := renderBranchDiffList(foundRepo.AbsPath, current, remotes, deps)
 	if err != nil {
 		log.Warnf("unable to render branch diff list: %s", err)
 	}
 	panelLeft = "\n" + branchCurrentStyle.Render(current) + "\n\n" + panelLeft
 
 	// Render commits per day panelRight.
-	panelRight, err := renderBranchChart(deps.Git, foundRepo, current, chartWidth)
+	panelRight, err := renderBranchChart(deps.Ctx, deps.Git, foundRepo, current, chartWidth)
 	if err != nil {
 		log.Warnf("unable to render chart: %s", err)
 	}
@@ -149,9 +145,9 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	doc.WriteString("Latest commits:")
 
 	docStyle := lipgloss.NewStyle().Padding(0)
-	fmt.Println(docStyle.Render(doc.String()))
+	lipgloss.Println(docStyle.Render(doc.String()))
 
-	log, err := deps.Git.Log(foundRepo.AbsPath, current)
+	log, err := deps.Git.Log(deps.Ctx, foundRepo.AbsPath, current)
 	if err != nil {
 		return err
 	}
@@ -159,14 +155,14 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 	return nil
 }
 
-func renderBranchDiffList(repo git.Repository, repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) (string, error) {
+func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) (string, error) {
 	doc := strings.Builder{}
 	branches := map[string]string{}
 	for _, remote := range remotes {
 		b := append([]string{subjectBranch}, commonReleaseBranches...)
 		for _, branchName := range b {
 			target := fmt.Sprintf("%s/%s", remote, branchName)
-			if repo.IsRemoteBranch(remote, branchName) {
+			if deps.Git.HasRemoteBranch(deps.Ctx, repoPath, remote, branchName) {
 				branches[target] = remote
 				continue
 			}
@@ -175,7 +171,7 @@ func renderBranchDiffList(repo git.Repository, repoPath, subjectBranch string, r
 	theme := deps.Theme
 
 	for fullName, remoteName := range branches {
-		ahead, behind, err := deps.Git.Diff(repoPath, subjectBranch, fullName)
+		ahead, behind, err := deps.Git.Diff(deps.Ctx, repoPath, subjectBranch, fullName)
 		if err != nil {
 			return "", err
 		}
@@ -195,19 +191,18 @@ func renderBranchDiffList(repo git.Repository, repoPath, subjectBranch string, r
 		}
 		branchName := strings.TrimPrefix(fullName, remoteName+"/")
 
-		doc.WriteString(
-			fmt.Sprintf("%s %s/%s\n",
-				theme.Diff.Width(20).Align(lipgloss.Right).Render(state),
-				theme.RemoteName.Render(remoteName),
-				theme.BranchName.Render(branchName),
-			))
+		fmt.Fprintf(&doc, "%s %s/%s\n",
+			theme.Diff.Width(20).Align(lipgloss.Right).Render(state),
+			theme.RemoteName.Render(remoteName),
+			theme.BranchName.Render(branchName),
+		)
 	}
 	return doc.String(), nil
 }
 
 // renderBranchChart draws a chart of commits per day.
-func renderBranchChart(gitClient git.Git, repo domain.Repository, branch string, width int) (string, error) {
-	commits, err := gitClient.CommitDates(repo.AbsPath, branch, daysAgo)
+func renderBranchChart(ctx context.Context, gitClient git.GitClient, repo domain.Repository, branch string, width int) (string, error) {
+	commits, err := gitClient.CommitDates(ctx, repo.AbsPath, branch, daysAgo)
 	if err != nil {
 		return "", fmt.Errorf("unable to get commit dates: %w", err)
 	}
@@ -259,7 +254,8 @@ func renderBranchChart(gitClient git.Git, repo domain.Repository, branch string,
 			bars = int(float64(count) / float64(highest) * float64(barMaxSize))
 		}
 		chart.WriteString("\n")
-		chart.WriteString(dateStr + " ")
+		chart.WriteString(dateStr)
+		chart.WriteByte(' ')
 		chart.WriteString(strings.Repeat("▇", bars))
 	}
 	return chart.String(), nil
@@ -267,7 +263,7 @@ func renderBranchChart(gitClient git.Git, repo domain.Repository, branch string,
 
 // renderDigits returns a string of small numeric characters.
 func renderDigits(num int) string {
-	digits := ""
+	var digits strings.Builder
 	for _, rune := range strconv.Itoa(num) {
 		char := fmt.Sprintf("%c", rune)
 		i, err := strconv.Atoi(char)
@@ -275,7 +271,7 @@ func renderDigits(num int) string {
 			log.Warnf("unable to convert %q to int: %s", char, err)
 			break
 		}
-		digits += smallNumericCharacters[i]
+		digits.WriteString(smallNumericCharacters[i])
 	}
-	return digits
+	return digits.String()
 }

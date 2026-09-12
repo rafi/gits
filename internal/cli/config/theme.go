@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 
 	"github.com/rafi/gits/domain"
 )
@@ -143,13 +144,15 @@ func NewThemeDefault() Theme {
 func (t *Theme) TableRowStyle(row, _ int) lipgloss.Style {
 	var s lipgloss.Style
 	switch {
-	case row == 0:
+	// v2 tables index the header as HeaderRow (-1) and data rows from 0, so the
+	// striping is offset by one vs. v1 (where the header was row 0).
+	case row == table.HeaderRow:
 		s = t.TableHeader
 	case row%2 == 0:
-		s = t.TableRowEven
-	default:
 		s = t.TableRowOdd
+	default:
+		s = t.TableRowEven
 	}
-	s.Margin(0, 1)
+	s = s.Margin(0, 1)
 	return s
 }

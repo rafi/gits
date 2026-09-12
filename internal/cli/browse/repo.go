@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
@@ -50,7 +50,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 	// Attempt to read README file.
 	readmePath := filepath.Join(repo.AbsPath, ReadMeFilename)
 	readme, err := renderReadme(readmePath, deps)
-	fmt.Println(readme)
+	lipgloss.Println(readme)
 	return err
 }
 
@@ -72,7 +72,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 
 	// Initialize renderer, respect OS appearance (light/dark background).
 	background := "light"
-	if lipgloss.HasDarkBackground() {
+	if lipgloss.HasDarkBackground(os.Stdin, os.Stdout) {
 		background = "dark"
 	}
 	mkd, err := glamour.NewTermRenderer(
@@ -88,7 +88,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 	}
 
 	nicePath := cli.Path(readmePath, deps.HomeDir)
-	fmt.Println(headerStyle.Render(nicePath))
+	lipgloss.Println(headerStyle.Render(nicePath))
 
 	return mkd.Render(string(readmeBytes))
 }

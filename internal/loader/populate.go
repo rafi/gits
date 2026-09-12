@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,6 +89,7 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 		var err error
 		for repoIdx, repo := range project.Repos {
 			project.Repos[repoIdx], err = providers.NewFilesystemRepo(
+				deps.Ctx,
 				repo.Dir,
 				repo.Src,
 				deps.Git,
@@ -120,7 +122,7 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 	}
 
 	// Load any remote sources, and check repositories state.
-	computeState(project, deps.Git)
+	computeState(deps.Ctx, project, deps.Git)
 
 	// Filter by user include/exclude config values.
 	project.Filter()
@@ -165,10 +167,10 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 		} else {
 			log.Debugf("Fetching %s repos from %s…", source.Type, source.Search)
 		}
-		if err := c.LoadRepos(source.Search, deps.Git, project); err != nil {
+		if err := c.LoadRepos(deps.Ctx, source.Search, deps.Git, project); err != nil {
 			return fmt.Errorf(
-				"Failed to load repos for %q project (%s): %w"+
-					project.Name,
+				"failed to load repos for %q project (%s): %w",
+				project.Name,
 				source.Type,
 				err,
 			)
@@ -188,7 +190,7 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 }
 
 // computeState evaluates project's repos state.
-func computeState(project *domain.Project, git git.Git) {
+func computeState(ctx context.Context, project *domain.Project, git git.GitClient) {
 	var err error
 	if project.Path != "" {
 		project.AbsPath, err = homedir.Expand(project.Path)
@@ -204,7 +206,7 @@ func computeState(project *domain.Project, git git.Git) {
 		if sub.Source == nil {
 			sub.Source = project.Source
 		}
-		computeState(sub, git)
+		computeState(ctx, sub, git)
 	}
 
 	for repoIdx := range project.Repos {
@@ -237,7 +239,7 @@ func computeState(project *domain.Project, git git.Git) {
 		}
 
 		if r.Src == "" {
-			r.Src, err = git.Remote(r.AbsPath)
+			r.Src, err = git.Remote(ctx, r.AbsPath)
 			if err != nil {
 				r.State = domain.RepoStateError
 				r.Reason = err.Error()
@@ -246,7 +248,7 @@ func computeState(project *domain.Project, git git.Git) {
 
 		if _, err := os.Stat(r.AbsPath); os.IsNotExist(err) {
 			r.State = domain.RepoStateNoLocal
-		} else if !git.IsRepo(r.AbsPath) {
+		} else if !git.IsRepo(ctx, r.AbsPath) {
 			r.State = domain.RepoStateError
 			r.Reason = "Unable to load repo"
 			continue

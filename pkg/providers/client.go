@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -18,7 +19,7 @@ const (
 )
 
 type gitProvider interface {
-	LoadRepos(id string, gitClient git.Git, project *domain.Project) error
+	LoadRepos(ctx context.Context, id string, gitClient git.GitClient, project *domain.Project) error
 }
 
 func NewGitProvider(providerName, token string) (gitProvider, error) {

@@ -19,14 +19,14 @@ type Warning struct {
 	Dir    string
 }
 
-func NewWarning(reason string, args ...interface{}) error {
+func NewWarning(reason string, args ...any) error {
 	return &Warning{
 		Type:   WarningType,
 		Reason: fmt.Sprintf(reason, args...),
 	}
 }
 
-func NewError(reason string, args ...interface{}) error {
+func NewError(reason string, args ...any) error {
 	return &Warning{
 		Type:   ErrorType,
 		Reason: fmt.Sprintf(reason, args...),

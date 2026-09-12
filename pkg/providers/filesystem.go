@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +25,7 @@ func newFilesystemProvider() (*filesystemProvider, error) { // nolint:unparam
 	return provider, nil
 }
 
-func NewFilesystemRepo(path, remote string, gitClient git.Git) (domain.Repository, error) {
+func NewFilesystemRepo(ctx context.Context, path, remote string, gitClient git.GitClient) (domain.Repository, error) {
 	repo := domain.Repository{
 		Name: filepath.Base(path),
 		Dir:  path,
@@ -36,7 +37,7 @@ func NewFilesystemRepo(path, remote string, gitClient git.Git) (domain.Repositor
 		return repo, fmt.Errorf("unable to expand path: %w", err)
 	}
 	if repo.Src == "" {
-		repo.Src, err = gitClient.Remote(absPath)
+		repo.Src, err = gitClient.Remote(ctx, absPath)
 		if err != nil {
 			repo.State = domain.RepoStateError
 			repo.Reason = err.Error()
@@ -45,7 +46,7 @@ func NewFilesystemRepo(path, remote string, gitClient git.Git) (domain.Repositor
 	return repo, nil
 }
 
-func (c *filesystemProvider) LoadRepos(path string, gitClient git.Git, project *domain.Project) error {
+func (c *filesystemProvider) LoadRepos(ctx context.Context, path string, gitClient git.GitClient, project *domain.Project) error {
 	var err error
 	path, err = homedir.Expand(path)
 	if err != nil {
@@ -56,11 +57,11 @@ func (c *filesystemProvider) LoadRepos(path string, gitClient git.Git, project *
 		Unsorted:            false,
 		FollowSymbolicLinks: false,
 		Callback: func(path string, de *godirwalk.Dirent) error {
-			if !de.IsDir() || !gitClient.IsRepo(path) {
+			if !de.IsDir() || !gitClient.IsRepo(ctx, path) {
 				return nil
 			}
 			// TODO: create subprojects in nested directories
-			repo, err := NewFilesystemRepo(path, "", gitClient)
+			repo, err := NewFilesystemRepo(ctx, path, "", gitClient)
 			if err != nil {
 				return err
 			}

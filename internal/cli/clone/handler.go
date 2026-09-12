@@ -1,15 +1,16 @@
 package clone
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/walk"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -26,17 +27,34 @@ func ExecClone(args []string, deps types.RuntimeCLI) error {
 
 	if repo != nil {
 		// Clone a single repository.
-		resp := cloneRepo(project, *repo, deps)
-		fmt.Println(resp)
-		return err
+		res := cloneRepo(deps.Ctx, project, *repo, deps)
+		lipgloss.Println(cli.IndentMultiline(res.Line))
+		return res.Err
 	}
 
-	// Clone all project's repositories.
-	errs := cloneProjectRepos(project, deps)
-	if len(errs) > 0 {
-		return cli.RenderErrors(errs, true)
+	// Clone all project repositories through the shared walker. Projects with
+	// clone disabled are pruned first so the walker never queues their repos.
+	errs := walk.Walk(deps.Ctx, pruneSkipped(project), deps, "cloning", cloneRepo)
+	return cli.RenderErrors(errs, true)
+}
+
+// pruneSkipped returns a copy of the project tree with clone-disabled projects
+// emptied of their repos and sub-projects, preserving the historical behavior
+// where `clone: false` skips a project and everything beneath it. The original
+// tree is left unmodified.
+func pruneSkipped(p domain.Project) domain.Project {
+	if p.Clone != nil && !*p.Clone {
+		log.Warn("Skipping clone due to config")
+		p.Repos = nil
+		p.SubProjects = nil
+		return p
 	}
-	return nil
+	subs := make([]domain.Project, len(p.SubProjects))
+	for i := range p.SubProjects {
+		subs[i] = pruneSkipped(p.SubProjects[i])
+	}
+	p.SubProjects = subs
+	return p
 }
 
 type CloneResponse struct {
@@ -58,65 +76,37 @@ func (r CloneResponse) String() string {
 	)
 }
 
-func cloneProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
-	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
-
-	errList := make([]error, 0)
-	maxLen := cli.GetMaxLen(project)
-
-	if project.Clone != nil && !*project.Clone {
-		log.Warn("Skipping clone due to config")
-		return nil
-	}
-
-	var wg sync.WaitGroup
-	for idx, repo := range project.Repos {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp := cloneRepo(project, repo, deps)
-			resp.title.Width(maxLen)
-			fmt.Println(resp)
-			if resp.error != nil {
-				errList = append(errList, resp.error)
-			}
-		}()
-		if idx > 0 && idx%deps.Settings.WorkerCount == 0 {
-			wg.Wait()
-		}
-	}
-	wg.Wait()
-
-	for _, subProject := range project.SubProjects {
-		fmt.Println()
-		errs := cloneProjectRepos(subProject, deps)
-		errList = append(errList, errs...)
-	}
-	return errList
-}
-
-func cloneRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) CloneResponse {
+// cloneRepo clones one repository and returns its rendered result. It is a
+// walk.RepoFunc: safe to call concurrently and never writes to stdout. Unlike
+// the other bulk commands it only rejects repos in an error state, since a
+// not-yet-cloned repo is the expected input here.
+func cloneRepo(
+	ctx context.Context,
+	project domain.Project,
+	repo domain.Repository,
+	deps types.RuntimeCLI,
+) walk.RepoResult {
 	resp := CloneResponse{
-		title:      cli.RepoTitle(repo, project.AbsPath, deps.HomeDir, deps.Theme),
+		title:      cli.PaddedRepoTitle(repo, project, deps),
 		errorStyle: deps.Theme.Error,
 	}
 
 	if repo.State == domain.RepoStateError {
-		resp.error = cli.AbortOnRepoState(repo, deps.Theme.Error)
-		return resp
+		resp.error = cli.RepoStateWarning(repo)
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 	if _, err := os.Stat(repo.AbsPath); !os.IsNotExist(err) {
 		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
 		resp.error = types.NewWarning("already cloned at %s", repoPath)
-		return resp
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 
 	var err error
-	resp.output, err = deps.Git.Clone(repo.Src, repo.AbsPath)
+	resp.output, err = deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
 	if err != nil {
 		resp.error = cli.RepoError(err, repo)
-		return resp
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 	resp.output = deps.Theme.GitOutput.Render(resp.output)
-	return resp
+	return walk.RepoResult{Line: resp.String(), Err: nil}
 }

@@ -40,8 +40,8 @@ func newGitHubProvider(token string) (*gitHubProvider, error) {
 	return provider, nil
 }
 
-func (c *gitHubProvider) LoadRepos(ownerName string, _ git.Git, project *domain.Project) (err error) {
-	project.Repos, project.ID, err = c.fetchRepos(ownerName)
+func (c *gitHubProvider) LoadRepos(ctx context.Context, ownerName string, _ git.GitClient, project *domain.Project) (err error) {
+	project.Repos, project.ID, err = c.fetchRepos(ctx, ownerName)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func (c *gitHubProvider) LoadRepos(ownerName string, _ git.Git, project *domain.
 	return nil
 }
 
-func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, string, error) {
+func (c *gitHubProvider) fetchRepos(ctx context.Context, ownerName string) ([]domain.Repository, string, error) {
 	var q struct {
 		Search struct {
 			Edges []struct {
@@ -78,7 +78,7 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 		} `graphql:"search(first: $count, after: $cursor, query: $query, type: REPOSITORY)"`
 	}
 
-	searchQuery := map[string]interface{}{
+	searchQuery := map[string]any{
 		"query": githubv4.String(
 			fmt.Sprintf(`org:%s`, githubv4.String(ownerName)),
 		),
@@ -89,7 +89,6 @@ func (c *gitHubProvider) fetchRepos(ownerName string) ([]domain.Repository, stri
 
 	ownerID := ""
 	repos := []domain.Repository{}
-	ctx := context.Background()
 	pageNum := 0
 	for {
 		pageNum++

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/config"
@@ -31,28 +31,72 @@ func GetTheme(themeSettings domain.Theme) (config.Theme, error) {
 	return theme, nil
 }
 
-// AbortOnRepoState prints an error message and aborts if the repository is in
-// an error state.
-func AbortOnRepoState(repo domain.Repository, style lipgloss.Style) error {
-	var err error
+// repoStateError maps a non-OK repository state to its sentinel error.
+func repoStateError(repo domain.Repository) error {
 	switch repo.State {
 	case domain.RepoStateError:
-		err = ErrNotRepository
+		return ErrNotRepository
 	case domain.RepoStateNoLocal:
-		err = ErrNotCloned
+		return ErrNotCloned
 	default:
-		err = errors.New(string(repo.State))
+		return errors.New(string(repo.State))
 	}
-	fmt.Print(style.Render(err.Error()))
+}
+
+// AbortOnRepoState prints an error message and aborts if the repository is in
+// an error state. Used by single-repo/interactive callers; the bulk walker uses
+// RepoStateError to avoid writing to stdout from a RepoFunc.
+func AbortOnRepoState(repo domain.Repository, style lipgloss.Style) error {
+	err := repoStateError(repo)
+	lipgloss.Print(style.Render(err.Error()))
 	return RepoError(err, repo)
 }
 
-func RepoError(err error, repo domain.Repository) types.Warning {
-	return types.Warning{
+// RepoStateError returns the rendered state line and the wrapped error for a
+// non-OK repository, without writing to stdout, so it is safe inside a
+// walk.RepoFunc.
+func RepoStateError(repo domain.Repository, style lipgloss.Style) (string, error) {
+	err := repoStateError(repo)
+	return style.Render(err.Error()), RepoError(err, repo)
+}
+
+// RepoStateWarning wraps a non-OK repository's state as a *types.Warning,
+// rendering no line — for walk.RepoFunc callers that build their own result
+// line and only need the error.
+func RepoStateWarning(repo domain.Repository) error {
+	return RepoError(repoStateError(repo), repo)
+}
+
+// RepoError wraps a repo failure as a *types.Warning (ErrorType) so it counts
+// as a real error and matches uniformly via errors.As.
+func RepoError(err error, repo domain.Repository) error {
+	return &types.Warning{
 		Title:  repo.GetName(),
 		Reason: err.Error(),
 		Dir:    repo.AbsPath,
 	}
+}
+
+// IndentMultiline reformats a rendered repo line so its continuation lines (any
+// after the first) are indented and prefixed with "> ". This keeps multi-line
+// git output and errors visually attached to their repo row instead of bleeding
+// out to the left margin. A single-line input is returned unchanged.
+func IndentMultiline(line string) string {
+	return indentContinuation(line, "    > ")
+}
+
+// indentContinuation keeps the first line of s untouched and prefixes every
+// continuation line with prefix. A single-line input is returned unchanged.
+func indentContinuation(s, prefix string) string {
+	head, rest, found := strings.Cut(s, "\n")
+	if !found {
+		return s
+	}
+	lines := strings.Split(rest, "\n")
+	for i, l := range lines {
+		lines[i] = prefix + l
+	}
+	return head + "\n" + strings.Join(lines, "\n")
 }
 
 func RenderErrors(errs []error, excludeWarnings bool) error {
@@ -60,13 +104,13 @@ func RenderErrors(errs []error, excludeWarnings bool) error {
 	count := 0
 	for _, err := range errs {
 		if excludeWarnings {
-			// nolint:errorlint
-			if e, ok := err.(*types.Warning); ok && e.Type == types.WarningType {
+			var w *types.Warning
+			if errors.As(err, &w) && w.Type == types.WarningType {
 				continue
 			}
 		}
 		count++
-		out = append(out, fmt.Sprintf("  - %s", err))
+		out = append(out, indentContinuation(fmt.Sprintf("  - %s", err), "      > "))
 	}
 	if count < 1 {
 		return nil
@@ -134,6 +178,14 @@ func RepoTitle(repo domain.Repository, basePath string, homeDir string, theme co
 		MarginLeft(LeftMargin).
 		MarginRight(RightMargin).
 		SetString(repoPath)
+}
+
+// PaddedRepoTitle is the common prologue of every walk.RepoFunc: the repo's
+// title padded to the project's widest repo name so the result bodies align
+// (AC-7).
+func PaddedRepoTitle(repo domain.Repository, project domain.Project, deps types.RuntimeCLI) lipgloss.Style {
+	return RepoTitle(repo, project.AbsPath, deps.HomeDir, deps.Theme).
+		Width(GetMaxLen(project))
 }
 
 // Path returns a clean path with ~ for home directory.

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"os"
+	"os/signal"
 
 	"github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
@@ -14,8 +17,9 @@ import (
 )
 
 var (
-	configPath string
-	configFile config.File
+	configPath  string
+	configFile  config.File
+	verboseFlag bool
 )
 
 // rootCmd represents gits base command.
@@ -36,16 +40,26 @@ func main() {
 		StringVarP(&configFile.Color, "color", "C", config.ColorOptionDefault, "color")
 
 	rootCmd.PersistentFlags().
-		BoolVarP(&configFile.Settings.Verbose, "verbose", "v", false, "display verbose output")
+		BoolVarP(&verboseFlag, "verbose", "v", false, "display verbose output")
 
 	cobra.OnInitialize(func() {
 		if err := config.NewConfigFromFile(configPath, &configFile); err != nil {
 			log.Warn(err)
 		}
+		// The CLI flag wins over the config file's settings.verbose, which
+		// loadConfig would otherwise clobber by unmarshalling onto Settings.
+		if verboseFlag {
+			configFile.Settings.Verbose = true
+		}
 		setupLogger(configFile)
 	})
 
-	if err := rootCmd.Execute(); err != nil {
+	// Root context cancelled on SIGINT so in-flight git operations stop
+	// promptly on Ctrl-C; per-op timeouts derive from this context.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -68,7 +82,7 @@ func setupLogger(cfg config.File) {
 
 // runWithDeps execute a command with dependencies.
 func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs {
-	return func(_ *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
 		// Setup runtime dependencies.
 		gitClient, err := git.NewGit()
 		if err != nil {
@@ -94,16 +108,20 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 			Theme:   theme,
 			HomeDir: homeDir,
 			Runtime: types.Runtime{
+				Ctx:        cmd.Context(),
 				Projects:   configFile.Projects,
 				Settings:   configFile.Settings,
 				ConfigPath: configFile.Filename,
-				Git:        gitClient,
+				Git:        &gitClient,
 				Cache:      cacheClient,
 			},
 		})
 
-		// Display a subtle user warning.
-		if errors.As(cmdErr, &types.Warning{}) {
+		// Downgrade warnings to a subtle log line. Warnings are *types.Warning
+		// (NewWarning/RepoError), so match by pointer and only swallow genuine
+		// WarningType values — real errors must still propagate.
+		var warn *types.Warning
+		if errors.As(cmdErr, &warn) && warn.Type == types.WarningType {
 			log.Warn(cmdErr.Error())
 			return nil
 		}

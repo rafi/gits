@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -43,38 +44,38 @@ var gitLabListOptions = gitlab.ListOptions{
 	Sort:       "asc",
 }
 
-func (c *gitLabProvider) LoadRepos(groupID string, gitClient git.Git, project *domain.Project) error {
+func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, gitClient git.GitClient, project *domain.Project) error {
 	var err error
 	project.ID = groupID
 
-	g, _, err := c.client.Groups.GetGroup(groupID, nil)
+	g, _, err := c.client.Groups.GetGroup(groupID, nil, gitlab.WithContext(ctx))
 	if err != nil {
 		return err
 	}
 	if project.Name == "" {
 		project.Name = g.Name
 	}
-	project.SubProjects, err = c.fetchSubGroups(project.ID)
+	project.SubProjects, err = c.fetchSubGroups(ctx, project.ID)
 	if err != nil {
 		return err
 	}
 	for i, group := range project.SubProjects {
-		err := c.LoadRepos(group.ID, gitClient, &project.SubProjects[i])
+		err := c.LoadRepos(ctx, group.ID, gitClient, &project.SubProjects[i])
 		if err != nil {
 			return err
 		}
 	}
-	project.Repos, err = c.fetchGroupProjects(groupID)
+	project.Repos, err = c.fetchGroupProjects(ctx, groupID)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *gitLabProvider) fetchSubGroups(groupID string) ([]domain.Project, error) {
+func (c *gitLabProvider) fetchSubGroups(ctx context.Context, groupID string) ([]domain.Project, error) {
 	groups := []domain.Project{}
 	opt := &gitlab.ListSubGroupsOptions{ListOptions: gitLabListOptions}
-	options := []gitlab.RequestOptionFunc{}
+	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
 	pageNum := 0
 	for {
 		pageNum++
@@ -96,6 +97,7 @@ func (c *gitLabProvider) fetchSubGroups(groupID string) ([]domain.Project, error
 		}
 
 		options = []gitlab.RequestOptionFunc{
+			gitlab.WithContext(ctx),
 			gitlab.WithKeysetPaginationParameters(resp.NextLink),
 		}
 	}
@@ -103,10 +105,10 @@ func (c *gitLabProvider) fetchSubGroups(groupID string) ([]domain.Project, error
 	return groups, nil
 }
 
-func (c *gitLabProvider) fetchGroupProjects(groupID string) ([]domain.Repository, error) {
+func (c *gitLabProvider) fetchGroupProjects(ctx context.Context, groupID string) ([]domain.Repository, error) {
 	projects := []domain.Repository{}
 	opt := &gitlab.ListGroupProjectsOptions{ListOptions: gitLabListOptions}
-	options := []gitlab.RequestOptionFunc{}
+	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
 	pageNum := 0
 	for {
 		pageNum++
@@ -135,6 +137,7 @@ func (c *gitLabProvider) fetchGroupProjects(groupID string) ([]domain.Repository
 		}
 
 		options = []gitlab.RequestOptionFunc{
+			gitlab.WithContext(ctx),
 			gitlab.WithKeysetPaginationParameters(resp.NextLink),
 		}
 	}

@@ -30,3 +30,13 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
+
+  govulncheck:
+    name: Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - id: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+          go-package: ./...

@@ -1,14 +1,16 @@
 package pull
 
 import (
+	"context"
 	"fmt"
-	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/cli/walk"
 	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/pkg/git"
 )
 
 // ExecPull runs pull --ff-only on project repositories, or on a specific repo.
@@ -24,17 +26,14 @@ func ExecPull(args []string, deps types.RuntimeCLI) error {
 
 	if repo != nil {
 		// Pull a single repository.
-		resp := pullRepo(project, *repo, deps)
-		fmt.Println(resp)
-		return resp.error
+		res := pullRepo(deps.Ctx, project, *repo, deps)
+		lipgloss.Println(cli.IndentMultiline(res.Line))
+		return res.Err
 	}
 
-	// Pull all project's repositories.
-	errs := pullProjectRepos(project, deps)
-	if len(errs) > 0 {
-		return cli.RenderErrors(errs, true)
-	}
-	return nil
+	// Pull all project repositories through the shared walker.
+	errs := walk.Walk(deps.Ctx, project, deps, "pulling", pullRepo)
+	return cli.RenderErrors(errs, true)
 }
 
 type PullResponse struct {
@@ -60,74 +59,43 @@ func (r PullResponse) String() string {
 	)
 }
 
-func pullProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
-	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
-
-	errList := make([]error, 0)
-	maxLen := cli.GetMaxLen(project)
-
-	var wg sync.WaitGroup
-	for idx, repo := range project.Repos {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp := pullRepo(project, repo, deps)
-			resp.title.Width(maxLen)
-			fmt.Println(resp)
-			if resp.error != nil {
-				errList = append(errList, resp.error)
-			}
-		}()
-		if idx > 0 && idx%deps.Settings.WorkerCount == 0 {
-			wg.Wait()
-		}
-	}
-	wg.Wait()
-
-	for _, subProject := range project.SubProjects {
-		fmt.Println()
-		errs := pullProjectRepos(subProject, deps)
-		errList = append(errList, errs...)
-	}
-	return errList
-}
-
-func pullRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) PullResponse {
+// pullRepo pulls one repository and returns its rendered result. It is a
+// walk.RepoFunc: safe to call concurrently and never writes to stdout.
+func pullRepo(
+	ctx context.Context,
+	project domain.Project,
+	repo domain.Repository,
+	deps types.RuntimeCLI,
+) walk.RepoResult {
 	resp := PullResponse{
-		title:      cli.RepoTitle(repo, project.AbsPath, deps.HomeDir, deps.Theme),
+		title:      cli.PaddedRepoTitle(repo, project, deps),
 		errorStyle: deps.Theme.Error,
 	}
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		resp.error = cli.AbortOnRepoState(repo, deps.Theme.Error)
-		return resp
+		resp.error = cli.RepoStateWarning(repo)
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 
-	gitRepo, err := deps.Git.Open(repo.AbsPath)
+	var err error
+	resp.currentBranch, err = deps.Git.CurrentBranch(ctx, repo.AbsPath)
 	if err != nil {
 		resp.error = cli.RepoError(err, repo)
-		return resp
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 
-	resp.currentBranch, err = gitRepo.CurrentBranch()
-	if err != nil {
-		resp.error = cli.RepoError(err, repo)
-		return resp
+	resp.upstream, err = deps.Git.UpstreamBranch(ctx, repo.AbsPath)
+	if err != nil || resp.upstream == "" {
+		resp.error = cli.RepoError(git.ErrNoUpstream, repo)
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 
-	upstream, err := gitRepo.GetUpstream(resp.currentBranch)
+	resp.output, err = deps.Git.Pull(ctx, repo.AbsPath)
 	if err != nil {
 		resp.error = cli.RepoError(err, repo)
-		return resp
-	}
-	resp.upstream = upstream.Short()
-
-	resp.output, err = deps.Git.Pull(repo.AbsPath)
-	if err != nil {
-		resp.error = cli.RepoError(err, repo)
-		return resp
+		return walk.RepoResult{Line: resp.String(), Err: resp.error}
 	}
 	resp.output = deps.Theme.GitOutput.Render(resp.output)
-	return resp
+	return walk.RepoResult{Line: resp.String(), Err: nil}
 }

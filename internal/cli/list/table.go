@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
@@ -58,7 +59,7 @@ func printTable(headers []string, rows [][]string, theme config.Theme) error {
 		Rows(rows...).
 		StyleFunc(theme.TableRowStyle)
 
-	fmt.Println(t)
+	lipgloss.Println(t)
 	return nil
 }
 

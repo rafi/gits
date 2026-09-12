@@ -3,13 +3,12 @@ package checkout
 import (
 	"fmt"
 
+	"charm.land/lipgloss/v2"
 	"github.com/erikgeiser/promptkit/selection"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
 // ExecCheckout display an interactive list of branches that can be checked-out.
@@ -37,7 +36,7 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 }
 
 func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) []error {
-	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
+	lipgloss.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 
 	errList := make([]error, 0)
 	for _, repo := range project.Repos {
@@ -61,17 +60,12 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		fmt.Print(repoTitle)
+		lipgloss.Print(repoTitle)
 		defer fmt.Println()
 		return cli.AbortOnRepoState(repo, deps.Theme.Error)
 	}
 
-	gitRepo, err := deps.Git.Open(repo.AbsPath)
-	if err != nil {
-		return err
-	}
-
-	branch, err := promptRepo(repoTitle, gitRepo, deps)
+	branch, err := promptRepo(repoTitle, repo.AbsPath, deps)
 	if err != nil {
 		return err
 	}
@@ -79,26 +73,26 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 		return nil
 	}
 
-	err = gitRepo.Checkout(branch)
+	err = deps.Git.Checkout(deps.Ctx, repo.AbsPath, branch)
 	if err != nil {
-		fmt.Print(deps.Theme.Error.Render(err.Error()))
+		lipgloss.Print(deps.Theme.Error.Render(err.Error()))
 		return cli.RepoError(err, repo)
 	}
 	return nil
 }
 
 // promptRepo prompts the user to select a branch to checkout.
-func promptRepo(repoTitle string, gitRepo git.Repository, deps types.RuntimeCLI) (string, error) {
-	current, err := gitRepo.CurrentBranch()
+func promptRepo(repoTitle, repoPath string, deps types.RuntimeCLI) (string, error) {
+	current, err := deps.Git.CurrentBranch(deps.Ctx, repoPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to get branch: %w", err)
 	}
 
 	ps := fmt.Sprintf("%s [%s]> ", repoTitle, current)
 
-	branches, err := gitRepo.Branches()
+	branches, err := deps.Git.Branches(deps.Ctx, repoPath)
 	if err != nil {
-		log.Fatal(fmt.Sprintf("Unable to read branches: %s", err))
+		return "", fmt.Errorf("unable to read branches: %w", err)
 	}
 
 	sp := selection.New("", branches)

@@ -1,10 +1,12 @@
 package orphan
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"charm.land/lipgloss/v2"
 	"github.com/karrick/godirwalk"
 	log "github.com/sirupsen/logrus"
 
@@ -27,7 +29,7 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	repos, err := findOrphanedRepos(project, deps.Git)
+	repos, err := findOrphanedRepos(deps.Ctx, project, deps.Git)
 	if err != nil {
 		return err
 	}
@@ -35,10 +37,10 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 	errorStyle := deps.Theme.Error.
 		MarginLeft(cli.LeftMargin)
 
-	fmt.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
+	lipgloss.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
 	for _, repo := range repos {
 		repoDir := cli.Path(repo.Dir, deps.HomeDir)
-		fmt.Printf("%s - %s\n", errorStyle.Render(repoDir), repo.Src)
+		lipgloss.Printf("%s - %s\n", errorStyle.Render(repoDir), repo.Src)
 	}
 
 	return nil
@@ -56,7 +58,7 @@ func makeRepoMap(project domain.Project, repoMap map[string]bool) {
 
 // findOrphanedRepos scans the project's directory for repositories that are not
 // known to the project provider.
-func findOrphanedRepos(project domain.Project, gitClient git.Git) ([]domain.Repository, error) {
+func findOrphanedRepos(ctx context.Context, project domain.Project, gitClient git.GitClient) ([]domain.Repository, error) {
 	orphanRepos := []domain.Repository{}
 	knownRepos := make(map[string]bool)
 	makeRepoMap(project, knownRepos)
@@ -72,12 +74,12 @@ func findOrphanedRepos(project domain.Project, gitClient git.Git) ([]domain.Repo
 		Unsorted:            false,
 		FollowSymbolicLinks: false,
 		Callback: func(path string, de *godirwalk.Dirent) error {
-			if !de.IsDir() || !gitClient.IsRepo(path) {
+			if !de.IsDir() || !gitClient.IsRepo(ctx, path) {
 				return nil
 			}
 			// Add unknown repository to the list.
 			if _, known := knownRepos[path]; !known {
-				repo, err := providers.NewFilesystemRepo(path, "", gitClient)
+				repo, err := providers.NewFilesystemRepo(ctx, path, "", gitClient)
 				if err != nil {
 					return err
 				}

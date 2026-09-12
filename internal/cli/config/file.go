@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/mitchellh/go-homedir"
-	"github.com/muesli/termenv"
 
 	"github.com/rafi/gits/domain"
 )
@@ -134,12 +134,17 @@ func (f *File) loadConfig(filePath string) error {
 		f.Settings.WorkerCount = max(runtime.NumCPU()/2, 2)
 	}
 
-	// Set never/always color toggle.
+	// Set never/always color toggle. lipgloss v2 downsamples at the output
+	// writer, so force the profile on the global stdout writer and mirror the
+	// intent into the environment so per-writer outputs (e.g. the walk
+	// reporter's stderr) and child processes (git, fzf) honor it too.
 	switch f.Color {
 	case ColorOptionNever.String():
-		lipgloss.SetColorProfile(termenv.Ascii)
+		os.Setenv("NO_COLOR", "1")
+		lipgloss.Writer.Profile = colorprofile.NoTTY
 	case ColorOptionAlways.String():
 		os.Setenv("CLICOLOR_FORCE", "1")
+		lipgloss.Writer.Profile = colorprofile.TrueColor
 	}
 	return nil
 }

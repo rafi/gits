@@ -1,7 +1,8 @@
+// Package domain
 package domain
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -69,20 +70,6 @@ func (p *Project) GetSubProject(name, prefix string) (Project, bool) {
 	return Project{}, false
 }
 
-// GetAllRepos returns a list of all repositories in the project.
-func (p *Project) GetAllRepos(prefix ...string) []Repository {
-	var repos []Repository
-	if len(prefix) == 0 {
-		prefix = []string{""}
-	}
-	repos = append(repos, p.Repos...)
-	for _, subProj := range p.SubProjects {
-		subPrefix := prefix[0] + subProj.Name + "/"
-		repos = append(repos, subProj.GetAllRepos(subPrefix)...)
-	}
-	return repos
-}
-
 // ListReposWithNamespace returns a list of repository names with namespace.
 func (p *Project) ListReposWithNamespace(prefix ...string) []string {
 	var names []string
@@ -118,7 +105,7 @@ func (p *Project) GetRepoAbsPath(repo Repository) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unable to expand path: %w", err)
 	}
-	if string(expanded[0]) == "/" {
+	if len(expanded) > 0 && expanded[0] == '/' {
 		path = filepath.Clean(expanded)
 	} else {
 		path = filepath.Join(path, expanded)
@@ -143,8 +130,8 @@ func (p *Project) Filter() {
 	p.Repos = repos
 
 	// Recurse into subprojects.
-	for _, subProject := range p.SubProjects {
-		subProject.Filter()
+	for i := range p.SubProjects {
+		p.SubProjects[i].Filter()
 	}
 }
 
@@ -153,7 +140,7 @@ func (p *Project) CalculateHash() error {
 	if err != nil {
 		return err
 	}
-	hash := md5.Sum(data)
+	hash := sha256.Sum256(data)
 	p.Hash = hex.EncodeToString(hash[:])
 	return nil
 }

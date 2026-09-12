@@ -1,8 +1,7 @@
 package list
 
 import (
-	"fmt"
-
+	"charm.land/lipgloss/v2"
 	"github.com/xlab/treeprint"
 
 	"github.com/rafi/gits/domain"
@@ -13,7 +12,7 @@ import (
 // listTree lists projects and repos as a nested tree.
 func listTree(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	tree := makeTree(projects, deps)
-	fmt.Print(tree.String())
+	lipgloss.Print(tree.String())
 	return nil
 }
 

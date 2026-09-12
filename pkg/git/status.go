@@ -1,61 +1,84 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-func (g *Git) CurrentBranch(path string) (string, error) {
+// modifiedRe matches the leading changed-file count of `git diff --shortstat`.
+var modifiedRe = regexp.MustCompile(`^\s*(\d+)`)
+
+func (g *Git) CurrentBranch(ctx context.Context, path string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
 	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
-	abbrRef, err := g.Exec(path, args)
+	abbrRef, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return "", fmt.Errorf("unable to find ref: %w", err)
 	}
 	return cleanOutput(abbrRef), nil
 }
 
-func (g *Git) UpstreamBranch(path string) (string, error) {
+func (g *Git) UpstreamBranch(ctx context.Context, path string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
 	args := []string{"rev-parse", "--abbrev-ref", "@{upstream}"}
-	abbrRefUpstream, _ := g.Exec(path, args)
-	upstream := cleanOutput(abbrRefUpstream)
-	return upstream, nil
+	out, err := g.Exec(ctx, path, args)
+	if err != nil {
+		// In a valid repo a non-zero exit means the branch has no upstream
+		// configured; git writes the reason to stderr, so report the condition
+		// rather than leaking that text back as the upstream name.
+		return "", ErrNoUpstream
+	}
+	return cleanOutput(out), nil
 }
 
 // GitModified returns the number of modified files
-func (g *Git) Modified(path string) (int, error) {
+func (g *Git) Modified(ctx context.Context, path string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
 	args := []string{"diff", "--shortstat"}
-	output, err := g.Exec(path, args)
+	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return 0, fmt.Errorf("unable to find modified diff: %w", err)
 	}
-	pat := regexp.MustCompile(`^\s*(\d+)`)
-	matches := pat.FindAllStringSubmatch(string(output), -1)
-	if len(matches) > 0 {
-		modified, err := strconv.Atoi(matches[0][1])
-		if err != nil {
-			return 0, fmt.Errorf("unable to convert string to int: %w", err)
-		}
-		return modified, nil
+	m := modifiedRe.FindStringSubmatch(string(output))
+	if m == nil {
+		return 0, nil
 	}
-	return 0, nil
+	modified, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, fmt.Errorf("unable to convert string to int: %w", err)
+	}
+	return modified, nil
 }
 
 // Untracked returns the number of untracked files
-func (g *Git) Untracked(path string) (int, error) {
+func (g *Git) Untracked(ctx context.Context, path string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
 	args := []string{"ls-files", "--others", "--exclude-standard"}
-	output, err := g.Exec(path, args)
+	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return 0, fmt.Errorf("unable to find untracked: %w", err)
 	}
-	return len(strings.Split(string(output), "\n")) - 1, nil
+	return len(splitLines(cleanOutput(output))), nil
 }
 
 // CurrentPosition returns a short log description of HEAD
-func (g *Git) CurrentPosition(path string) (string, error) {
+func (g *Git) CurrentPosition(ctx context.Context, path string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
 	args := []string{"log", "-1", "--color=always", "--format=%C(auto)%D %C(242)(%aN %ar)%Creset"}
-	output, err := g.Exec(path, args)
+	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return "", fmt.Errorf("unable to get current rev: %w", err)
 	}
@@ -63,9 +86,12 @@ func (g *Git) CurrentPosition(path string) (string, error) {
 }
 
 // Describe generates a version description based on tags and hash
-func (g *Git) Describe(path string) (string, error) {
+func (g *Git) Describe(ctx context.Context, path string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
 	args := []string{"describe", "--tags", "--always"}
-	output, err := g.Exec(path, args)
+	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return "", fmt.Errorf("unable to describe rev: %w", err)
 	}
@@ -73,27 +99,25 @@ func (g *Git) Describe(path string) (string, error) {
 }
 
 // Diff returns a formatted string of ahead/behind counts
-func (g *Git) Diff(path, branch, target string) (int, int, error) {
-	args := []string{"rev-list", "--left-right", branch + "..." + target}
-	output, _ := g.Exec(path, args)
-	outputStr := cleanOutput(output)
+func (g *Git) Diff(ctx context.Context, path, branch, target string) (int, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
 
-	if len(outputStr) == 0 {
-		return 0, 0, nil
+	args := []string{"rev-list", "--left-right", "--end-of-options", branch + "..." + target}
+	output, err := g.Exec(ctx, path, args)
+	if err != nil {
+		return 0, 0, fmt.Errorf("unable to compute diff: %w", err)
 	}
-
-	behind := 0
-	ahead := 0
-	for _, rev := range strings.Split(outputStr, "\n") {
+	ahead, behind := 0, 0
+	for rev := range strings.SplitSeq(cleanOutput(output), "\n") {
 		if rev == "" {
 			continue
 		}
-		rev = string(rev[0])
-		if rev == ">" {
-			behind++
-		}
-		if rev == "<" {
+		switch rev[0] {
+		case '<':
 			ahead++
+		case '>':
+			behind++
 		}
 	}
 	return ahead, behind, nil
