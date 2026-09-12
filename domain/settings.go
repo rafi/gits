@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -19,16 +20,55 @@ const DefaultProviderTimeout = 5 * time.Minute
 const DefaultGitTimeout = 5 * time.Minute
 
 type Settings struct {
-	Cache           *bool  `json:"cache,omitempty"`
-	Finder          Finder `json:"finder"`
-	GitTimeout      string `json:"gitTimeout,omitempty"`
-	Icons           Icons  `json:"icons"`
-	Theme           Theme  `json:"theme"`
-	CacheTTL        string `json:"cacheTTL,omitempty"`
-	IncludeArchived bool   `json:"includeArchived,omitempty"`
-	ProviderTimeout string `json:"providerTimeout,omitempty"`
-	Verbose         bool   `json:"verbose,omitempty"`
-	WorkerCount     int    `json:"workerCount,omitempty"`
+	Cache           *bool            `json:"cache,omitempty"`
+	Finder          Finder           `json:"finder"`
+	GitTimeout      string           `json:"gitTimeout,omitempty"`
+	Icons           Icons            `json:"icons"`
+	Theme           Theme            `json:"theme"`
+	CacheTTL        string           `json:"cacheTTL,omitempty"`
+	IncludeArchived bool             `json:"includeArchived,omitempty"`
+	ProviderTimeout string           `json:"providerTimeout,omitempty"`
+	Verbose         bool             `json:"verbose,omitempty"`
+	WorkerCount     int              `json:"workerCount,omitempty"`
+	Bitbucket       ProviderSettings `json:"bitbucket"`
+	GitHub          ProviderSettings `json:"github"`
+	GitLab          ProviderSettings `json:"gitlab"`
+}
+
+// ProviderSettings holds the credentials of a single remote provider, keyed
+// in the config by provider name (settings.github, settings.gitlab, …).
+type ProviderSettings struct {
+	// Token is the API token, used verbatim.
+	Token string `json:"token,omitempty"`
+	// TokenCommand is a shell command printing the token on stdout, e.g.
+	// "pass tokens/github". Used when Token is empty.
+	TokenCommand string `json:"tokenCommand,omitempty"`
+	// TokenCmd is an accepted alias for TokenCommand, spelled "token-cmd".
+	TokenCmd string `json:"token-cmd,omitempty"`
+}
+
+// Command returns the configured token command, preferring the canonical
+// "tokenCommand" key over its "token-cmd" alias.
+func (p ProviderSettings) Command() string {
+	if p.TokenCommand != "" {
+		return p.TokenCommand
+	}
+	return p.TokenCmd
+}
+
+// ProviderAuth returns the credentials configured for a provider source
+// type. Types that need no token (e.g. "filesystem") yield the zero value.
+func (s Settings) ProviderAuth(providerType string) ProviderSettings {
+	switch strings.ToLower(providerType) {
+	case "github":
+		return s.GitHub
+	case "gitlab":
+		return s.GitLab
+	case "bitbucket":
+		return s.Bitbucket
+	default:
+		return ProviderSettings{}
+	}
 }
 
 // parseDurationOr parses a Go-duration setting value, falling back to def

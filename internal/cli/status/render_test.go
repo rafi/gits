@@ -1,7 +1,6 @@
 package status
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/cli/walk"
 )
@@ -41,7 +41,7 @@ func fixtureStatuses() []*repoStatus {
 			when:      now.Add(-26 * time.Hour),
 		},
 		{
-			repo:    domain.Repository{Name: "infra", State: domain.RepoStateNoLocal},
+			repo:    domain.Repository{Name: "infra", State: domain.RepoStateNotCloned},
 			title:   "infra",
 			message: "not cloned",
 			err:     errFixture,
@@ -58,7 +58,7 @@ func (e *fixtureErr) Error() string { return "not cloned" }
 // TestRenderTableRows: every repo renders exactly one line, wide counts grow
 // the column instead of wrapping, and all expected fields appear.
 func TestRenderTableRows(t *testing.T) {
-	out := renderTable(fixtureStatuses(), 0, Options{}, statusDeps(fakeGit{}))
+	out := renderTable(fixtureStatuses(), 0, Options{}, statusDeps(t, fakeGit{}))
 	plain := ansi.Strip(out)
 	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
 
@@ -87,7 +87,7 @@ func TestRenderTableRows(t *testing.T) {
 // positions across rows so flags line up vertically.
 func TestRenderTableSlotAlignment(t *testing.T) {
 	sts := fixtureStatuses()
-	out := renderTable(sts, 0, Options{}, statusDeps(fakeGit{}))
+	out := renderTable(sts, 0, Options{}, statusDeps(t, fakeGit{}))
 	lines := strings.Split(strings.TrimRight(ansi.Strip(out), "\n"), "\n")
 
 	// Row 1 has staged+unstaged (`+!`), row 2 untracked (`?`): the untracked
@@ -116,13 +116,13 @@ func TestRenderGroupsTitlesAndFooter(t *testing.T) {
 		Results: results,
 	}}
 
-	var out, errW bytes.Buffer
-	renderGroups(&out, &errW, groups, true, Options{}, statusDeps(fakeGit{}))
+	deps := clitest.New(t, nil)
+	renderGroups(groups, true, Options{}, deps.RuntimeCLI)
 
-	if !strings.Contains(ansi.Strip(out.String()), ":: acme") {
-		t.Errorf("missing project title:\n%s", out.String())
+	if !strings.Contains(deps.Result(), ":: acme") {
+		t.Errorf("missing project title:\n%s", deps.Result())
 	}
-	footer := ansi.Strip(errW.String())
+	footer := deps.Diagnostic()
 	for _, want := range []string{"○ Showing 3 repos", "2 with changes", "1 ahead"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("footer %q missing %q", footer, want)
@@ -152,10 +152,10 @@ func TestRenderGroupsDirtyFilter(t *testing.T) {
 		{Project: domain.Project{Name: "pristine"}, Results: toResults(clean)},
 	}
 
-	var out, errW bytes.Buffer
-	renderGroups(&out, &errW, groups, true, Options{Dirty: true}, statusDeps(fakeGit{}))
+	deps := clitest.New(t, nil)
+	renderGroups(groups, true, Options{Dirty: true}, deps.RuntimeCLI)
 
-	plain := ansi.Strip(out.String())
+	plain := deps.Result()
 	for _, want := range []string{"api", "not cloned"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("dirty output missing %q:\n%s", want, plain)
@@ -166,7 +166,7 @@ func TestRenderGroupsDirtyFilter(t *testing.T) {
 			t.Errorf("dirty output should hide %q:\n%s", banned, plain)
 		}
 	}
-	footer := ansi.Strip(errW.String())
+	footer := deps.Diagnostic()
 	for _, want := range []string{"○ Showing 2 repos", "2 hidden"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("footer %q missing %q", footer, want)
@@ -190,9 +190,9 @@ func TestRenderGroupsUnsyncedFilter(t *testing.T) {
 	}
 	groups := []walk.GroupResult{{Project: domain.Project{Name: "acme"}, Results: results}}
 
-	var out, errW bytes.Buffer
-	renderGroups(&out, &errW, groups, true, Options{Unsynced: true}, statusDeps(fakeGit{}))
-	plain := ansi.Strip(out.String())
+	deps := clitest.New(t, nil)
+	renderGroups(groups, true, Options{Unsynced: true}, deps.RuntimeCLI)
+	plain := deps.Result()
 	if !strings.Contains(plain, "racer") {
 		t.Errorf("unsynced output missing ahead repo:\n%s", plain)
 	}
@@ -201,16 +201,14 @@ func TestRenderGroupsUnsyncedFilter(t *testing.T) {
 			t.Errorf("unsynced output should hide %q:\n%s", banned, plain)
 		}
 	}
-	if footer := ansi.Strip(errW.String()); !strings.Contains(footer, "2 hidden") {
+	if footer := deps.Diagnostic(); !strings.Contains(footer, "2 hidden") {
 		t.Errorf("footer %q missing hidden count", footer)
 	}
 
 	// Union: --dirty --unsynced shows dirty-in-sync and clean-ahead repos.
-	out.Reset()
-	errW.Reset()
-	renderGroups(&out, &errW, groups, true, Options{Dirty: true, Unsynced: true},
-		statusDeps(fakeGit{}))
-	plain = ansi.Strip(out.String())
+	union := clitest.New(t, nil)
+	renderGroups(groups, true, Options{Dirty: true, Unsynced: true}, union.RuntimeCLI)
+	plain = union.Result()
 	for _, want := range []string{"edited", "racer"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("union output missing %q:\n%s", want, plain)
@@ -229,7 +227,7 @@ func TestRenderTableClampsToTerminal(t *testing.T) {
 	sts[0].message = strings.Repeat("very long commit subject ", 8)
 	const width = 72
 
-	out := renderTable(sts, width, Options{}, statusDeps(fakeGit{}))
+	out := renderTable(sts, width, Options{}, statusDeps(t, fakeGit{}))
 	plain := ansi.Strip(out)
 	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
 
@@ -261,7 +259,7 @@ func TestRenderTableStatColumn(t *testing.T) {
 	sts[0].added, sts[0].deleted = 27, 8
 	sts[1].added = 4321
 
-	out := renderTable(sts, 0, Options{Stat: true}, statusDeps(fakeGit{}))
+	out := renderTable(sts, 0, Options{Stat: true}, statusDeps(t, fakeGit{}))
 	plain := ansi.Strip(out)
 	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
 
@@ -280,7 +278,7 @@ func TestRenderTableStatColumn(t *testing.T) {
 		t.Errorf("zero counts should render blank:\n%s", lines[3])
 	}
 
-	plain = ansi.Strip(renderTable(sts, 0, Options{}, statusDeps(fakeGit{})))
+	plain = ansi.Strip(renderTable(sts, 0, Options{}, statusDeps(t, fakeGit{})))
 	if strings.Contains(plain, "HEAD±") || strings.Contains(plain, "+27") {
 		t.Errorf("HEAD± column rendered without --stat:\n%s", plain)
 	}
@@ -338,7 +336,7 @@ func TestStatusSlotsWidthWithWideIcons(t *testing.T) {
 	sts := []*repoStatus{
 		{repo: domain.Repository{State: domain.RepoStateOK}},
 		{repo: domain.Repository{State: domain.RepoStateOK}, staged: 1, err: errFixture},
-		{repo: domain.Repository{State: domain.RepoStateNoLocal}, err: errFixture},
+		{repo: domain.Repository{State: domain.RepoStateNotCloned}, err: errFixture},
 		{repo: domain.Repository{State: domain.RepoStateOK}, ahead: 3},
 	}
 	widths := newSlotWidths(icons)

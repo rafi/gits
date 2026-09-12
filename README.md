@@ -8,6 +8,7 @@
 
 - [Features](#features)
 - [Install](#install)
+- [Upgrading](#upgrading)
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Config Examples](#config-examples)
@@ -20,7 +21,7 @@ Use as a git clone manager, and while developing on multiple git repositories.
 
 - [x] GitHub/GitLab/Bitbucket/filesystem support with cache
 - [x] Interactive browsing of projects/repositories/branches/tags
-- [x] Clone/fetch/pull for multiple repositories
+- [x] Clone/fetch/pull/push for multiple repositories
 - [x] Show one-line status with icons for all repositories
 - [x] List projects as table/tree/json/name
 - [x] Checkout branches interactively
@@ -40,6 +41,45 @@ Or install `gits` with Go:
 go install github.com/rafi/gits
 ```
 
+## Upgrading
+
+Changes that need action on an existing setup. Anything not listed here
+upgrades in place.
+
+### v1.0.0 — derived directory names keep their extension
+
+A repository that declares no `dir:` gets its directory name from the basename
+of its source URL. That name used to have any file extension stripped; only a
+literal `.git` suffix is stripped now. The two rules agree for ordinary names —
+`git@github.com:rafi/gits.git` still lives in `gits` — and differ only for a
+repository whose name contains a dot:
+
+| Source URL                  | Old directory | New directory    |
+| --------------------------- | ------------- | ---------------- |
+| `…/rafi/rafi.github.io.git` | `rafi.github` | `rafi.github.io` |
+| `…/vercel/next.js.git`      | `next`        | `next.js`        |
+
+The new name is the correct one; the old rule truncated any repository whose
+name ended in a dotted segment.
+
+A clone made by an earlier version sits under the old, truncated name. `gits`
+now looks for the new one, finds nothing, and reports the repository as
+`not-cloned` — so `gits clone` would place a second copy beside the one you
+already have. Either rename the directory to match:
+
+```bash
+mv ~/code/github/rafi.github ~/code/github/rafi.github.io
+```
+
+Or keep it where it is by naming it explicitly, which opts that repository out
+of the derivation entirely:
+
+```yaml
+repos:
+  - src: git@github.com:rafi/rafi.github.io.git
+    dir: rafi.github
+```
+
 ## Usage
 
 Usage: `gits [command] <project>`
@@ -56,6 +96,7 @@ Available Commands:
 - `list` —     List all projects or their repositories
 - `orphan` —   Finds orphan repository
 - `pull` —     Pull repositories
+- `push` —     Push current branch to its upstream
 - `status` —   Shows Git repositories short status
 - `sync` —     Synchronize project caches
 - `version` —  Shows current version
@@ -81,6 +122,90 @@ gits status .       # show status for all repositories at current path
 
 To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your shell
 `~/.bashrc` or `~/.zshrc`, and use `cdgit` to navigate to a repository.
+
+### Pushing
+
+`gits push` pushes each repository's current branch to its upstream, and skips
+any repository whose current branch has none — a skip, not a failure, so the
+run still exits zero.
+
+```bash
+gits push acme          # push every repository in project 'acme'
+gits push acme -n       # git's own --dry-run, per repository
+gits push acme --tags   # push tags instead of the current branch
+```
+
+It passes a chosen subset of `git push` flags through: `--all`, `--branches`
+and `--tags` (mutually exclusive, rejected up front), `--follow-tags`,
+`--atomic`, `--prune`, and `-n`/`--dry-run`. Under `--all`, `--branches` or
+`--tags` the upstream skip is suspended, since those flags say for themselves
+which refs to push.
+
+There is deliberately no way to reach `--force`, `--force-with-lease`,
+`-u`/`--set-upstream` or `--mirror`: one mistyped flag applied to forty remotes
+is not recoverable the way one against a single remote is. See
+[ADR-0002](./docs/adr/0002-push-safety-model.md).
+
+### JSON output
+
+`list` and `status` both take `-o json` and emit the same document: an object
+keyed by project name, carrying the project tree and every repository's
+identity and state. `list -o json` stops there; `status -o json` additionally
+nests the working-tree data it gathered under each repository.
+
+```bash
+gits list -o json                      # the project tree, no git commands run
+gits status -o json acme               # the same tree, plus work-tree data
+gits status -o json --dirty acme       # only repositories with local changes
+gits status -o json --stat acme        # adds head.added / head.deleted
+```
+
+Each repository reports one of five `state` values:
+
+| State         | Meaning                                                |
+| ------------- | ------------------------------------------------------ |
+| `ok`          | a local clone exists and is readable                    |
+| `not-cloned`  | a local path is known, and nothing is there             |
+| `remote-only` | provider-backed, and the config gives it no local home  |
+| `error`       | the config is defective, or the path is not readable    |
+| `unknown`     | not yet classified                                      |
+
+An `error` repository also carries a `reason`. These strings are a stable
+contract — display icons and labels are derived from them, never the reverse.
+
+The nested `status` object appears only where git was actually consulted, so
+its presence is what tells you the numbers were measured:
+
+```jsonc
+{
+  "acme": {
+    "id": "", "name": "acme", "path": "~/code/acme",
+    "repos": [
+      {
+        "name": "api", "src": "git@github.com:acme/api.git", "state": "ok",
+        "status": {
+          "branch": "main",
+          "staged": 1, "unstaged": 0, "untracked": 2,
+          "ahead": 3, "behind": 0,
+          "compared": true,             // false: nothing to compare against
+          "version": "v1.2.3",          // git describe, when there is a tag
+          "head": { "added": 27, "deleted": 8 },   // --stat only
+          "commit": { "hash": "abc1234", "subject": "Add feature",
+                      "time": "2026-08-23T12:00:00Z" }
+        }
+      },
+      { "name": "web", "state": "not-cloned" }
+    ],
+    "subprojects": []
+  }
+}
+```
+
+A repository whose work-tree probe failed carries `"status": {"error": "…"}`
+and nothing else — a failed probe measured no counts, and zeroes beside the
+error would read as a clean work tree. `status -o json` exits zero for these
+per-repository conditions; they are data in this format. The table format is
+unchanged, and still exits non-zero.
 
 ## Configuration
 
@@ -148,6 +273,35 @@ settings:
                           # (clone/fetch/pull). Go duration syntax.
                           # Default: 5m.
 ```
+
+#### Provider tokens
+
+Remote providers need an API token. Configure it per provider under
+`settings:`, either verbatim or as a command that prints it:
+
+```yaml
+settings:
+  github:
+    tokenCommand: pass tokens/github   # `token-cmd` is also accepted
+  gitlab:
+    tokenCommand: op read op://private/gitlab/token
+  bitbucket:
+    token: my-user:my-app-password     # username:app-password
+```
+
+For each provider the first of these wins:
+
+1. `token` — used as-is. Keep in mind your config file is plain text.
+2. `tokenCommand` (alias `token-cmd`) — run through the shell, so pipes and
+   quoting work; the first non-empty output line is the token. It runs at
+   most once per command per `gits` invocation, so a passphrase prompt
+   appears once even with several projects on the same provider. A failing
+   command is an error — there is no silent fallback.
+3. Environment: `GITHUB_TOKEN` (or `HOMEBREW_GITHUB_API_TOKEN`),
+   `GITLAB_TOKEN`, `BITBUCKET_TOKEN`.
+
+Cached projects (see `cache`) don't need a token until the cache expires or
+`gits sync` refreshes it.
 
 ## Config Examples
 

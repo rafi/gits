@@ -11,20 +11,19 @@ import (
 	"time"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/types"
 )
 
-// testDeps builds a RuntimeCLI with the default theme and the given worker
-// count, enough to drive Walk without touching a real git client.
-func testDeps(workers int) types.RuntimeCLI {
-	return types.RuntimeCLI{
-		Theme: config.NewThemeDefault(),
-		Runtime: types.Runtime{
-			Ctx:      context.Background(),
-			Settings: domain.Settings{WorkerCount: workers},
-		},
-	}
+// testDeps builds test dependencies with the given worker count, enough to
+// drive Walk without touching a real git client. Both output destinations are
+// buffers, so the walker's Result Output and Diagnostic Output are captured
+// separately and the progress reporter falls silent.
+func testDeps(t *testing.T, workers int) *clitest.Deps {
+	t.Helper()
+	deps := clitest.New(t, nil)
+	deps.Settings.WorkerCount = workers
+	return deps
 }
 
 // repo is a tiny helper to declare a repo by name.
@@ -69,13 +68,13 @@ func TestWalkStableOrder(t *testing.T) {
 		return order[r.Name]
 	})
 
-	var out, prog bytes.Buffer
-	errs := walkTo(context.Background(), project, testDeps(4), "testing", fn, &out, &prog)
+	deps := testDeps(t, 4)
+	errs := Walk(context.Background(), project, deps.RuntimeCLI, "testing", fn)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 
-	got := out.String()
+	got := deps.Result()
 	want := []string{lineFor(repo("alpha")), lineFor(repo("bravo")), lineFor(repo("charlie")), lineFor(repo("delta"))}
 	last := -1
 	for _, w := range want {
@@ -100,10 +99,10 @@ func TestWalkSubProjectOrder(t *testing.T) {
 			{Name: "sub", Repos: []domain.Repository{repo("s1")}},
 		},
 	}
-	var out, prog bytes.Buffer
-	walkTo(context.Background(), project, testDeps(2), "testing", echoFunc(nil), &out, &prog)
+	deps := testDeps(t, 2)
+	Walk(context.Background(), project, deps.RuntimeCLI, "testing", echoFunc(nil))
 
-	got := out.String()
+	got := deps.Result()
 	for _, seq := range []string{"root", lineFor(repo("r1")), lineFor(repo("r2")), "sub", lineFor(repo("s1"))} {
 		if !strings.Contains(got, seq) {
 			t.Fatalf("missing %q in output:\n%s", seq, got)
@@ -115,6 +114,38 @@ func TestWalkSubProjectOrder(t *testing.T) {
 	}
 	if strings.Index(got, lineFor(repo("r2"))) > strings.Index(got, lineFor(repo("s1"))) {
 		t.Fatalf("root repos should precede sub repos:\n%s", got)
+	}
+}
+
+// TestWalkUsesDependencyDestinations proves the walker writes where its
+// dependencies say: every rendered line is Result Output, and a non-terminal
+// Diagnostic Output yields the no-op reporter, so no progress or ANSI cursor
+// control can reach a captured run's Result Output.
+func TestWalkUsesDependencyDestinations(t *testing.T) {
+	project := domain.Project{Name: "proj", Repos: []domain.Repository{repo("a"), repo("b")}}
+
+	deps := testDeps(t, 2)
+	Walk(context.Background(), project, deps.RuntimeCLI, "testing", echoFunc(nil))
+
+	for _, want := range []string{lineFor(repo("a")), lineFor(repo("b"))} {
+		if !strings.Contains(deps.Result(), want) {
+			t.Fatalf("Result Output missing %q:\n%s", want, deps.Result())
+		}
+	}
+	if diag := deps.Diagnostic(); diag != "" {
+		t.Fatalf("Diagnostic Output should be silent without a terminal, got:\n%q", diag)
+	}
+
+	single := testDeps(t, 1)
+	if err := Single(context.Background(), project, repo("solo"),
+		single.RuntimeCLI, echoFunc(nil)); err != nil {
+		t.Fatalf("Single: %v", err)
+	}
+	if !strings.Contains(single.Result(), lineFor(repo("solo"))) {
+		t.Fatalf("Single wrote no Result Output:\n%s", single.Result())
+	}
+	if diag := single.Diagnostic(); diag != "" {
+		t.Fatalf("Single wrote Diagnostic Output it should not, got:\n%q", diag)
 	}
 }
 
@@ -134,7 +165,7 @@ func TestWalkNoStall(t *testing.T) {
 	})
 	// Serial sum = 200 + 19*40 = 960ms; pool of 4 should finish well under 600ms.
 	start := time.Now()
-	walkTo(context.Background(), project, testDeps(4), "testing", fn, &bytes.Buffer{}, &bytes.Buffer{})
+	Walk(context.Background(), project, testDeps(t, 4).RuntimeCLI, "testing", fn)
 	if elapsed := time.Since(start); elapsed > 600*time.Millisecond {
 		t.Fatalf("walk stalled: took %s, expected well under serial 960ms", elapsed)
 	}
@@ -144,13 +175,13 @@ func TestWalkNoStall(t *testing.T) {
 // never panics on a modulo or zero-sized pool.
 func TestWalkWorkerClamp(t *testing.T) {
 	project := domain.Project{Name: "proj", Repos: []domain.Repository{repo("a"), repo("b")}}
-	var out bytes.Buffer
-	errs := walkTo(context.Background(), project, testDeps(0), "testing", echoFunc(nil), &out, &bytes.Buffer{})
+	deps := testDeps(t, 0)
+	errs := Walk(context.Background(), project, deps.RuntimeCLI, "testing", echoFunc(nil))
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if !strings.Contains(out.String(), lineFor(repo("a"))) || !strings.Contains(out.String(), lineFor(repo("b"))) {
-		t.Fatalf("clamped walk did not process all repos:\n%s", out.String())
+	if !strings.Contains(deps.Result(), lineFor(repo("a"))) || !strings.Contains(deps.Result(), lineFor(repo("b"))) {
+		t.Fatalf("clamped walk did not process all repos:\n%s", deps.Result())
 	}
 }
 
@@ -171,7 +202,7 @@ func TestWalkErrorAggregation(t *testing.T) {
 			return RepoResult{Line: lineFor(r)}
 		}
 	}
-	errs := walkTo(context.Background(), project, testDeps(2), "testing", fn, &bytes.Buffer{}, &bytes.Buffer{})
+	errs := Walk(context.Background(), project, testDeps(t, 2).RuntimeCLI, "testing", fn)
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 aggregated errors (warning + error), got %d: %v", len(errs), errs)
 	}
@@ -212,9 +243,10 @@ func TestWalkCancellation(t *testing.T) {
 		return RepoResult{Line: lineFor(r)}
 	}
 
+	deps := testDeps(t, 2)
 	done := make(chan []error, 1)
 	go func() {
-		done <- walkTo(ctx, project, testDeps(2), "testing", fn, &bytes.Buffer{}, &bytes.Buffer{})
+		done <- Walk(ctx, project, deps.RuntimeCLI, "testing", fn)
 	}()
 	var errs []error
 	select {
@@ -267,7 +299,8 @@ func TestCollectCancellationError(t *testing.T) {
 		return RepoResult{Line: lineFor(r)}
 	}
 
-	groups, err := collectReport(ctx, project, testDeps(2), "testing", fn, &nopReporter{})
+	deps := testDeps(t, 2)
+	groups, err := collectReport(ctx, project, deps.RuntimeCLI, "testing", fn, &nopReporter{})
 	if err == nil {
 		t.Fatal("Collect after cancellation returned nil error, want interruption")
 	}
@@ -279,7 +312,7 @@ func TestCollectCancellationError(t *testing.T) {
 	}
 
 	// A clean run must stay error-free.
-	groups, err = collectReport(context.Background(), project, testDeps(2), "testing",
+	groups, err = collectReport(context.Background(), project, deps.RuntimeCLI, "testing",
 		echoFunc(nil), &nopReporter{})
 	if err != nil {
 		t.Fatalf("uninterrupted Collect returned %v, want nil", err)
@@ -371,7 +404,7 @@ func TestWalkErrorCount(t *testing.T) {
 	}
 	rep := newLiveReporter(&bytes.Buffer{})
 	// One worker per repo: all failures race to mark errored at once.
-	errs := walkReport(context.Background(), project, testDeps(failures), "testing", fn, &bytes.Buffer{}, rep)
+	errs := walkReport(context.Background(), project, testDeps(t, failures).RuntimeCLI, "testing", fn, rep)
 	if len(errs) != failures {
 		t.Fatalf("aggregated errors = %d, want %d", len(errs), failures)
 	}
@@ -402,7 +435,7 @@ func TestWalkPerRepoTrackers(t *testing.T) {
 		}
 	}
 	rep := &fakeReporter{}
-	walkReport(context.Background(), project, testDeps(2), "testing", fn, &bytes.Buffer{}, rep)
+	walkReport(context.Background(), project, testDeps(t, 2).RuntimeCLI, "testing", fn, rep)
 
 	if rep.repoStarts != 3 {
 		t.Errorf("repoStarts = %d, want 3", rep.repoStarts)
@@ -432,7 +465,8 @@ func TestCollectGroupOrder(t *testing.T) {
 		return RepoResult{Payload: r.Name}
 	}
 
-	groups, err := collectReport(context.Background(), project, testDeps(2), "testing", fn, NewReporter(&bytes.Buffer{}))
+	groups, err := collectReport(context.Background(), project, testDeps(t, 2).RuntimeCLI, "testing", fn,
+		NewReporter(&bytes.Buffer{}))
 	if err != nil {
 		t.Fatalf("unexpected interruption error: %v", err)
 	}
@@ -463,23 +497,22 @@ func TestCollectGroupOrder(t *testing.T) {
 func TestSingle(t *testing.T) {
 	project := domain.Project{Name: "proj", Repos: []domain.Repository{repo("solo")}}
 
-	var out bytes.Buffer
-	err := singleTo(context.Background(), project, repo("solo"), testDeps(1),
-		echoFunc(nil), &out)
+	deps := testDeps(t, 1)
+	err := Single(context.Background(), project, repo("solo"), deps.RuntimeCLI, echoFunc(nil))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out.String(), lineFor(repo("solo"))) {
-		t.Fatalf("missing repo line:\n%s", out.String())
+	if !strings.Contains(deps.Result(), lineFor(repo("solo"))) {
+		t.Fatalf("missing repo line:\n%s", deps.Result())
 	}
-	if strings.Contains(out.String(), "proj") {
-		t.Fatalf("single-repo output must not print the project header:\n%s", out.String())
+	if strings.Contains(deps.Result(), "proj") {
+		t.Fatalf("single-repo output must not print the project header:\n%s", deps.Result())
 	}
 
 	warnFn := func(context.Context, domain.Project, domain.Repository, types.RuntimeCLI) RepoResult {
 		return RepoResult{Line: "warned", Err: types.NewWarning("skip me")}
 	}
-	err = singleTo(context.Background(), project, repo("solo"), testDeps(1), warnFn, &out)
+	err = Single(context.Background(), project, repo("solo"), deps.RuntimeCLI, warnFn)
 	if !types.IsWarning(err) {
 		t.Fatalf("warning not passed through: %v", err)
 	}
@@ -493,7 +526,7 @@ func TestSingleCollect(t *testing.T) {
 		return RepoResult{Payload: r.Name, Err: fmt.Errorf("boom")}
 	}
 
-	groups, err := SingleCollect(context.Background(), project, repo("solo"), testDeps(1), fn)
+	groups, err := SingleCollect(context.Background(), project, repo("solo"), testDeps(t, 1).RuntimeCLI, fn)
 	if err == nil || err.Error() != "boom" {
 		t.Fatalf("err = %v, want boom", err)
 	}

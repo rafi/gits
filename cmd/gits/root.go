@@ -79,12 +79,12 @@ func setupLogger(cfg config.File) {
 	log.WithField("config", cfg.Filename).Debug("Loading config file")
 }
 
-// newRuntime builds the shared runtime dependencies for a command.
-func newRuntime(ctx context.Context) (types.Runtime, error) {
-	gitClient, err := git.NewGit()
-	if err != nil {
-		return types.Runtime{}, err
-	}
+// newRuntime builds the shared runtime dependencies for a command. It cannot
+// fail: nothing here reaches outside the process, and in particular the git
+// client no longer probes for its executable — so a missing git stops the
+// operations that need it, not every command.
+func newRuntime(ctx context.Context) types.Runtime {
+	gitClient := git.NewGit()
 	gitClient.SetNetworkTimeout(configFile.Settings.GitTimeoutDuration())
 	return types.Runtime{
 		Ctx:        ctx,
@@ -93,17 +93,14 @@ func newRuntime(ctx context.Context) (types.Runtime, error) {
 		ConfigPath: configFile.Filename,
 		Git:        &gitClient,
 		Cache:      cache.NewFileCache(configFile.Settings.CacheTTLDuration()),
-	}, nil
+	}
 }
 
 // runWithDeps execute a command with dependencies.
 func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		// Setup runtime dependencies.
-		runtime, err := newRuntime(cmd.Context())
-		if err != nil {
-			return err
-		}
+		runtime := newRuntime(cmd.Context())
 		homeDir, err := homedir.Dir()
 		if err != nil {
 			return err
@@ -119,6 +116,8 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 		cmdErr := f(args, types.RuntimeCLI{
 			Theme:   theme,
 			HomeDir: homeDir,
+			Out:     os.Stdout,
+			Err:     os.Stderr,
 			Runtime: runtime,
 		})
 

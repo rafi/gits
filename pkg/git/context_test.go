@@ -11,10 +11,8 @@ import (
 // cancelled context must abort the operation promptly rather than running to
 // completion or the per-op timeout.
 func TestContextCancellationAbortsOperation(t *testing.T) {
-	g, err := NewGit()
-	if err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
+	requireGit(t)
+	g := NewGit()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before invoking, so the command must not run

@@ -4,14 +4,16 @@ import (
 	"errors"
 	"fmt"
 
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/erikgeiser/promptkit"
-	"github.com/erikgeiser/promptkit/selection"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/types"
 )
+
+// branchPageSize is how many branches the prompt shows at once.
+const branchPageSize = 10
 
 // ExecCheckout display an interactive list of branches that can be checked-out.
 //
@@ -27,7 +29,7 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 	if repo != nil {
 		// Checkout a single repository.
 		err := checkoutRepo(project, *repo, deps)
-		if errors.Is(err, promptkit.ErrAborted) {
+		if errors.Is(err, huh.ErrUserAborted) {
 			return types.NewWarning("checkout aborted")
 		}
 		return err
@@ -36,16 +38,16 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 	// Checkout all project's repositories.
 	errs, _ := checkoutProjectRepos(project, deps)
 	if len(errs) > 0 {
-		return cli.RenderErrors(errs, true)
+		return cli.RenderErrors(deps.Err, errs, true)
 	}
 	return nil
 }
 
 // checkoutProjectRepos walks the project tree prompting per repo. Aborting a
-// prompt (Esc/Ctrl-C) stops the whole traversal instead of forcing the user
-// to dismiss every remaining repository one by one.
+// prompt (Ctrl-C) stops the whole traversal instead of forcing the user to
+// dismiss every remaining repository one by one.
 func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) ([]error, bool) {
-	lipgloss.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
+	lipgloss.Fprintln(deps.Out, cli.ProjectTitleWithBullet(project, deps.Theme))
 
 	errList := make([]error, 0)
 	for _, repo := range project.Repos {
@@ -53,14 +55,14 @@ func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) ([]erro
 		if err == nil {
 			continue
 		}
-		if errors.Is(err, promptkit.ErrAborted) {
+		if errors.Is(err, huh.ErrUserAborted) {
 			return append(errList, types.NewWarning("checkout aborted")), true
 		}
 		errList = append(errList, err)
 	}
 
 	for _, subProject := range project.SubProjects {
-		fmt.Println()
+		fmt.Fprintln(deps.Out)
 		errs, aborted := checkoutProjectRepos(subProject, deps)
 		errList = append(errList, errs...)
 		if aborted {
@@ -74,63 +76,91 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 	repoTitle := cli.RepoTitle(repo, project, deps.HomeDir, deps.Theme).
 		Render()
 
-	// Abort if repository is not cloned or has errors.
+	// Abort if repository is not cloned or has errors. The title names the
+	// repository the message is about, so it joins the message on Diagnostic
+	// Output; AbortOnRepoState terminates the line they share.
 	if repo.State != domain.RepoStateOK {
-		lipgloss.Print(repoTitle)
-		defer fmt.Println()
-		return cli.AbortOnRepoState(repo, deps.Theme.Error)
+		lipgloss.Fprint(deps.Err, repoTitle)
+		return cli.AbortOnRepoState(deps.Err, repo, deps.Theme.Error)
 	}
 
-	branch, err := promptRepo(repoTitle, repo.AbsPath, deps)
+	want, current, err := promptRepo(repoTitle, repo.AbsPath, deps)
 	if err != nil {
-		return err
+		// Name the repository, as the checkout failure below does: in a
+		// project walk these land in a summary that is otherwise anonymous.
+		// The wrap keeps huh.ErrUserAborted matchable by both abort sites.
+		return cli.RepoError(err, repo)
 	}
-	if branch == "" {
+	if want == current {
+		lipgloss.Fprintf(deps.Out, "%s %s\n", repoTitle, current)
 		return nil
 	}
 
-	err = deps.Git.Checkout(deps.Ctx, repo.AbsPath, branch)
+	err = deps.Git.Checkout(deps.Ctx, repo.AbsPath, want)
 	if err != nil {
-		lipgloss.Print(deps.Theme.Error.Render(err.Error()))
+		// Titled and terminated like the two lines above: this used to trail
+		// the prompt's own final line, which no longer exists.
+		lipgloss.Fprintf(deps.Out, "%s %s\n", repoTitle, deps.Theme.Error.Render(err.Error()))
 		return cli.RepoError(err, repo)
 	}
+	lipgloss.Fprintf(deps.Out, "%s %s\n", repoTitle, deps.Theme.GitOutput.Render(
+		fmt.Sprintf("Switched to branch %q", want),
+	))
 	return nil
 }
 
-// promptRepo prompts the user to select a branch to checkout.
-func promptRepo(repoTitle, repoPath string, deps types.RuntimeCLI) (string, error) {
+// promptRepo prompts the user to select a branch to checkout. It returns the
+// selected branch alongside the one already checked out; the two are equal
+// when the selection changes nothing. The prompt itself leaves no trace on
+// screen — the caller reports the outcome, once it knows what it is.
+func promptRepo(repoTitle, repoPath string, deps types.RuntimeCLI) (string, string, error) {
 	current, err := deps.Git.CurrentBranch(deps.Ctx, repoPath)
 	if err != nil {
-		return "", fmt.Errorf("unable to get branch: %w", err)
+		return "", "", fmt.Errorf("unable to get branch: %w", err)
 	}
-
-	ps := fmt.Sprintf("%s [%s]> ", repoTitle, current)
 
 	branches, err := deps.Git.AllBranches(deps.Ctx, repoPath)
 	if err != nil {
-		return "", fmt.Errorf("unable to read branches: %w", err)
+		return "", "", fmt.Errorf("unable to read branches: %w", err)
+	}
+	// An option-less select cannot be submitted, only aborted. Defensive: a
+	// repository with no commits already failed above, in CurrentBranch.
+	if len(branches) == 0 {
+		return "", "", errors.New("repository has no branches")
 	}
 
-	sp := selection.New("", branches)
-	sp.FilterPrompt = ps
-	sp.FilterPlaceholder = "Select branch to checkout"
-	sp.PageSize = 10
-	sp.FinalChoiceStyle = func(choice *selection.Choice[string]) string {
-		s := fmt.Sprintf("%s ", repoTitle)
-		if choice.Value == current {
-			return s + choice.Value
-		}
-		return s + deps.Theme.GitOutput.Render(
-			fmt.Sprintf("Switched to branch %q", choice.Value),
-		)
+	want := current
+	prompt := newBranchPrompt(repoTitle, branches, &want)
+	// Run the field as a form rather than with prompt.Run(), which hides the
+	// help line — it is the only place "/" is advertised as the filter key.
+	//
+	// The form is deliberately not given deps.Ctx, unlike every git call
+	// around it. Bubbletea handles SIGINT itself and reports it as an abort,
+	// which is what an interrupted prompt is; handing it the root context
+	// would reach the same user through huh.ErrTimeout instead.
+	if err := huh.NewForm(huh.NewGroup(prompt)).Run(); err != nil {
+		return "", "", err
 	}
+	return want, current, nil
+}
 
-	want, err := sp.RunPrompt()
-	if err != nil {
-		return "", err
+// newBranchPrompt builds the branch selection. choice is huh's value binding:
+// the caller seeds it with the branch currently checked out — which the prompt
+// opens on, and titles itself with — and it holds the user's pick once the
+// prompt has run.
+func newBranchPrompt(repoTitle string, branches []string, choice *string) *huh.Select[string] {
+	prompt := huh.NewSelect[string]().
+		Title(fmt.Sprintf("%s [%s]", repoTitle, *choice)).
+		Options(huh.NewOptions(branches...)...).
+		Value(choice)
+
+	// Only ask for a height when the list needs paging. huh pads a field out
+	// to the height it is given — blank rows a project-wide walk would repeat
+	// for every repository — whereas an unset height sizes the field to its
+	// options exactly, however the title happens to wrap. The extra row is
+	// that title, which counts against the height.
+	if len(branches) > branchPageSize {
+		prompt = prompt.Height(branchPageSize + 1)
 	}
-	if len(want) > 0 && want != current {
-		return want, nil
-	}
-	return "", nil
+	return prompt
 }

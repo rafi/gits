@@ -10,7 +10,7 @@ import (
 // never be parsed as a git flag. Without `--end-of-options`, `git checkout -f`
 // silently force-checks-out the current branch and returns nil.
 func TestCheckoutRejectsFlagLikeRef(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	if err := g.Checkout(ctx, dir, "-f"); err == nil {
@@ -22,7 +22,7 @@ func TestCheckoutRejectsFlagLikeRef(t *testing.T) {
 // git flag: a "-"-prefixed branch must be treated as a revision (unknown),
 // never as an option.
 func TestDiffRejectsFlagLikeRef(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	if _, _, err := g.Diff(ctx, dir, "--all", "main"); err == nil {

@@ -11,6 +11,7 @@ linters:
     - durationcheck
     - errorlint
     - exhaustive
+    - forbidigo
     - gocheckcompilerdirectives
     - gochecksumtype
     - gosmopolitan
@@ -39,6 +40,19 @@ linters:
   settings:
     exhaustive:
       default-signifies-exhaustive: true
+    # The two output destinations are runtime dependencies on types.RuntimeCLI:
+    # a command's result goes to deps.Out and its diagnostics to deps.Err, so
+    # `gits status | jq` receives only the status document and every command
+    # stays reachable from a test through its real entry point. cmd/gits
+    # constructs the process streams; nothing else names them.
+    forbidigo:
+      forbid:
+        - pattern: ^(fmt|lipgloss)\.Print(f|ln)?$
+          msg: printing goes to a process stream — write the command's result to deps.Out and its diagnostics to deps.Err, which Fprint* takes as its first argument
+        - pattern: ^print(ln)?$
+          msg: printing goes to a process stream — write the command's result to deps.Out and its diagnostics to deps.Err, which Fprint* takes as its first argument
+        - pattern: ^(os\.Std(out|err)|lipgloss\.Writer)$
+          msg: the process streams are constructed in cmd/gits — take deps.Out for a command's result or deps.Err for its diagnostics
   exclusions:
     generated: lax
     presets:
@@ -46,6 +60,24 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      # The command wiring constructs the runtime, so it is where the process
+      # streams are named, and `gits --version` prints before one exists.
+      - linters: [forbidigo]
+        path: ^cmd/gits/
+      # The config loader reports a load failure from cobra's initializer,
+      # before a runtime exists, and sets the colour profile on the global
+      # styled writer for the same reason.
+      - linters: [forbidigo]
+        path: ^internal/cli/config/file\.go$
+      # A test may name a process stream — to pin what the loader does to the
+      # global styled writer, or to hand a subprocess a real terminal. It may
+      # not print: a test that wants output asserts on a buffer. Matched on
+      # the message above rather than on forbidigo's wording, so a reworded
+      # linter fails loudly here instead of quietly widening the exception.
+      - linters: [forbidigo]
+        path: _test\.go$
+        text: the process streams are constructed in cmd/gits
     paths:
       - bin
       - vendor

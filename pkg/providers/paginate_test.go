@@ -12,7 +12,7 @@ func TestPaginate(t *testing.T) {
 
 	t.Run("walks pages until fetchPage reports no more", func(t *testing.T) {
 		pages := []int{}
-		err := paginate(ctx, "things", 0, func(page int) (bool, error) {
+		err := paginate(ctx, "things", constantPause(0), func(page int) (bool, error) {
 			pages = append(pages, page)
 			return page < 3, nil
 		})
@@ -27,7 +27,7 @@ func TestPaginate(t *testing.T) {
 	t.Run("stops on fetch error", func(t *testing.T) {
 		boom := errors.New("boom")
 		calls := 0
-		err := paginate(ctx, "things", 0, func(int) (bool, error) {
+		err := paginate(ctx, "things", constantPause(0), func(int) (bool, error) {
 			calls++
 			return true, boom
 		})
@@ -39,12 +39,33 @@ func TestPaginate(t *testing.T) {
 		}
 	})
 
-	t.Run("cancellation stops between pages, even mid-delay", func(t *testing.T) {
+	// A zero pause skips the select entirely, so cancellation has to be
+	// checked on its own — the providers that pace nothing are the ones with
+	// the most pages to walk.
+	t.Run("cancellation stops between pages with no pause to interrupt", func(t *testing.T) {
 		cancelCtx, cancel := context.WithCancel(ctx)
 		calls := 0
-		err := paginate(cancelCtx, "things", time.Hour, func(int) (bool, error) {
+		// Bounded, so a loop that ignores cancellation ends the test with a
+		// failure rather than spinning until the suite times out.
+		err := paginate(cancelCtx, "things", constantPause(0), func(page int) (bool, error) {
 			calls++
-			cancel() // cancelled while "fetching"; the delay must not block
+			cancel()
+			return page < 10, nil
+		})
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("paginate error = %v, want context.Canceled", err)
+		}
+		if calls != 1 {
+			t.Errorf("calls = %d, want 1 (no page after cancellation)", calls)
+		}
+	})
+
+	t.Run("cancellation stops between pages, even mid-pause", func(t *testing.T) {
+		cancelCtx, cancel := context.WithCancel(ctx)
+		calls := 0
+		err := paginate(cancelCtx, "things", constantPause(time.Hour), func(int) (bool, error) {
+			calls++
+			cancel() // cancelled while "fetching"; the pause must not block
 			return true, nil
 		})
 		if !errors.Is(err, context.Canceled) {
@@ -52,6 +73,47 @@ func TestPaginate(t *testing.T) {
 		}
 		if calls != 1 {
 			t.Errorf("calls = %d, want 1 (no page after cancellation)", calls)
+		}
+	})
+
+	// The pause is asked once per gap between pages, and never after the last
+	// one — a provider that reads its rate-limit budget must not be charged a
+	// wait it will never spend.
+	t.Run("pause is consulted once between pages and not after the last", func(t *testing.T) {
+		asked := 0
+		pause := func() time.Duration {
+			asked++
+			return 0
+		}
+		err := paginate(ctx, "things", pause, func(page int) (bool, error) {
+			return page < 3, nil
+		})
+		if err != nil {
+			t.Fatalf("paginate: %v", err)
+		}
+		if asked != 2 {
+			t.Errorf("pause consulted %d times over 3 pages, want 2", asked)
+		}
+	})
+
+	// The pause is recomputed per page rather than sampled once, so a budget
+	// that degrades mid-walk is reflected on the very next gap.
+	t.Run("pause is recomputed for every gap", func(t *testing.T) {
+		waits := []time.Duration{0, time.Millisecond, 0}
+		asked := 0
+		pause := func() time.Duration {
+			d := waits[asked]
+			asked++
+			return d
+		}
+		err := paginate(ctx, "things", pause, func(page int) (bool, error) {
+			return page < 4, nil
+		})
+		if err != nil {
+			t.Fatalf("paginate: %v", err)
+		}
+		if asked != 3 {
+			t.Errorf("pause consulted %d times over 4 pages, want 3", asked)
 		}
 	})
 }

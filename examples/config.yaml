@@ -15,8 +15,8 @@
 # reserved key: `settings`. Every value in the `settings` block below is set
 # to its built-in default, so this file describes current behavior as-is.
 #
-# Note: provider API tokens are read from the environment only, they have no
-# config key:
+# Note: provider API tokens are configured under `settings` (see below), and
+# fall back to the environment:
 #   GITHUB_TOKEN (or HOMEBREW_GITHUB_API_TOKEN), GITLAB_TOKEN, BITBUCKET_TOKEN
 #
 # Note: color output is a CLI flag (`gits -C auto|always|never`, default
@@ -54,6 +54,25 @@ settings:
 
   # Enable debug logging. The `-v` flag overrides this. Default: false.
   verbose: false
+
+  # Per-provider API credentials. For each provider the first available of
+  # `token`, `tokenCommand` and the provider's environment variables wins.
+  # Both keys are optional; unset here so the environment keeps working.
+  #
+  #   token         Used verbatim. Note this file is plain text.
+  #   tokenCommand  A shell command printing the token on stdout; its first
+  #                 non-empty line is used. Also spelled `token-cmd`. It is
+  #                 run at most once per command per `gits` invocation, so a
+  #                 passphrase prompt appears once no matter how many
+  #                 projects use the provider. A failing command aborts —
+  #                 there is no silent fallback to the environment.
+  #
+  # github:
+  #   tokenCommand: pass tokens/github
+  # gitlab:
+  #   tokenCommand: op read op://private/gitlab/token
+  # bitbucket:
+  #   token: my-user:my-app-password   # username:app-password
 
   # Status icons. Each is a plain string, so you can use any glyph your font
   # supports. Keys you omit keep their built-in glyph, so overriding just one

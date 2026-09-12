@@ -20,8 +20,9 @@ LDFLAGS := (
 )
 
 # Tool requirements, as semver requirements (e.g. "^2", ">=2.12", "*"). A tool
-# already on PATH that satisfies its requirement is used as-is.
-GOLANGCI_VERSION := "^2"
+# already on PATH that satisfies its requirement is used as-is — provided it
+# was also built by the active Go toolchain, see _go_tool_version.
+GOLANGCI_VERSION := ">=2.13.1"
 GOIMPORTS_VERSION := "^0"
 
 [private]
@@ -89,11 +90,21 @@ golangci-lint: (_fetch recipe_name() GOLANGCI_VERSION \
 goimports: (_fetch recipe_name() GOIMPORTS_VERSION \
   "golang.org/x/tools/cmd/goimports")
 
-# Get go tool version.
+# Get go tool version, or a sentinel that satisfies no requirement.
+#
+# A tool built by a Go toolchain other than the active one reports "stale" so
+# it gets reinstalled: golangci-lint type-checks against the stdlib source and
+# dies inside it when the two disagree, which reads as a crash rather than as
+# a version problem. That failure hid a formatting regression on `next` until
+# the linter was reinstalled by hand.
 _go_tool_version bin:
   @go version -m "$(command -v {{ bin }})" 2>/dev/null | \
-    awk '$1 == "mod" { v = substr($3, 2) } \
-         END { print (v ? v : "0.0.0-absent") }'
+    awk -v active="$(go env GOVERSION)" \
+        'NR == 1 { built = $2 } \
+         $1 == "mod" { v = substr($3, 2) } \
+         END { if (built == "") print "0.0.0-absent"; \
+               else if (built != active) print "0.0.0-stale"; \
+               else print (v ? v : "0.0.0-absent") }'
 
 # Install `url@latest` unless `bin` already satisfies requirement `req`.
 _fetch bin req url \

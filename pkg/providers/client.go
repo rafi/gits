@@ -31,20 +31,24 @@ type gitProvider interface {
 	LoadRepos(ctx context.Context, id string, project *domain.Project) error
 }
 
-// Options carries user settings into provider construction. Token falls back
-// to provider-specific environment variables when empty.
+// Options carries user settings into provider construction. When Token is
+// empty, TokenCommand is executed to obtain one; when both are empty, the
+// token falls back to provider-specific environment variables.
 type Options struct {
 	Token           string
+	TokenCommand    string
 	IncludeArchived bool
 	Timeout         time.Duration
 	GitClient       git.GitClient
 }
 
-func NewGitProvider(providerName string, opts Options) (gitProvider, error) {
+func NewGitProvider(ctx context.Context, providerName string, opts Options) (gitProvider, error) {
 	provider := Provider(providerName)
-	if envVars, ok := tokenEnvVarNames[provider]; ok {
-		if opts.Token == "" {
-			opts.Token = getFirstEnvValue(envVars)
+	if _, needsToken := tokenEnvVarNames[provider]; needsToken {
+		var err error
+		opts.Token, err = resolveToken(ctx, provider, opts)
+		if err != nil {
+			return nil, err
 		}
 		if opts.Token == "" {
 			return nil, fmt.Errorf("token is required for %s", provider)
@@ -76,10 +80,12 @@ func HasCache(source *domain.ProviderSource) bool {
 	return source != nil && source.Search != "" && IsRemote(source.Type)
 }
 
+// getFirstEnvValue returns the value of the first key set to a non-empty value,
+// or "" when none of them is.
 func getFirstEnvValue(keys []string) string {
 	for _, key := range keys {
-		if os.Getenv(key) != "" {
-			return os.Getenv(key)
+		if value, ok := os.LookupEnv(key); ok && value != "" {
+			return value
 		}
 	}
 	return ""

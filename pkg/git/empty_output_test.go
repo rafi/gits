@@ -12,10 +12,8 @@ import (
 // 1-element slice holding "") when a repo has no refs. Raw strings.Split on
 // empty output yields [""], an off-by-one for len()-based consumers.
 func TestRefsEmptyRepoReturnsNoRefs(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
-	g, _ := NewGit()
+	requireGit(t)
+	g := NewGit()
 	ctx := context.Background()
 	dir := t.TempDir()
 	if out, err := exec.CommandContext(ctx, "git", "-C", dir, "init", "-b", "main").CombinedOutput(); err != nil {
@@ -33,10 +31,8 @@ func TestRefsEmptyRepoReturnsNoRefs(t *testing.T) {
 // TestCommitDatesOutsideWindowReturnsNone proves CommitDates returns a
 // zero-length slice when no commit falls inside the --since window.
 func TestCommitDatesOutsideWindowReturnsNone(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
-	g, _ := NewGit()
+	requireGit(t)
+	g := NewGit()
 	ctx := context.Background()
 	dir := t.TempDir()
 	base := []string{

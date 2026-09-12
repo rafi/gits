@@ -13,10 +13,8 @@ import (
 // target directory — a later re-run must not see "directory already exists".
 // The ext:: transport blocks the clone deterministically without a network.
 func TestCloneCancellationCleansTarget(t *testing.T) {
-	g, err := NewGit()
-	if err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
+	requireGit(t)
+	g := NewGit()
 	t.Setenv("GIT_ALLOW_PROTOCOL", "ext")
 	target := filepath.Join(t.TempDir(), "cloned")
 
@@ -37,10 +35,8 @@ func TestCloneCancellationCleansTarget(t *testing.T) {
 // from SetNetworkTimeout rather than a hard-coded constant: a hanging clone
 // under a short timeout returns promptly.
 func TestCloneNetworkTimeoutConfigurable(t *testing.T) {
-	g, err := NewGit()
-	if err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
+	requireGit(t)
+	g := NewGit()
 	g.SetNetworkTimeout(300 * time.Millisecond)
 	t.Setenv("GIT_ALLOW_PROTOCOL", "ext")
 	target := filepath.Join(t.TempDir(), "cloned")

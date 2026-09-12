@@ -15,10 +15,7 @@ func TestSnapshotIgnoresStderr(t *testing.T) {
 	dir := setupRepo(t)
 	t.Setenv("GIT_TRACE", "1")
 
-	g, err := NewGit()
-	if err != nil {
-		t.Fatalf("NewGit: %v", err)
-	}
+	g := NewGit()
 	snap, err := g.Snapshot(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
@@ -33,11 +30,8 @@ func TestSnapshotIgnoresStderr(t *testing.T) {
 func TestExecErrorKeepsStderr(t *testing.T) {
 	dir := setupRepo(t)
 
-	g, err := NewGit()
-	if err != nil {
-		t.Fatalf("NewGit: %v", err)
-	}
-	_, err = g.Exec(context.Background(), dir, []string{"log", "no-such-ref"})
+	g := NewGit()
+	_, err := g.Exec(context.Background(), dir, []string{"log", "no-such-ref"})
 	if err == nil {
 		t.Fatal("Exec(log no-such-ref) succeeded, want error")
 	}
@@ -50,10 +44,9 @@ func TestExecErrorKeepsStderr(t *testing.T) {
 // Git.Clone as a matchable sentinel rather than duplicated stat checks in
 // callers.
 func TestCloneTargetExists(t *testing.T) {
-	g, err := NewGit()
-	if err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
+	// No skip guard: the precondition is checked before git is ever invoked,
+	// which is the point of the sentinel.
+	g := NewGit()
 	target := t.TempDir() // exists already
 	if _, err := g.Clone(context.Background(), "unused", target); !errors.Is(err, ErrTargetExists) {
 		t.Errorf("Clone onto existing dir = %v, want ErrTargetExists", err)

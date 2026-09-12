@@ -79,7 +79,7 @@ func (c *gitLabProvider) fetchSubGroups(ctx context.Context, groupID string) ([]
 	opt := &gitlab.ListSubGroupsOptions{ListOptions: gitLabListOptions}
 	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
 	what := fmt.Sprintf("GitLab subgroups from %s", groupID)
-	err := paginate(ctx, what, 0, func(int) (bool, error) {
+	err := paginate(ctx, what, constantPause(0), func(int) (bool, error) {
 		gs, resp, err := c.client.Groups.ListSubGroups(groupID, opt, options...)
 		if err != nil {
 			return false, fmt.Errorf("unable to list subgroups: %w", err)
@@ -112,7 +112,7 @@ func (c *gitLabProvider) fetchGroupProjects(ctx context.Context, groupID string)
 	opt := &gitlab.ListGroupProjectsOptions{ListOptions: gitLabListOptions}
 	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
 	what := fmt.Sprintf("GitLab projects from %s", groupID)
-	err := paginate(ctx, what, 0, func(int) (bool, error) {
+	err := paginate(ctx, what, constantPause(0), func(int) (bool, error) {
 		ps, resp, err := c.client.Groups.ListGroupProjects(groupID, opt, options...)
 		if err != nil {
 			return false, fmt.Errorf("unable to list projects: %w", err)

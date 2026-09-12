@@ -184,6 +184,27 @@ func TestLiveReporterConcurrent(t *testing.T) {
 	<-done
 }
 
+// TestLiveReporterStopIsIdempotent guards the double-close panic: Stop closes
+// r.stop, so a second call must be a no-op rather than close an already-closed
+// channel. A Stop before Start stays a no-op too, and must not spend the guard —
+// the reporter still has to stop for real once it has been started.
+func TestLiveReporterStopIsIdempotent(t *testing.T) {
+	buf := &syncBuffer{}
+	r := newLiveReporter(buf)
+
+	r.Stop() // never started: nothing to stop
+	r.Start("fetching", 1)
+	r.RepoStart("alpha").MarkDone()
+	r.Done()
+
+	r.Stop()
+	before := buf.String()
+	r.Stop() // must not panic on close-of-closed
+	if after := buf.String(); after != before {
+		t.Errorf("second Stop wrote %q, want no further output", after[len(before):])
+	}
+}
+
 // TestLiveReporterRedrawsInPlace is the regression guard for the
 // accumulating-frames bug: an earlier implementation appended each tick instead
 // of overwriting it. The renderer must emit cursor-up rewinds while rows stay

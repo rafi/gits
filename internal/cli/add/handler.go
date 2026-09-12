@@ -60,7 +60,7 @@ func ExecAdd(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
-	fmt.Printf("Added %q repository to project %q\n", nicePath, project.Name)
+	fmt.Fprintf(deps.Out, "Added %q repository to project %q\n", nicePath, project.Name)
 	return nil
 }
 
@@ -78,7 +78,10 @@ func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
 		cwd = filepath.Join(cwd, domain.RepoDirName(remoteURL))
 		output, err := deps.Git.Clone(deps.Ctx, remoteURL, cwd)
 		if err != nil {
-			fmt.Println(output)
+			// git's own account of the failure, which explains the error
+			// returned below rather than being anything the command was
+			// asked for.
+			fmt.Fprintln(deps.Err, output)
 			return "", err
 		}
 	}

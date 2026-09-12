@@ -122,7 +122,7 @@ func SelectProject(deps types.RuntimeCLI) (string, error) {
 	}
 
 	// Run fzf with the sub-command 'list' as preview.
-	finder := fzf.New("--nth=1")
+	finder := fzf.New(deps.Err, "--nth=1")
 	finder.WithPrompt("project> ")
 
 	previewCmd := "gits -C=always --config='%s' list -o tree {1}"
@@ -163,7 +163,7 @@ func SelectRepo(
 	}
 
 	// Run fzf with the hidden sub-command 'repo-overview' as preview.
-	finder := fzf.New()
+	finder := fzf.New(deps.Err)
 	finder.WithPrompt(fmt.Sprintf("[%s] repo> ", project.Name))
 
 	previewCmd := "gits -C=always --config='%s' repo-overview '%s' '%s'{}"
@@ -188,7 +188,7 @@ func SelectBranch(
 ) (string, error) {
 	refs, err := deps.Git.Refs(deps.Ctx, repo.AbsPath)
 	if err != nil {
-		return "", fmt.Errorf("unable to open repo: %w", err)
+		return "", fmt.Errorf("unable to list branches and tags: %w", err)
 	}
 
 	delimiter := "\t"
@@ -207,7 +207,7 @@ func SelectBranch(
 	repoFullName := repo.GetNameWithNamespace()
 
 	// Run fzf with the hidden sub-command 'branch-overview' as preview.
-	finder := fzf.New("--delimiter="+delimiter, "--nth=2")
+	finder := fzf.New(deps.Err, "--delimiter="+delimiter, "--nth=2")
 	finder.WithPrompt(fmt.Sprintf("[%s/%s] branch> ", projName, repoFullName))
 
 	previewCmd := "gits -C=always --config='%s' branch-overview '%s' '%s' {2}"

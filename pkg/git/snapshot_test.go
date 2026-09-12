@@ -25,7 +25,7 @@ func snapshotRun(t *testing.T, dir string, args ...string) {
 // ahead/behind and worktree counts that previously required four separate
 // git invocations.
 func TestSnapshot(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 
 	t.Run("no upstream", func(t *testing.T) {

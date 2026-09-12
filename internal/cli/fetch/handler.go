@@ -29,7 +29,7 @@ func ExecFetch(args []string, deps types.RuntimeCLI) error {
 
 	// Fetch all project repositories through the shared walker.
 	errs := walk.Walk(deps.Ctx, project, deps, "fetching", fn)
-	return cli.RenderErrors(errs, true)
+	return cli.RenderErrors(deps.Err, errs, true)
 }
 
 // fetchRepo returns a walk.RepoFunc that fetches one repository into a
@@ -49,7 +49,7 @@ func fetchRepo(widths cli.TitleWidths) walk.RepoFunc {
 
 		// Abort if repository is not cloned or has errors.
 		if repo.State != domain.RepoStateOK {
-			return walk.LineResult(line, cli.RepoStateWarning(repo))
+			return walk.LineResult(line, cli.RepoStateError(repo))
 		}
 
 		output, err := deps.Git.Fetch(ctx, repo.AbsPath)
