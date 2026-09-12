@@ -25,9 +25,12 @@ const (
 var (
 	commonReleaseBranches  = []string{"master", "main", "dev", "next"}
 	smallNumericCharacters = []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
+
+	// now is a seam so the chart's day axis is deterministic in tests.
+	now = time.Now
 )
 
-// ExecBrowseOverview displays a branch overview.
+// ExecBranchOverview displays a branch overview.
 // Args:
 //   - project name
 //   - repo name
@@ -242,7 +245,7 @@ func renderBranchChart(ctx context.Context, gitClient git.GitClient, repo domain
 		)
 	}
 
-	d := time.Now()
+	d := now()
 	for i := 0; i <= daysAgo; i++ {
 		year, month, day := d.Date()
 		d = time.Date(year, month, day-1, 0, 0, 0, 0, time.UTC)

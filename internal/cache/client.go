@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rafi/gits/domain"
 )
@@ -18,10 +19,10 @@ type Cacher interface {
 	Flush(project domain.Project) error
 }
 
-func NewCacheClient(name string) (Cacher, error) {
+func NewCacheClient(name string, ttl time.Duration) (Cacher, error) {
 	switch Client(name) {
 	case ClientFile:
-		return newCacheFile()
+		return newCacheFile(ttl)
 	default:
 		return nil, fmt.Errorf("unknown cache client: %s", name)
 	}

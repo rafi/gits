@@ -88,7 +88,7 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 		if err != nil {
 			return err
 		}
-		cacheClient, err := cache.NewCacheClient("file")
+		cacheClient, err := cache.NewCacheClient("file", configFile.Settings.CacheTTLDuration())
 		if err != nil {
 			return err
 		}

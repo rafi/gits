@@ -1,12 +1,58 @@
 package domain
 
+import (
+	"time"
+
+	log "github.com/sirupsen/logrus"
+)
+
+// DefaultCacheTTL is the cache lifetime used when settings.cacheTTL is unset or
+// unparseable.
+const DefaultCacheTTL = 7 * 24 * time.Hour
+
+// DefaultProviderTimeout bounds provider HTTP calls when
+// settings.providerTimeout is unset or unparseable.
+const DefaultProviderTimeout = 5 * time.Minute
+
 type Settings struct {
-	Cache       *bool  `json:"cache,omitempty"`
-	Finder      Finder `json:"finder"`
-	Icons       Icons  `json:"icons"`
-	Theme       Theme  `json:"theme"`
-	Verbose     bool   `json:"verbose,omitempty"`
-	WorkerCount int    `json:"workerCount,omitempty"`
+	Cache           *bool  `json:"cache,omitempty"`
+	Finder          Finder `json:"finder"`
+	Icons           Icons  `json:"icons"`
+	Theme           Theme  `json:"theme"`
+	CacheTTL        string `json:"cacheTTL,omitempty"`
+	IncludeArchived bool   `json:"includeArchived,omitempty"`
+	ProviderTimeout string `json:"providerTimeout,omitempty"`
+	Verbose         bool   `json:"verbose,omitempty"`
+	WorkerCount     int    `json:"workerCount,omitempty"`
+}
+
+// ProviderTimeoutDuration returns the parsed providerTimeout setting, or
+// DefaultProviderTimeout when it is empty or cannot be parsed as a Go
+// duration (e.g. "90s").
+func (s Settings) ProviderTimeoutDuration() time.Duration {
+	if s.ProviderTimeout == "" {
+		return DefaultProviderTimeout
+	}
+	d, err := time.ParseDuration(s.ProviderTimeout)
+	if err != nil {
+		log.Warnf("invalid providerTimeout %q, using default: %v", s.ProviderTimeout, err)
+		return DefaultProviderTimeout
+	}
+	return d
+}
+
+// CacheTTLDuration returns the parsed cacheTTL setting, or DefaultCacheTTL when
+// it is empty or cannot be parsed as a Go duration (e.g. "168h").
+func (s Settings) CacheTTLDuration() time.Duration {
+	if s.CacheTTL == "" {
+		return DefaultCacheTTL
+	}
+	d, err := time.ParseDuration(s.CacheTTL)
+	if err != nil {
+		log.Warnf("invalid cacheTTL %q, using default: %v", s.CacheTTL, err)
+		return DefaultCacheTTL
+	}
+	return d
 }
 
 type Finder struct {

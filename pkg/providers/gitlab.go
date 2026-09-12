@@ -3,10 +3,10 @@ package providers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/rafi/gits/domain"
@@ -20,7 +20,8 @@ type gitLabProvider struct {
 	sourceType Provider
 }
 
-func newGitLabProvider(token string) (*gitLabProvider, error) {
+func newGitLabProvider(opts Options) (*gitLabProvider, error) {
+	token := opts.Token
 	var err error
 	provider := &gitLabProvider{sourceType: ProviderGitLab}
 	if token == "" {
@@ -30,7 +31,12 @@ func newGitLabProvider(token string) (*gitLabProvider, error) {
 		return provider, fmt.Errorf("token is required for %s", provider.sourceType)
 	}
 
-	provider.client, err = gitlab.NewClient(token)
+	clientOpts := []gitlab.ClientOptionFunc{}
+	if opts.Timeout > 0 {
+		clientOpts = append(clientOpts,
+			gitlab.WithHTTPClient(&http.Client{Timeout: opts.Timeout}))
+	}
+	provider.client, err = gitlab.NewClient(token, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create gitlab client: %w", err)
 	}
@@ -76,14 +82,11 @@ func (c *gitLabProvider) fetchSubGroups(ctx context.Context, groupID string) ([]
 	groups := []domain.Project{}
 	opt := &gitlab.ListSubGroupsOptions{ListOptions: gitLabListOptions}
 	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
-	pageNum := 0
-	for {
-		pageNum++
-		log.Infof("Fetching GitLab subgroups from %s (%d)…", groupID, pageNum)
-
+	what := fmt.Sprintf("GitLab subgroups from %s", groupID)
+	err := paginate(ctx, what, 0, func(int) (bool, error) {
 		gs, resp, err := c.client.Groups.ListSubGroups(groupID, opt, options...)
 		if err != nil {
-			return nil, fmt.Errorf("unable to list subgroups: %w", err)
+			return false, fmt.Errorf("unable to list subgroups: %w", err)
 		}
 
 		for _, g := range gs {
@@ -93,15 +96,18 @@ func (c *gitLabProvider) fetchSubGroups(ctx context.Context, groupID string) ([]
 			})
 		}
 		if resp.NextLink == "" {
-			break
+			return false, nil
 		}
 
 		options = []gitlab.RequestOptionFunc{
 			gitlab.WithContext(ctx),
 			gitlab.WithKeysetPaginationParameters(resp.NextLink),
 		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
 	return groups, nil
 }
 
@@ -109,16 +115,13 @@ func (c *gitLabProvider) fetchGroupProjects(ctx context.Context, groupID string)
 	projects := []domain.Repository{}
 	opt := &gitlab.ListGroupProjectsOptions{ListOptions: gitLabListOptions}
 	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
-	pageNum := 0
-	for {
-		pageNum++
-		log.Infof("Fetching GitLab projects from %s (%d)…", groupID, pageNum)
+	what := fmt.Sprintf("GitLab projects from %s", groupID)
+	err := paginate(ctx, what, 0, func(int) (bool, error) {
 		ps, resp, err := c.client.Groups.ListGroupProjects(groupID, opt, options...)
 		if err != nil {
-			return nil, fmt.Errorf("unable to list projects: %w", err)
+			return false, fmt.Errorf("unable to list projects: %w", err)
 		}
 
-		// List all the projects we've found so far.
 		for _, p := range ps {
 			if p.Archived || p.EmptyRepo {
 				continue
@@ -133,14 +136,17 @@ func (c *gitLabProvider) fetchGroupProjects(ctx context.Context, groupID string)
 			})
 		}
 		if resp.NextLink == "" {
-			break
+			return false, nil
 		}
 
 		options = []gitlab.RequestOptionFunc{
 			gitlab.WithContext(ctx),
 			gitlab.WithKeysetPaginationParameters(resp.NextLink),
 		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
 	return projects, nil
 }
