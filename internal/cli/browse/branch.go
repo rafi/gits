@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -68,7 +68,7 @@ func renderBranchOverview(
 		return fmt.Errorf("unable to get remotes: %w", err)
 	}
 
-	width := previewWidth()
+	width := previewWidth(deps)
 	if width == 0 {
 		width = 80
 	}
@@ -102,7 +102,7 @@ func renderBranchOverview(
 	// Render commits per day panelRight.
 	panelRight, err := renderBranchChart(deps.Ctx, deps.Git, repo, current, chartWidth)
 	if err != nil {
-		log.Warnf("unable to render chart: %s", err)
+		logging.Or(deps.Log).WarnContext(deps.Ctx, "unable to render chart", "err", err)
 	}
 
 	// Document
@@ -137,7 +137,8 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 	doc := strings.Builder{}
 	refs, err := deps.Git.RemoteBranches(deps.Ctx, repoPath)
 	if err != nil {
-		log.Warnf("unable to list remote branches: %s", err)
+		logging.Or(deps.Log).WarnContext(deps.Ctx,
+			"unable to list remote branches", "path", repoPath, "err", err)
 	}
 	existing := make(map[string]bool, len(refs))
 	for _, ref := range refs {
@@ -166,24 +167,7 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 	for _, fullName := range names {
 		remoteName := branches[fullName]
 		ahead, behind, err := deps.Git.Diff(deps.Ctx, repoPath, subjectBranch, fullName)
-
-		state := ""
-		if err != nil {
-			// Best-effort: one failed comparison marks its own row N/A
-			// instead of blanking the whole panel.
-			state = deps.Settings.Icons.NA
-		} else if ahead == 0 && behind == 0 {
-			state = "✓"
-		}
-		if ahead > 0 {
-			state = fmt.Sprintf("▲%d", ahead)
-		}
-		if behind > 0 {
-			if len(state) > 0 {
-				state += " "
-			}
-			state = fmt.Sprintf("%s▼%d", state, behind)
-		}
+		state := branchDiffState(ahead, behind, err, deps.Settings.Icons.NA)
 		branchName := strings.TrimPrefix(fullName, remoteName+"/")
 
 		fmt.Fprintf(&doc, "%s %s/%s\n",
@@ -195,8 +179,32 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 	return doc.String()
 }
 
+// branchDiffState renders one comparison's cell: the ahead and behind counts
+// when they are known, a check mark when the branches agree, and the N/A icon
+// when the comparison failed — best-effort, so one failed comparison marks
+// its own row instead of blanking the whole panel.
+func branchDiffState(ahead, behind int, err error, naIcon string) string {
+	if err != nil {
+		return naIcon
+	}
+	if ahead == 0 && behind == 0 {
+		return "✓"
+	}
+	state := ""
+	if ahead > 0 {
+		state = fmt.Sprintf("▲%d", ahead)
+	}
+	if behind > 0 {
+		if state != "" {
+			state += " "
+		}
+		state = fmt.Sprintf("%s▼%d", state, behind)
+	}
+	return state
+}
+
 // renderBranchChart draws a chart of commits per day.
-func renderBranchChart(ctx context.Context, gitClient git.Client, repo domain.Repository, branch string, width int) (string, error) {
+func renderBranchChart(ctx context.Context, gitClient git.Reader, repo domain.Repository, branch string, width int) (string, error) {
 	commits, err := gitClient.CommitDates(ctx, repo.AbsPath, branch, daysAgo)
 	if err != nil {
 		return "", fmt.Errorf("unable to get commit dates: %w", err)

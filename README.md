@@ -38,8 +38,12 @@ brew install rafi/tap/gits
 Or install `gits` with Go:
 
 ```bash
-go install github.com/rafi/gits
+go install github.com/rafi/gits/cmd/gits@latest
 ```
+
+`gits` shells out to `git` for repository state. The `Version` column of
+`gits status` reads a tag description that needs git ≥ 2.32 (2021); an older
+git leaves that one column blank and everything else works.
 
 ## Upgrading
 
@@ -97,6 +101,19 @@ exit to catch a branch whose upstream was deleted — which stops firing. Ask
 for the state directly instead: `gits status acme` marks a gone upstream with
 `⊘`, and `gits status -o json acme` reports it under the repository's
 `upstream` object as `"tracked": false`.
+
+### v1.0.0 — an unknown project name exits non-zero
+
+Naming a project that does not exist — a typo, or one that has been removed
+from the config — used to print a warning and exit 0. It is now a real
+failure: `gits status typo`, `gits pull typo`, `gits status -o json typo` and
+every other command exit non-zero and name the project on stderr.
+
+What needs action is a script that relied on the old exit 0 for a missing
+project. Cancelling an interactive project prompt is still not a failure, and
+per-repository conditions still follow the existing rules — the JSON form of a
+Bulk Command still exits zero when only a repository, not the project itself,
+is at fault.
 
 ## Usage
 
@@ -285,7 +302,8 @@ settings:
                    # syntax (e.g. "24h", "30m"). Default: 168h (7 days).
                    # Invalid or empty values fall back to the default.
   workerCount: 8   # Concurrent git workers. Default: max(NumCPU, 2).
-  verbose: false   # Enable debug logging.
+  verbose: false   # Trace what gits did on the way to an answer — provider
+                   # pages, cache hits, git's stderr — to stderr. Same as -v.
   includeArchived: false  # Include archived repositories when listing
                           # from providers (GitHub, GitLab). Default: false.
                           # Bitbucket Cloud has no archived flag, so the
@@ -295,6 +313,12 @@ settings:
   gitTimeout: 5m          # Timeout for network git operations
                           # (clone/fetch/pull). Go duration syntax.
                           # Default: 5m.
+  finder:                 # Interactive selector overrides. gits shells out
+                          # to fzf; override to use a drop-in replacement or
+                          # tune the invocation.
+    binary: fzf           #   Executable to run. Must be on PATH.
+    # args: [...]         #   Replaces the built-in default options wholesale.
+    # extra: [...]        #   Appended after args, adding options.
 ```
 
 #### Provider tokens

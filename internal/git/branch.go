@@ -15,7 +15,7 @@ func (g *Git) Branches(ctx context.Context, path string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"for-each-ref", "--format=%(refname:short)", "refs/heads"}
+	args := []string{cmdForEachRef, "--format=%(refname:short)", refsHeads}
 	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list branches: %w", err)
@@ -32,7 +32,7 @@ func (g *Git) AllBranches(ctx context.Context, path string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"}
+	args := []string{cmdForEachRef, "--format=%(refname)", refsHeads, "refs/remotes"}
 	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list branches: %w", err)
@@ -51,7 +51,7 @@ func (g *Git) AllBranches(ctx context.Context, path string) ([]string, error) {
 			// Remote names cannot contain "/", so everything after the first
 			// separator is the branch name.
 			_, name, _ = strings.Cut(rest, "/")
-			if name == "" || name == "HEAD" {
+			if name == "" || name == detachedBranch {
 				continue
 			}
 		}
@@ -95,7 +95,7 @@ func (g *Git) RemoteBranches(ctx context.Context, path string) ([]string, error)
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"for-each-ref", "--format=%(refname)", "refs/remotes"}
+	args := []string{cmdForEachRef, "--format=%(refname)", "refs/remotes"}
 	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list remote branches: %w", err)
@@ -160,7 +160,7 @@ func (g *Git) FallbackRef(ctx context.Context, path, branch string) string {
 // killing git mid-checkout risks a corrupted tree — the caller context still
 // cancels it (gracefully) on Ctrl-C.
 func (g *Git) Checkout(ctx context.Context, path, branch string) error {
-	args := []string{"checkout", "--end-of-options", branch}
+	args := []string{"checkout", argEndOfOptions, branch}
 	// Exec already folds git's stderr into err, so the output is not repeated.
 	if _, err := g.Exec(ctx, path, args); err != nil {
 		return fmt.Errorf("unable to checkout %s: %w", branch, err)

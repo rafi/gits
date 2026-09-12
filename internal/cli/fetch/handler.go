@@ -17,22 +17,24 @@ import (
 //   - project name
 //   - repo or sub-project name
 func ExecFetch(args []string, deps types.RuntimeCLI) error {
-	return bulk.Command[string]{
-		Verb:   "fetching",
-		Body:   fetchRepo,
-		Render: bulk.Lines,
+	res, err := bulk.Command[string]{
+		Verb: "fetching",
+		Body: fetchRepo,
 	}.Run(args, deps)
+	if err != nil {
+		return err
+	}
+	return bulk.Lines(res, deps)
 }
 
-// fetchRepo fetches one repository and returns its result line's body: safe to
-// call concurrently and never writes to a destination.
+// fetchRepo fetches one repository and returns its result line's body.
 func fetchRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
 	output, err := deps.Git.Fetch(ctx, repo.AbsPath)
 	if err != nil {
 		return "", err
 	}
 	body := deps.Theme.GitOutput.Render(output)
-	if repoPath := cli.Path(repo.AbsPath, deps.HomeDir); repo.Title.Value() != repoPath {
+	if repoPath := cli.Path(repo.AbsPath, deps.HomeDir); repo.Path != repoPath {
 		body = fmt.Sprintf("%s %s", repoPath, body)
 	}
 	return body, nil

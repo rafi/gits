@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,8 +53,6 @@ func (g execGit) Snapshot(_ context.Context, path string) (git.Snapshot, error) 
 	return git.Snapshot{Branch: "main", Tracking: true}, nil
 }
 
-func (execGit) Describe(context.Context, string) (string, error) { return "v1.0.0", nil }
-
 // FallbackRef answers with the fixture's ref, reached only for a snapshot whose
 // Upstream does not resolve — none configured, or a Gone one.
 func (g execGit) FallbackRef(context.Context, string, string) string { return g.fallback }
@@ -64,9 +63,77 @@ func (g execGit) Diff(context.Context, string, string, string) (int, int, error)
 }
 
 // HeadInfo names the repository in the commit subject, so an assertion can tell
-// which repository's row it is reading.
+// which repository's row it is reading, and carries a fixed describe string so
+// the version column has something to render.
 func (execGit) HeadInfo(_ context.Context, path string) (git.Head, error) {
-	return git.Head{Hash: "abc1234", Subject: "Add " + filepath.Base(path)}, nil
+	return git.Head{Hash: "abc1234", Subject: "Add " + filepath.Base(path), Describe: "v1.0.0"}, nil
+}
+
+// countingGit records every git method the status probe reaches, so a test can
+// assert on the subprocess budget rather than trust the reading of the code.
+// It answers the clean, tracking path: one Snapshot and one HeadInfo per
+// repository, and nothing else.
+type countingGit struct {
+	clitest.FakeGit
+
+	mu    sync.Mutex
+	calls map[string]int
+}
+
+func (g *countingGit) record(name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.calls == nil {
+		g.calls = map[string]int{}
+	}
+	g.calls[name]++
+}
+
+func (g *countingGit) Snapshot(context.Context, string) (git.Snapshot, error) {
+	g.record("Snapshot")
+	return git.Snapshot{Branch: "main", Tracking: true}, nil
+}
+
+func (g *countingGit) HeadInfo(context.Context, string) (git.Head, error) {
+	g.record("HeadInfo")
+	return git.Head{Hash: "abc1234", Subject: "commit", Describe: "v1.0.0"}, nil
+}
+
+// total returns the number of git calls recorded across all methods.
+func (g *countingGit) total() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	sum := 0
+	for _, n := range g.calls {
+		sum += n
+	}
+	return sum
+}
+
+// TestExecStatusSubprocessBudget pins the per-repository git cost: `status` over
+// N clean repositories with tracking upstreams issues exactly 2N git calls —
+// one Snapshot and one HeadInfo each — with no Describe, FallbackRef or Diff
+// reached. The fake panics on any other method, so an unbudgeted call fails the
+// test rather than passing quietly.
+func TestExecStatusSubprocessBudget(t *testing.T) {
+	t.Parallel()
+
+	const n = 3
+	g := &countingGit{}
+	deps := clitest.New(t, g).
+		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"), clitest.Cloned("lib"))
+
+	if err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecStatus error = %v, want nil", err)
+	}
+
+	if got := g.total(); got != 2*n {
+		t.Errorf("git calls = %d (%v), want %d — one Snapshot and one HeadInfo per repository",
+			got, g.calls, 2*n)
+	}
+	if g.calls["Snapshot"] != n || g.calls["HeadInfo"] != n {
+		t.Errorf("call log = %v, want %d Snapshot and %d HeadInfo", g.calls, n, n)
+	}
 }
 
 // TestExecStatusSplitsOutput is the piping guarantee: the status table is
@@ -84,7 +151,7 @@ func TestExecStatusSplitsOutput(t *testing.T) {
 	}
 
 	result := deps.Result()
-	for _, want := range []string{":: acme", "Repo", "Branch", "Message",
+	for _, want := range []string{"Repo", "Branch", "Message",
 		"api", "web", "Add api", "main"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("Result Output = %q, want it to contain %q", result, want)
@@ -98,7 +165,7 @@ func TestExecStatusSplitsOutput(t *testing.T) {
 	if !strings.Contains(diagnostic, "○ Showing 2 repos") {
 		t.Errorf("Diagnostic Output = %q, want the summary footer", diagnostic)
 	}
-	for _, banned := range []string{"api", "web", "Branch", ":: acme"} {
+	for _, banned := range []string{"api", "web", "Branch", "acme"} {
 		if strings.Contains(diagnostic, banned) {
 			t.Errorf("Diagnostic Output = %q, want no part of the table (%q)",
 				diagnostic, banned)
@@ -107,8 +174,8 @@ func TestExecStatusSplitsOutput(t *testing.T) {
 }
 
 // TestExecStatusSingleRepo covers `gits status acme api`: the second argument
-// selects one repository, and only that one is probed and rendered — as a
-// one-row table without the project title the whole-project path prints.
+// selects one repository, and only that one is probed and rendered as a
+// one-row table.
 func TestExecStatusSingleRepo(t *testing.T) {
 	t.Parallel()
 
@@ -123,10 +190,8 @@ func TestExecStatusSingleRepo(t *testing.T) {
 	if !strings.Contains(result, "api") || !strings.Contains(result, "Add api") {
 		t.Errorf("Result Output = %q, want the selected repository's row", result)
 	}
-	for _, banned := range []string{"web", ":: acme"} {
-		if strings.Contains(result, banned) {
-			t.Errorf("Result Output = %q, want nothing about %q", result, banned)
-		}
+	if strings.Contains(result, "web") {
+		t.Errorf("Result Output = %q, want nothing about the other repository", result)
 	}
 	if got := deps.Diagnostic(); !strings.Contains(got, "○ Showing 1 repo") {
 		t.Errorf("Diagnostic Output = %q, want a one-repository footer", got)
@@ -135,8 +200,7 @@ func TestExecStatusSingleRepo(t *testing.T) {
 
 // TestExecStatusSingleRepoState covers `gits status acme gone` on a repository
 // that is not cloned: the row explains itself with the Reason the state was
-// classified for, and the command returns that one repository's error rather
-// than the run's summary.
+// classified for, the epilogue names the repository, and the run fails.
 func TestExecStatusSingleRepoState(t *testing.T) {
 	t.Parallel()
 
@@ -147,8 +211,9 @@ func TestExecStatusSingleRepoState(t *testing.T) {
 	if err == nil {
 		t.Fatal("ExecStatus error = nil, want the unusable repository to fail")
 	}
-	if !strings.Contains(err.Error(), "not cloned") {
-		t.Errorf("ExecStatus error = %v, want the repository's own condition", err)
+	if got := deps.Diagnostic(); !strings.Contains(got, "1 error:") ||
+		!strings.Contains(got, "gone") || !strings.Contains(got, "not cloned") {
+		t.Errorf("Diagnostic Output = %q, want the epilogue naming the repository's condition", got)
 	}
 	if got := deps.Result(); !strings.Contains(got, "gone") ||
 		!strings.Contains(got, "not cloned") {
@@ -456,6 +521,37 @@ func TestExecStatusJSONGoneUpstreamStillMeasured(t *testing.T) {
 	}
 }
 
+// TestExecStatusUnknownProject covers naming a project that does not exist:
+// it is a real failure, not a downgradeable warning, so a script can tell a
+// typo from success. The error names the project and nothing is rendered.
+func TestExecStatusUnknownProject(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"table", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+
+			deps := clitest.New(t, execGit{}).
+				WithProject("acme", clitest.Cloned("api"))
+
+			err := ExecStatus(format, Options{}, []string{"typo"}, deps.RuntimeCLI)
+			if err == nil {
+				t.Fatalf("ExecStatus(%q, typo) = nil, want a real error", format)
+			}
+			if types.IsWarning(err) {
+				t.Errorf("ExecStatus(%q, typo) error = %v, want a real error not a warning",
+					format, err)
+			}
+			if !strings.Contains(err.Error(), "typo") {
+				t.Errorf("ExecStatus(%q, typo) error = %v, want it to name the project", format, err)
+			}
+			if got := deps.Result(); got != "" {
+				t.Errorf("Result Output = %q, want nothing rendered", got)
+			}
+		})
+	}
+}
+
 // TestExecStatusUnknownFormat covers a format other than table or json being
 // rejected before anything is loaded. The project's Provider Source is invalid,
 // so a load would fail with its own error — the format error arriving instead is
@@ -609,12 +705,13 @@ func TestExecStatusProbeFailure(t *testing.T) {
 	}
 }
 
-// fakeGit stubs the status-relevant git.Client methods. Status talks only to the
-// interface, so even the clean path is exercisable here.
+// fakeGit stubs the status-relevant git.Reader methods. Status only reads, so
+// the fake is a Reader plus refusing writes; even the clean path is
+// exercisable here.
 type fakeGit struct {
-	git.Client
+	git.Reader
+	clitest.FakeNoWrites
 
-	describe       string
 	snap           git.Snapshot
 	snapErr        error
 	workingDiff    git.DiffStat
@@ -625,10 +722,6 @@ type fakeGit struct {
 	diffErr        error
 	head           git.Head
 	headErr        error
-}
-
-func (f fakeGit) Describe(context.Context, string) (string, error) {
-	return f.describe, nil
 }
 
 func (f fakeGit) Snapshot(context.Context, string) (git.Snapshot, error) {
@@ -660,8 +753,8 @@ func statusDeps(t *testing.T, g git.Client) types.RuntimeCLI {
 }
 
 // probe drives statusRepo for one repository, assembling the bundled argument
-// the module hands a body: the repository, its owning project and the title
-// the module measured.
+// the module hands a body: the repository, its owning project and its display
+// path.
 func probe(
 	t *testing.T,
 	deps types.RuntimeCLI,
@@ -673,12 +766,12 @@ func probe(
 	return statusRepo(opts)(t.Context(), bulk.Repo{
 		Repository: repo,
 		Project:    project,
-		Title:      cli.RepoTitle(repo, project, deps.HomeDir, deps.Theme),
+		Path:       cli.RepoRelPath(project, repo, deps.HomeDir),
 	}, deps)
 }
 
 // TestStatusRepoProbeError: a failure reading the work tree surfaces as a
-// counted error with the reason in the row message.
+// counted error, carried on the row for its message cell.
 func TestStatusRepoProbeError(t *testing.T) {
 	t.Parallel()
 
@@ -690,8 +783,8 @@ func TestStatusRepoProbeError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when reading the work tree fails")
 	}
-	if st.message != "boom" {
-		t.Errorf("message = %q, want %q", st.message, "boom")
+	if st.err == nil || st.err.Error() != "boom" {
+		t.Errorf("err = %v, want %q", st.err, "boom")
 	}
 	if cli.RenderErrors(io.Discard, []error{err}, true) == nil {
 		t.Fatal("work-tree failure should count as a real error")
@@ -705,7 +798,6 @@ func TestStatusRepoDirty(t *testing.T) {
 
 	when := time.Now().Add(-2 * time.Hour)
 	deps := statusDeps(t, fakeGit{
-		describe: "v1.2.3",
 		snap: git.Snapshot{
 			Branch:   "main",
 			Tracking: true,
@@ -713,7 +805,7 @@ func TestStatusRepoDirty(t *testing.T) {
 			Behind:   1,
 			WorkTree: git.WorkTree{Staged: 1, Unstaged: 122, Untracked: 4567},
 		},
-		head: git.Head{Hash: "abc12345", Subject: "Add feature", Time: when},
+		head: git.Head{Hash: "abc12345", Subject: "Add feature", Time: when, Describe: "v1.2.3"},
 	})
 	repo := domain.Repository{Name: "acme", Dir: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
@@ -722,20 +814,20 @@ func TestStatusRepoDirty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if st.staged != 1 || st.unstaged != 122 || st.untracked != 4567 {
+	if st.Staged != 1 || st.Unstaged != 122 || st.Untracked != 4567 {
 		t.Errorf("work tree = %d/%d/%d, want 1/122/4567",
-			st.staged, st.unstaged, st.untracked)
+			st.Staged, st.Unstaged, st.Untracked)
 	}
-	if st.ahead != 3 || st.behind != 1 || st.noUpstream {
-		t.Errorf("divergence = %d/%d noUpstream=%v, want 3/1 false",
-			st.ahead, st.behind, st.noUpstream)
+	if st.Ahead != 3 || st.Behind != 1 || !st.compared {
+		t.Errorf("divergence = %d/%d compared=%v, want 3/1 true",
+			st.Ahead, st.Behind, st.compared)
 	}
 	if !st.changed() {
 		t.Error("changed() = false for a dirty work tree")
 	}
-	if st.branch != "main" || st.version != "v1.2.3" ||
-		st.commit != "abc12345" || st.message != "Add feature" {
-		t.Errorf("metadata = %q %q %q %q", st.branch, st.version, st.commit, st.message)
+	if st.Branch != "main" || st.version != "v1.2.3" ||
+		st.head.Hash != "abc12345" || st.head.Subject != "Add feature" {
+		t.Errorf("metadata = %q %q %+v", st.Branch, st.version, st.head)
 	}
 }
 
@@ -745,9 +837,8 @@ func TestStatusRepoClean(t *testing.T) {
 	t.Parallel()
 
 	deps := statusDeps(t, fakeGit{
-		describe: "v1.2.3",
-		snap:     git.Snapshot{Branch: "main", Tracking: true},
-		head:     git.Head{Hash: "abc12345", Subject: "Initial commit", Time: time.Now()},
+		snap: git.Snapshot{Branch: "main", Tracking: true},
+		head: git.Head{Hash: "abc12345", Subject: "Initial commit", Time: time.Now()},
 	})
 	repo := domain.Repository{Name: "acme", Dir: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateOK}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
@@ -756,11 +847,11 @@ func TestStatusRepoClean(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if st.changed() || st.ahead != 0 || st.behind != 0 || st.err != nil {
+	if st.changed() || st.Ahead != 0 || st.Behind != 0 || st.err != nil {
 		t.Errorf("expected clean status, got %+v", st)
 	}
-	if st.title != "acme" {
-		t.Errorf("title = %q, want %q", st.title, "acme")
+	if st.repo.Path != "acme" {
+		t.Errorf("path = %q, want %q", st.repo.Path, "acme")
 	}
 }
 
@@ -777,25 +868,24 @@ func TestStatusRepoStat(t *testing.T) {
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
 	st, _ := probe(t, statusDeps(t, fake), Options{Stat: true}, project, repo)
-	if st.added != 27 || st.deleted != 8 {
-		t.Errorf("line diffs = +%d -%d, want +27 -8", st.added, st.deleted)
+	if st.stat == nil || st.stat.Added != 27 || st.stat.Deleted != 8 {
+		t.Errorf("line diffs = %+v, want +27 -8", st.stat)
 	}
 
 	st, _ = probe(t, statusDeps(t, fake), Options{}, project, repo)
-	if st.added != 0 || st.deleted != 0 {
-		t.Errorf("line diffs probed without --stat: +%d -%d", st.added, st.deleted)
+	if st.stat != nil {
+		t.Errorf("line diffs probed without --stat: %+v", st.stat)
 	}
 
 	fake.workingDiffErr = errors.New("unborn HEAD")
 	st, err := probe(t, statusDeps(t, fake), Options{Stat: true}, project, repo)
-	if err != nil || st.added != 0 || st.deleted != 0 {
-		t.Errorf("diff probe failure should be tolerated, got err=%v +%d -%d",
-			err, st.added, st.deleted)
+	if err != nil || st.stat != nil {
+		t.Errorf("diff probe failure should be tolerated, got err=%v %+v", err, st.stat)
 	}
 }
 
-// TestStatusRepoNoUpstream: a diff failure flags noUpstream instead of failing
-// the row.
+// TestStatusRepoNoUpstream: a diff failure leaves the row uncompared instead
+// of failing it.
 func TestStatusRepoNoUpstream(t *testing.T) {
 	t.Parallel()
 
@@ -811,8 +901,8 @@ func TestStatusRepoNoUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if !st.noUpstream {
-		t.Error("expected noUpstream to be set when diff fails")
+	if st.compared {
+		t.Error("expected the row uncompared when the diff fails")
 	}
 }
 
@@ -835,9 +925,9 @@ func TestStatusRepoFallbackRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if st.noUpstream || st.ahead != 2 || st.behind != 1 {
-		t.Errorf("fallback divergence = %d/%d noUpstream=%v, want 2/1 false",
-			st.ahead, st.behind, st.noUpstream)
+	if !st.compared || st.Ahead != 2 || st.Behind != 1 {
+		t.Errorf("fallback divergence = %d/%d compared=%v, want 2/1 true",
+			st.Ahead, st.Behind, st.compared)
 	}
 }
 
@@ -851,7 +941,7 @@ func TestStatusRepoNoRemoteBranch(t *testing.T) {
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
 	st, _ := probe(t, deps, Options{}, project, repo)
-	if !st.noUpstream {
-		t.Error("expected noUpstream when no remote has the branch")
+	if st.compared {
+		t.Error("expected the row uncompared when no remote has the branch")
 	}
 }

@@ -46,24 +46,17 @@ func TestNewReporterNonTTYReturnsNop(t *testing.T) {
 }
 
 // TestNopReporterLifecycle exercises the full reporter call sequence against the
-// no-op implementation, including per-repo trackers: it must accept Start, a
-// RepoStart with its tracker driven and marked, Done×total and a draining
-// Stop without blocking or panicking.
+// no-op implementation: it must accept Begin, a Start per repo with its finish
+// called either way, and a draining Stop without blocking or panicking.
 func TestNopReporterLifecycle(t *testing.T) {
 	t.Parallel()
 
 	const total = 5
 	var r reporter = &nopReporter{}
 
-	r.Start("fetching", total)
+	r.Begin("fetching", total)
 	for i := range total {
-		rt := r.RepoStart("repo")
-		if i%2 == 0 {
-			rt.MarkDone()
-		} else {
-			rt.MarkErrored()
-		}
-		r.Done()
+		r.Start("repo")(i%2 == 1)
 	}
 
 	done := make(chan struct{})
@@ -155,15 +148,13 @@ func TestBarPercentStartsAtOne(t *testing.T) {
 	}
 }
 
-// TestReporterSatisfiedByImpls is a compile-time guard that both reporters and
-// both repo-tracker implementations satisfy their interfaces.
+// TestReporterSatisfiedByImpls is a compile-time guard that both reporters
+// satisfy the interface.
 func TestReporterSatisfiedByImpls(t *testing.T) {
 	t.Parallel()
 
 	var _ reporter = (*nopReporter)(nil)
 	var _ reporter = (*liveReporter)(nil)
-	var _ repoTracker = (*nopRepoTracker)(nil)
-	var _ repoTracker = (*liveRepoTracker)(nil)
 }
 
 // TestLiveReporterConcurrent drives the real live reporter from several
@@ -174,23 +165,22 @@ func TestLiveReporterConcurrent(t *testing.T) {
 
 	const repos = 8
 	r := newLiveReporter(&bytes.Buffer{})
-	r.Start("fetching", repos)
+	r.Begin("fetching", repos)
 
 	var wg sync.WaitGroup
 	for i := range repos {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			rt := r.RepoStart("repo")
-			if i%3 == 0 {
-				rt.MarkErrored()
-			} else {
-				rt.MarkDone()
-			}
-			r.Done()
-		}(i)
+		wg.Go(func() {
+			r.Start("repo")(i%3 == 0)
+		})
 	}
 	wg.Wait()
+
+	r.mu.Lock()
+	finished, failed, live := r.doneCnt, r.errs, len(r.rows)
+	r.mu.Unlock()
+	if finished != repos || failed != 3 || live != 0 {
+		t.Errorf("done/failed/live = %d/%d/%d, want %d/3/0", finished, failed, live, repos)
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -211,9 +201,8 @@ func TestLiveReporterStopIsIdempotent(t *testing.T) {
 	r := newLiveReporter(buf)
 
 	r.Stop() // never started: nothing to stop
-	r.Start("fetching", 1)
-	r.RepoStart("alpha").MarkDone()
-	r.Done()
+	r.Begin("fetching", 1)
+	r.Start("alpha")(false)
 
 	r.Stop()
 	before := buf.String()
@@ -232,16 +221,14 @@ func TestLiveReporterRedrawsInPlace(t *testing.T) {
 
 	buf := &syncBuffer{}
 	r := newLiveReporter(buf)
-	r.Start("fetching", 4)
+	r.Begin("fetching", 4)
 
 	// Hold two rows live across several 100ms render ticks.
-	rt := r.RepoStart("alpha")
-	rt2 := r.RepoStart("bravo")
+	finishAlpha := r.Start("alpha")
+	finishBravo := r.Start("bravo")
 	time.Sleep(350 * time.Millisecond)
-	rt.MarkDone()
-	rt2.MarkDone()
-	r.Done()
-	r.Done()
+	finishAlpha(false)
+	finishBravo(false)
 	r.Stop()
 
 	out := buf.String()

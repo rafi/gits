@@ -52,6 +52,20 @@ settings:
   # GitHub and GitLab; Bitbucket Cloud has no archived flag. Default: false.
   includeArchived: false
 
+  # Interactive selector. gits shells out to fzf for picking a project,
+  # repository or branch. Override any of these to use a drop-in replacement
+  # or tune the invocation.
+  #
+  #   binary  Executable to run instead of `fzf`. Must be on PATH.
+  #   args    Replaces the built-in default option set wholesale. Leave unset
+  #           to keep the defaults (--ansi, --info=right, --no-multi, etc.).
+  #   extra   Appended after args, so it adds options without replacing the
+  #           defaults. Command-specific flags (e.g. --nth) still follow.
+  #
+  # finder:
+  #   binary: sk                        # e.g. skim, an fzf-compatible finder
+  #   extra: ["--height=80%", "--border"]
+
   # Enable debug logging. The `-v` flag overrides this. Default: false.
   verbose: false
 
@@ -134,6 +148,7 @@ settings:
     # Status
     diff: { color: "140", align: right }
     error: { color: "1" }
+    warning: { color: "3", faint: true }
 
     # Status table. These use the ANSI 16-color palette so the terminal
     # theme decides the exact shades.

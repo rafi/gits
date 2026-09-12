@@ -140,7 +140,7 @@ func TestFindNestedRepos(t *testing.T) {
 		"vendor/embedded/sub",  // inside the embedded repo: not descended
 	)
 
-	repos, err := findNestedRepos(t.Context(), root, fakeGit{})
+	repos, err := findNestedRepos(t.Context(), nil, root, fakeGit{})
 	if err != nil {
 		t.Fatalf("findNestedRepos: %v", err)
 	}

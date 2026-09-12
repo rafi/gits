@@ -17,58 +17,38 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// render returns the command's renderer. It owns the tail: which format is
-// drawn, and what the run's exit code is — the json form deliberately prints
-// no error epilogue and exits zero for per-repository conditions, since a
-// repository's condition is data in that document rather than the command's
-// outcome, while an interrupted run still fails because the document is
-// incomplete and nothing inside it says so.
-func render(format string, opts Options) func(bulk.Results[*repoStatus], types.RuntimeCLI) error {
-	return func(res bulk.Results[*repoStatus], deps types.RuntimeCLI) error {
-		if format == "json" {
-			// A single repository's group carries the sub-projects the run
-			// never visited, so the document is built from that one node
-			// rather than descending.
-			if err := renderJSON(deps.Out, res.Groups, !res.Single, opts); err != nil {
-				return err
-			}
-			return res.Interrupted
-		}
-		return bulk.Epilogue(res, renderGroups(res, opts, deps), deps)
-	}
-}
-
-// renderGroups prints one compact table per project group as Result Output and
-// a summary footer as Diagnostic Output, returning every result error in
-// stable tree order. The traversal (nil slots, error collection, titles,
-// separators) is the module's; this body filters rows — active filters (Dirty,
-// Unsynced) drop non-matching rows, error rows stay visible — and projects
-// left with no rows disappear entirely.
-func renderGroups(
-	res bulk.Results[*repoStatus],
-	opts Options,
-	deps types.RuntimeCLI,
-) []error {
+// renderTables prints one compact table per project as Result Output and a
+// summary footer as Diagnostic Output. It walks the tree the run visited —
+// depth-first, a project's own repositories before its sub-projects — and
+// looks each repository's row up; a project left with no rows prints
+// nothing, and consecutive tables are separated by a blank line.
+func renderTables(res bulk.Results[*repoStatus], opts Options, deps types.RuntimeCLI) {
 	out := deps.Out
 	termWidth, _ := cli.TermWidth(out)
+	index := newRows(res)
 	var (
-		all    []*repoStatus
-		hidden int
+		all     []*repoStatus
+		hidden  int
+		printed int
 	)
-	errs := bulk.Render(res, deps, func(g bulk.Group[*repoStatus]) (string, bool) {
-		sts, skipped := visibleStatuses(g, opts)
+	var visit func(p domain.Project)
+	visit = func(p domain.Project) {
+		sts, skipped := index.visible(p, opts)
 		hidden += skipped
-		if opts.filtered() && len(sts) == 0 {
-			return "", false
+		if len(sts) > 0 {
+			if printed > 0 {
+				fmt.Fprintln(out)
+			}
+			printed++
+			all = append(all, sts...)
+			lipgloss.Fprintln(out, renderTable(sts, termWidth, opts, deps))
 		}
-		if len(sts) == 0 {
-			return "", true
+		for _, sub := range p.SubProjects {
+			visit(sub)
 		}
-		all = append(all, sts...)
-		return renderTable(sts, termWidth, opts, deps), true
-	})
+	}
+	visit(res.Project)
 	renderFooter(deps.Err, all, hidden, deps.Theme)
-	return errs
 }
 
 const (
@@ -142,19 +122,11 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 			}
 			return th.StatusDim.Render(s)
 		}
-		title, branch := st.title, st.branch
+		title, branch := st.repo.Path, st.Branch
 		if st.repo.State != domain.RepoStateOK {
 			title, branch = dim(title), dim(branch)
 		}
-		message := st.message
-		// Real failures show their reason in red; benign non-OK states
-		// (not cloned, remote-only) and ordinary commit subjects stay dim.
-		if st.err != nil && (st.repo.State == domain.RepoStateOK ||
-			st.repo.State == domain.RepoStateError) {
-			message = th.Error.Render(message)
-		} else {
-			message = dim(message)
-		}
+		message := messageCell(st, th, dim)
 		row := make([]string, 0, len(cols))
 		row = append(row, gutter(st, icons, th), title, branch,
 			statusSlots(st, icons, th, widths))
@@ -165,38 +137,13 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 			counts.delta[i],
 			counts.upstream[i],
 			dim(st.version),
-			dim(st.commit),
-			dim(shortAge(st.when, now)),
+			dim(st.head.Hash),
+			dim(shortAge(st.head.Time, now)),
 			message,
 		)
 	}
 
-	// Measure every column once. Non-flex columns are pinned at their natural
-	// width (style Width marks a column fixed for the resizer): when the
-	// table is width-capped, only the flexible text columns (Repo, Version,
-	// Message) may contract. Sparse count columns would otherwise be shrunk
-	// first — their median width is 0 — and collapse to "…". The summed
-	// widths also give the natural table width, so the cap decision happens
-	// before the single render.
-	pinned := map[int]int{}
-	natural := 0
-	for c, col := range cols {
-		w := lipgloss.Width(col.title)
-		for _, row := range rows {
-			w = max(w, lipgloss.Width(row[c]))
-		}
-		pad := 2
-		switch {
-		case col.gutter:
-			pad = 3 // PaddingLeft(2) + PaddingRight(1)
-		case col.bare:
-			pad = 0
-		}
-		natural += w + pad
-		if !col.flex {
-			pinned[c] = w + pad
-		}
-	}
+	pinned, natural := measureColumns(cols, rows)
 
 	t := table.New().
 		Border(lipgloss.Border{}).
@@ -205,28 +152,7 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 		Wrap(false).
 		Headers(headers...).
 		Rows(rows...).
-		StyleFunc(func(row, c int) lipgloss.Style {
-			s := lipgloss.NewStyle().PaddingRight(cellPad)
-			if c < 0 || c >= len(cols) {
-				return s
-			}
-			col := cols[c]
-			switch {
-			case col.gutter:
-				s = s.PaddingLeft(gutterPadLeft).PaddingRight(gutterPadRight)
-			case col.right:
-				s = s.Align(lipgloss.Right)
-			case col.bare:
-				s = s.PaddingRight(0)
-			}
-			if w, ok := pinned[c]; ok {
-				s = s.Width(w)
-			}
-			if row == table.HeaderRow {
-				s = s.Inherit(th.StatusHeader)
-			}
-			return s
-		})
+		StyleFunc(columnStyle(cols, pinned, th))
 
 	// When the natural width overflows the terminal, hand the width cap to
 	// lipgloss, whose resizer contracts the widest flexible columns and
@@ -235,6 +161,78 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.Runt
 		t = t.Width(termWidth)
 	}
 	return t.String()
+}
+
+// measureColumns measures every column once, returning the pinned widths
+// (style Width marks a column fixed for the resizer) and the table's natural
+// width. Only the flexible text columns (Repo, Version, Message) stay
+// unpinned and may contract when the table is width-capped; sparse count
+// columns would otherwise be shrunk first — their median width is 0 — and
+// collapse to "…". The natural width is summed here so the cap decision
+// happens before the single render.
+func measureColumns(cols []tableColumn, rows [][]string) (map[int]int, int) {
+	pinned := map[int]int{}
+	natural := 0
+	for c, col := range cols {
+		w := lipgloss.Width(col.title)
+		for _, row := range rows {
+			w = max(w, lipgloss.Width(row[c]))
+		}
+		pad := cellPad
+		switch {
+		case col.gutter:
+			pad = gutterPadLeft + gutterPadRight
+		case col.bare:
+			pad = 0
+		}
+		natural += w + pad
+		if !col.flex {
+			pinned[c] = w + pad
+		}
+	}
+	return pinned, natural
+}
+
+// columnStyle returns the table's per-cell style function: alignment and
+// padding from the column's declaration, its measured width when pinned, and
+// the header style on the header row.
+func columnStyle(cols []tableColumn, pinned map[int]int, th config.Theme) func(row, c int) lipgloss.Style {
+	return func(row, c int) lipgloss.Style {
+		s := lipgloss.NewStyle().PaddingRight(cellPad)
+		if c < 0 || c >= len(cols) {
+			return s
+		}
+		col := cols[c]
+		switch {
+		case col.gutter:
+			s = s.PaddingLeft(gutterPadLeft).PaddingRight(gutterPadRight)
+		case col.right:
+			s = s.Align(lipgloss.Right)
+		case col.bare:
+			s = s.PaddingRight(0)
+		}
+		if w, ok := pinned[c]; ok {
+			s = s.Width(w)
+		}
+		if row == table.HeaderRow {
+			s = s.Inherit(th.StatusHeader)
+		}
+		return s
+	}
+}
+
+// messageCell renders the last column: the last commit's subject, or the
+// bare failure reason in its place. Real failures show in red; benign non-OK
+// states (not cloned, remote-only) and ordinary commit subjects stay dim.
+func messageCell(st *repoStatus, th config.Theme, dim func(string) string) string {
+	switch {
+	case st.err == nil:
+		return dim(st.head.Subject)
+	case st.repo.State == domain.RepoStateOK, st.repo.State == domain.RepoStateError:
+		return th.Error.Render(st.err.Error())
+	default:
+		return dim(st.err.Error())
+	}
 }
 
 // gutter returns the leading row-kind glyph, mapped onto
@@ -252,6 +250,9 @@ func gutter(st *repoStatus, icons domain.Icons, th config.Theme) string {
 		return th.StatusDim.Render(icons.DiffClean)
 	case domain.RepoStateError:
 		return th.Error.Render(icons.DiffError)
+	case domain.RepoStateUnknown:
+		// Unclassified: the glyph says so rather than claiming a state.
+		fallthrough
 	default:
 		return th.StatusDim.Render("?")
 	}
@@ -296,18 +297,18 @@ func statusSlots(st *repoStatus, icons domain.Icons, th config.Theme, widths slo
 
 	upstreamIcon := icons.DiffClean
 	switch {
-	case st.upstreamGone:
+	case st.GoneUpstream():
 		// Ahead of the divergence glyphs: a Gone Upstream is what the row is
 		// about, and the counts — measured against a fallback ref, when one
 		// was found — still show in the Upstream⇅ column.
 		upstreamIcon = icons.Gone
-	case st.noUpstream:
+	case !st.compared:
 		upstreamIcon = icons.NA
-	case st.ahead > 0 && st.behind > 0:
+	case st.Ahead > 0 && st.Behind > 0:
 		upstreamIcon = icons.Diverged
-	case st.ahead > 0:
+	case st.Ahead > 0:
 		upstreamIcon = icons.Ahead
-	case st.behind > 0:
+	case st.Behind > 0:
 		upstreamIcon = icons.Behind
 	}
 
@@ -326,9 +327,9 @@ func statusSlots(st *repoStatus, icons domain.Icons, th config.Theme, widths slo
 		upstream = pad(th.StatusDim.Render(upstreamIcon), upstreamIcon, widths.upstream)
 	}
 
-	return slot(st.staged > 0, icons.Staged, th.StatusFlag) +
-		slot(st.unstaged > 0, icons.Unstaged, th.StatusFlag) +
-		slot(st.untracked > 0, icons.Untracked, th.StatusFlag) +
+	return slot(st.Staged > 0, icons.Staged, th.StatusFlag) +
+		slot(st.Unstaged > 0, icons.Unstaged, th.StatusFlag) +
+		slot(st.Untracked > 0, icons.Untracked, th.StatusFlag) +
 		fourth +
 		upstream
 }
@@ -354,23 +355,23 @@ func buildCountCells(
 		if st.err != nil || st.repo.State != domain.RepoStateOK {
 			continue
 		}
-		if st.added > 0 {
-			subs[i].add = th.StatusAdded.Render("+" + compactCount(st.added))
+		if st.stat != nil && st.stat.Added > 0 {
+			subs[i].add = th.StatusAdded.Render("+" + compactCount(st.stat.Added))
 		}
-		if st.deleted > 0 {
-			subs[i].del = th.StatusDeleted.Render("-" + compactCount(st.deleted))
+		if st.stat != nil && st.stat.Deleted > 0 {
+			subs[i].del = th.StatusDeleted.Render("-" + compactCount(st.stat.Deleted))
 		}
-		if n := st.staged + st.unstaged; n > 0 {
+		if n := st.Staged + st.Unstaged; n > 0 {
 			subs[i].mod = th.StatusFlag.Render(icons.Modified + compactCount(n))
 		}
-		if st.untracked > 0 {
-			subs[i].unt = th.StatusFlag.Render(icons.Untracked + compactCount(st.untracked))
+		if st.Untracked > 0 {
+			subs[i].unt = th.StatusFlag.Render(icons.Untracked + compactCount(st.Untracked))
 		}
-		if st.ahead > 0 {
-			subs[i].ahead = th.StatusAhead.Render(icons.Ahead + compactCount(st.ahead))
+		if st.Ahead > 0 {
+			subs[i].ahead = th.StatusAhead.Render(icons.Ahead + compactCount(st.Ahead))
 		}
-		if st.behind > 0 {
-			subs[i].behind = th.StatusBehind.Render(icons.Behind + compactCount(st.behind))
+		if st.Behind > 0 {
+			subs[i].behind = th.StatusBehind.Render(icons.Behind + compactCount(st.Behind))
 		}
 		wAdd = max(wAdd, lipgloss.Width(subs[i].add))
 		wDel = max(wDel, lipgloss.Width(subs[i].del))
@@ -461,7 +462,7 @@ func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th config.Theme) {
 		if st.changed() {
 			changed++
 		}
-		if st.ahead > 0 {
+		if st.Ahead > 0 {
 			ahead++
 		}
 		if st.err != nil {

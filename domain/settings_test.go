@@ -14,18 +14,23 @@ func TestSettingsProviderTimeoutDuration(t *testing.T) {
 		name    string
 		timeout string
 		want    time.Duration
+		wantErr bool
 	}{
-		{"empty falls back to default", "", def},
-		{"valid duration parsed", "90s", 90 * time.Second},
-		{"invalid falls back to default", "not-a-duration", def},
+		{"empty falls back to default", "", def, false},
+		{"valid duration parsed", "90s", 90 * time.Second, false},
+		{"invalid falls back to default", "not-a-duration", def, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			s := Settings{ProviderTimeout: tt.timeout}
-			if got := s.ProviderTimeoutDuration(); got != tt.want {
+			got, err := s.ProviderTimeoutDuration()
+			if got != tt.want {
 				t.Errorf("ProviderTimeoutDuration() with %q = %v, want %v", tt.timeout, got, tt.want)
+			}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ProviderTimeoutDuration() with %q err = %v, wantErr %v", tt.timeout, err, tt.wantErr)
 			}
 		})
 	}
@@ -36,22 +41,27 @@ func TestSettingsCacheTTLDuration(t *testing.T) {
 
 	const def = 7 * 24 * time.Hour
 	tests := []struct {
-		name string
-		ttl  string
-		want time.Duration
+		name    string
+		ttl     string
+		want    time.Duration
+		wantErr bool
 	}{
-		{"empty falls back to default", "", def},
-		{"valid duration parsed", "24h", 24 * time.Hour},
-		{"valid minutes parsed", "90m", 90 * time.Minute},
-		{"invalid falls back to default", "not-a-duration", def},
+		{"empty falls back to default", "", def, false},
+		{"valid duration parsed", "24h", 24 * time.Hour, false},
+		{"valid minutes parsed", "90m", 90 * time.Minute, false},
+		{"invalid falls back to default", "not-a-duration", def, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			s := Settings{CacheTTL: tt.ttl}
-			if got := s.CacheTTLDuration(); got != tt.want {
+			got, err := s.CacheTTLDuration()
+			if got != tt.want {
 				t.Errorf("CacheTTLDuration() with %q = %v, want %v", tt.ttl, got, tt.want)
+			}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CacheTTLDuration() with %q err = %v, wantErr %v", tt.ttl, err, tt.wantErr)
 			}
 		})
 	}
@@ -65,18 +75,23 @@ func TestSettingsGitTimeoutDuration(t *testing.T) {
 		name    string
 		timeout string
 		want    time.Duration
+		wantErr bool
 	}{
-		{"empty falls back to default", "", def},
-		{"valid duration parsed", "30m", 30 * time.Minute},
-		{"invalid falls back to default", "not-a-duration", def},
+		{"empty falls back to default", "", def, false},
+		{"valid duration parsed", "30m", 30 * time.Minute, false},
+		{"invalid falls back to default", "not-a-duration", def, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			s := Settings{GitTimeout: tt.timeout}
-			if got := s.GitTimeoutDuration(); got != tt.want {
+			got, err := s.GitTimeoutDuration()
+			if got != tt.want {
 				t.Errorf("GitTimeoutDuration() with %q = %v, want %v", tt.timeout, got, tt.want)
+			}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GitTimeoutDuration() with %q err = %v, wantErr %v", tt.timeout, err, tt.wantErr)
 			}
 		})
 	}

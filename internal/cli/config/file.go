@@ -33,6 +33,12 @@ type File struct {
 	Filename string
 	Color    string
 	Settings domain.Settings
+
+	// Warnings are non-fatal notices gathered while loading (e.g. a deprecated
+	// key). They are surfaced as prose on Diagnostic Output by the caller that
+	// has a theme and a writer, rather than printed from here — this runs in
+	// cobra's initializer, before a runtime exists. See ADR-0004.
+	Warnings []string
 }
 
 type deprecations struct {
@@ -95,6 +101,39 @@ func (f *File) Convert() error {
 	return nil
 }
 
+// validateProjects rejects a project (or sub-project) that sets both a
+// Provider Source and an explicit repository list. A source discovers the
+// repository list, so a `repos:` beside it has no unambiguous meaning: it was
+// silently discarded for remote sources and appended by accident for
+// filesystem. The error names the project and both keys.
+func validateProjects(projects domain.ProjectListKeyed) error {
+	for name, proj := range projects {
+		proj.Name = name
+		if err := validateProject(proj); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateProject checks one project and its sub-projects for the both-set
+// combination.
+func validateProject(project domain.Project) error {
+	hasSource := project.Source != nil && project.Source.Type != ""
+	if hasSource && len(project.Repos) > 0 {
+		return fmt.Errorf(
+			"project %q sets both `source:` and `repos:`; use one or the other",
+			project.Name,
+		)
+	}
+	for _, sub := range project.SubProjects {
+		if err := validateProject(sub); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // findDefaultPath reads in config file and ENV variables if set.
 func (f *File) findDefaultPath() (string, error) {
 	home, err := homedir.Dir()
@@ -151,9 +190,20 @@ func (f *File) loadConfig(filePath string) error {
 	// Delete the special key saved for built-in CLI settings.
 	delete(f.Projects, "settings")
 
+	// A project points at a Provider Source or lists its repositories, not
+	// both. This is the one place the raw config is seen before the loader
+	// restores a cached repository list onto a source-backed project, so it is
+	// the only place the two can be told apart.
+	if err := validateProjects(f.Projects); err != nil {
+		return err
+	}
+
 	// Handle deprecated config fields.
 	if err := f.Convert(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s from %s\n", err, f.Filename)
+		// A deprecation is a warning, not a failure: record it for the caller
+		// to render on Diagnostic Output rather than printing to os.Stderr
+		// here — see the Warnings field and ADR-0004.
+		f.Warnings = append(f.Warnings, fmt.Sprintf("%s from %s", err, f.Filename))
 	}
 
 	// Parse special key 'settings'.

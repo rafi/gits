@@ -1,7 +1,6 @@
 package status
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -13,41 +12,60 @@ import (
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/git"
 )
+
+// fixture builds one row bound to a repository in the given state.
+func fixture(name string, state domain.RepoState, st repoStatus) *repoStatus {
+	st.repo = bulk.Repo{
+		Repository: domain.Repository{Name: name, AbsPath: "/code/acme/" + name, State: state},
+		Path:       name,
+	}
+	return &st
+}
 
 func fixtureStatuses() []*repoStatus {
 	now := time.Now()
 	return []*repoStatus{
-		{
-			repo:     domain.Repository{Name: "api", State: domain.RepoStateOK},
-			title:    "api",
-			branch:   "main",
-			staged:   1,
-			unstaged: 11,
-			ahead:    2,
+		fixture("api", domain.RepoStateOK, repoStatus{
+			Snapshot: git.Snapshot{
+				Branch: "main", Ahead: 2,
+				WorkTree: git.WorkTree{Staged: 1, Unstaged: 11},
+			},
+			compared: true,
 			version:  "v2.1.0",
-			commit:   "f3a9c2d1",
-			message:  "Add rate limiter",
-			when:     now.Add(-2 * time.Hour),
-		},
-		{
-			repo:      domain.Repository{Name: "web", State: domain.RepoStateOK},
-			title:     "web",
-			branch:    "develop",
-			untracked: 4567,
-			behind:    1,
-			version:   "v0.9.0",
-			commit:    "0e631add",
-			message:   "Initial commit",
-			when:      now.Add(-26 * time.Hour),
-		},
-		{
-			repo:    domain.Repository{Name: "infra", State: domain.RepoStateNotCloned},
-			title:   "infra",
-			message: "not cloned",
-			err:     errFixture,
-		},
+			head:     git.Head{Hash: "f3a9c2d1", Subject: "Add rate limiter", Time: now.Add(-2 * time.Hour)},
+		}),
+		fixture("web", domain.RepoStateOK, repoStatus{
+			Snapshot: git.Snapshot{
+				Branch: "develop", Behind: 1,
+				WorkTree: git.WorkTree{Untracked: 4567},
+			},
+			compared: true,
+			version:  "v0.9.0",
+			head:     git.Head{Hash: "0e631add", Subject: "Initial commit", Time: now.Add(-26 * time.Hour)},
+		}),
+		fixture("infra", domain.RepoStateNotCloned, repoStatus{err: errFixture}),
 	}
+}
+
+// project bundles rows under a project node so the renderer's tree walk
+// finds them.
+func project(name string, sts ...*repoStatus) domain.Project {
+	p := domain.Project{Name: name}
+	for _, st := range sts {
+		p.Repos = append(p.Repos, st.repo.Repository)
+	}
+	return p
+}
+
+// resultsOf wraps rows as the run hands them to the renderer, under root.
+func resultsOf(root domain.Project, sts ...*repoStatus) bulk.Results[*repoStatus] {
+	res := bulk.Results[*repoStatus]{Project: root}
+	for _, st := range sts {
+		res.Results = append(res.Results, bulk.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
+	}
+	return res
 }
 
 var errFixture = &fixtureError{}
@@ -108,26 +126,17 @@ func TestRenderTableSlotAlignment(t *testing.T) {
 	}
 }
 
-// TestRenderGroupsTitlesAndFooter: project headers precede tables, and the
-// footer summarizes counts to the error writer.
-func TestRenderGroupsTitlesAndFooter(t *testing.T) {
+// TestRenderTablesFooter: the table is Result Output and the footer
+// summarizes counts to the error writer; no project title precedes it.
+func TestRenderTablesFooter(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses()
-	results := make([]*bulk.Result[*repoStatus], len(sts))
-	for i, st := range sts {
-		results[i] = &bulk.Result[*repoStatus]{Value: st}
-	}
-	groups := []bulk.Group[*repoStatus]{{
-		Project: domain.Project{Name: "acme"},
-		Results: results,
-	}}
-
 	deps := clitest.New(t, nil)
-	renderGroups(bulk.Results[*repoStatus]{Groups: groups}, Options{}, deps.RuntimeCLI)
+	renderTables(resultsOf(project("acme", sts...), sts...), Options{}, deps.RuntimeCLI)
 
-	if !strings.Contains(deps.Result(), ":: acme") {
-		t.Errorf("missing project title:\n%s", deps.Result())
+	if got := deps.Result(); strings.Contains(got, "acme") || strings.Contains(got, "::") {
+		t.Errorf("Result Output = %q, want no project title", got)
 	}
 	footer := deps.Diagnostic()
 	for _, want := range []string{"○ Showing 3 repos", "2 with changes", "1 ahead"} {
@@ -137,39 +146,35 @@ func TestRenderGroupsTitlesAndFooter(t *testing.T) {
 	}
 }
 
-// TestRenderGroupsSeparatesAndSkips: two shown projects are separated by a
-// blank line, a project with no repositories still gets its title and no
-// table, and a repository the run never dequeued leaves no row at all.
-func TestRenderGroupsSeparatesAndSkips(t *testing.T) {
+// TestRenderTablesSeparatesAndSkips: the tables of two projects are separated
+// by a blank line, a project with no rows prints nothing, and a repository
+// the run never started leaves no row at all.
+func TestRenderTablesSeparatesAndSkips(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses()
-	first := bulk.Group[*repoStatus]{
-		Project: domain.Project{Name: "acme"},
-		Results: []*bulk.Result[*repoStatus]{{Value: sts[0]}, nil},
-	}
-	empty := bulk.Group[*repoStatus]{Project: domain.Project{Name: "hollow"}}
-	second := bulk.Group[*repoStatus]{
-		Project: domain.Project{Name: "vendor"},
-		Results: []*bulk.Result[*repoStatus]{{Value: sts[1]}},
-	}
+	vendor := project("vendor", sts[1])
+	hollow := domain.Project{Name: "hollow"}
+	root := project("acme", sts[0], sts[2]) // sts[2] is in the tree but never ran
+	root.SubProjects = []domain.Project{hollow, vendor}
 
 	deps := clitest.New(t, nil)
-	renderGroups(
-		bulk.Results[*repoStatus]{Groups: []bulk.Group[*repoStatus]{first, empty, second}},
-		Options{}, deps.RuntimeCLI)
+	renderTables(resultsOf(root, sts[0], sts[1]), Options{}, deps.RuntimeCLI)
 
 	plain := deps.Result()
-	for _, want := range []string{":: acme", ":: hollow", ":: vendor", "api", "web"} {
+	for _, want := range []string{"api", "web"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("output missing %q:\n%s", want, plain)
 		}
 	}
-	if strings.Contains(plain, "infra") {
-		t.Errorf("a repository that was never started produced a row:\n%s", plain)
+	for _, banned := range []string{"infra", "hollow"} {
+		if strings.Contains(plain, banned) {
+			t.Errorf("output has %q, want nothing for a row that never ran or a project with none:\n%s",
+				banned, plain)
+		}
 	}
-	if !strings.Contains(plain, "\n\n:: hollow") {
-		t.Errorf("shown projects are not separated by a blank line:\n%s", plain)
+	if !strings.Contains(plain, "\n\n") {
+		t.Errorf("tables are not separated by a blank line:\n%s", plain)
 	}
 	// The two rows that did render are the whole footer count.
 	if footer := deps.Diagnostic(); !strings.Contains(footer, "○ Showing 2 repos") {
@@ -177,53 +182,21 @@ func TestRenderGroupsSeparatesAndSkips(t *testing.T) {
 	}
 }
 
-// TestRenderGroupsInterrupted: a run cut short reports the interruption among
-// its errors, so it fails loudly instead of reporting partial success.
-func TestRenderGroupsInterrupted(t *testing.T) {
-	t.Parallel()
-
-	groups := []bulk.Group[*repoStatus]{{
-		Project: domain.Project{Name: "acme"},
-		Results: []*bulk.Result[*repoStatus]{{Value: fixtureStatuses()[0]}, nil},
-	}}
-
-	deps := clitest.New(t, nil)
-	errs := renderGroups(bulk.Results[*repoStatus]{
-		Groups:      groups,
-		Interrupted: errors.New("interrupted: 1 of 2 repositories not processed"),
-	}, Options{}, deps.RuntimeCLI)
-
-	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "interrupted") {
-		t.Fatalf("errors = %v, want the interruption reported", errs)
-	}
-}
-
-// TestRenderGroupsDirtyFilter: --dirty drops clean repos but keeps error rows,
+// TestRenderTablesDirtyFilter: --dirty drops clean repos but keeps error rows,
 // hides projects left with no rows, and reports the hidden count in the footer.
-func TestRenderGroupsDirtyFilter(t *testing.T) {
+func TestRenderTablesDirtyFilter(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses() // api dirty, web dirty (untracked), infra error
-	clean := &repoStatus{
-		repo:    domain.Repository{Name: "tidy", State: domain.RepoStateOK},
-		title:   "tidy",
-		branch:  "main",
-		version: "v1.0.0",
-	}
-	toResults := func(sts ...*repoStatus) []*bulk.Result[*repoStatus] {
-		results := make([]*bulk.Result[*repoStatus], len(sts))
-		for i, st := range sts {
-			results[i] = &bulk.Result[*repoStatus]{Value: st}
-		}
-		return results
-	}
-	groups := []bulk.Group[*repoStatus]{
-		{Project: domain.Project{Name: "acme"}, Results: toResults(sts[0], clean, sts[2])},
-		{Project: domain.Project{Name: "pristine"}, Results: toResults(clean)},
-	}
+	clean := fixture("tidy", domain.RepoStateOK, repoStatus{
+		Snapshot: git.Snapshot{Branch: "main"}, version: "v1.0.0",
+	})
+	pristine := project("pristine", clean)
+	root := project("acme", sts[0], clean, sts[2])
+	root.SubProjects = []domain.Project{pristine}
 
 	deps := clitest.New(t, nil)
-	renderGroups(bulk.Results[*repoStatus]{Groups: groups}, Options{Dirty: true}, deps.RuntimeCLI)
+	renderTables(resultsOf(root, sts[0], clean, sts[2], clean), Options{Dirty: true}, deps.RuntimeCLI)
 
 	plain := deps.Result()
 	for _, want := range []string{"api", "not cloned"} {
@@ -231,10 +204,8 @@ func TestRenderGroupsDirtyFilter(t *testing.T) {
 			t.Errorf("dirty output missing %q:\n%s", want, plain)
 		}
 	}
-	for _, banned := range []string{"tidy", ":: pristine"} {
-		if strings.Contains(plain, banned) {
-			t.Errorf("dirty output should hide %q:\n%s", banned, plain)
-		}
+	if strings.Contains(plain, "tidy") {
+		t.Errorf("dirty output should hide the clean repository:\n%s", plain)
 	}
 	footer := deps.Diagnostic()
 	for _, want := range []string{"○ Showing 2 repos", "2 hidden"} {
@@ -244,26 +215,24 @@ func TestRenderGroupsDirtyFilter(t *testing.T) {
 	}
 }
 
-// TestRenderGroupsUnsyncedFilter: --unsynced keeps only repos ahead or behind
+// TestRenderTablesUnsyncedFilter: --unsynced keeps only repos ahead or behind
 // upstream (no-upstream repos are not unsynced), and combined with --dirty the
 // filters are a union.
-func TestRenderGroupsUnsyncedFilter(t *testing.T) {
+func TestRenderTablesUnsyncedFilter(t *testing.T) {
 	t.Parallel()
 
-	ok := func(name string) domain.Repository {
-		return domain.Repository{Name: name, State: domain.RepoStateOK}
-	}
-	dirtyInSync := &repoStatus{repo: ok("edited"), title: "edited", unstaged: 2}
-	cleanAhead := &repoStatus{repo: ok("racer"), title: "racer", ahead: 3}
-	noUp := &repoStatus{repo: ok("loner"), title: "loner", noUpstream: true}
-	results := make([]*bulk.Result[*repoStatus], 0, 3)
-	for _, st := range []*repoStatus{dirtyInSync, cleanAhead, noUp} {
-		results = append(results, &bulk.Result[*repoStatus]{Value: st})
-	}
-	groups := []bulk.Group[*repoStatus]{{Project: domain.Project{Name: "acme"}, Results: results}}
+	dirtyInSync := fixture("edited", domain.RepoStateOK, repoStatus{
+		Snapshot: git.Snapshot{WorkTree: git.WorkTree{Unstaged: 2}}, compared: true,
+	})
+	cleanAhead := fixture("racer", domain.RepoStateOK, repoStatus{
+		Snapshot: git.Snapshot{Ahead: 3}, compared: true,
+	})
+	noUp := fixture("loner", domain.RepoStateOK, repoStatus{})
+	sts := []*repoStatus{dirtyInSync, cleanAhead, noUp}
+	res := resultsOf(project("acme", sts...), sts...)
 
 	deps := clitest.New(t, nil)
-	renderGroups(bulk.Results[*repoStatus]{Groups: groups}, Options{Unsynced: true}, deps.RuntimeCLI)
+	renderTables(res, Options{Unsynced: true}, deps.RuntimeCLI)
 	plain := deps.Result()
 	if !strings.Contains(plain, "racer") {
 		t.Errorf("unsynced output missing ahead repo:\n%s", plain)
@@ -279,7 +248,7 @@ func TestRenderGroupsUnsyncedFilter(t *testing.T) {
 
 	// Union: --dirty --unsynced shows dirty-in-sync and clean-ahead repos.
 	union := clitest.New(t, nil)
-	renderGroups(bulk.Results[*repoStatus]{Groups: groups}, Options{Dirty: true, Unsynced: true}, union.RuntimeCLI)
+	renderTables(res, Options{Dirty: true, Unsynced: true}, union.RuntimeCLI)
 	plain = union.Result()
 	for _, want := range []string{"edited", "racer"} {
 		if !strings.Contains(plain, want) {
@@ -298,7 +267,7 @@ func TestRenderTableClampsToTerminal(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses()
-	sts[0].message = strings.Repeat("very long commit subject ", 8)
+	sts[0].head.Subject = strings.Repeat("very long commit subject ", 8)
 	const width = 72
 
 	out := renderTable(sts, width, Options{}, statusDeps(t, fakeGit{}))
@@ -332,8 +301,8 @@ func TestRenderTableStatColumn(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses()
-	sts[0].added, sts[0].deleted = 27, 8
-	sts[1].added = 4321
+	sts[0].stat = &git.DiffStat{Added: 27, Deleted: 8}
+	sts[1].stat = &git.DiffStat{Added: 4321}
 
 	out := renderTable(sts, 0, Options{Stat: true}, statusDeps(t, fakeGit{}))
 	plain := ansi.Strip(out)
@@ -416,10 +385,12 @@ func TestStatusSlotsWidthWithWideIcons(t *testing.T) {
 	icons.ApplyDefaults()
 	th := config.NewThemeDefault()
 	sts := []*repoStatus{
-		{repo: domain.Repository{State: domain.RepoStateOK}},
-		{repo: domain.Repository{State: domain.RepoStateOK}, staged: 1, err: errFixture},
-		{repo: domain.Repository{State: domain.RepoStateNotCloned}, err: errFixture},
-		{repo: domain.Repository{State: domain.RepoStateOK}, ahead: 3},
+		fixture("a", domain.RepoStateOK, repoStatus{}),
+		fixture("b", domain.RepoStateOK, repoStatus{
+			Snapshot: git.Snapshot{WorkTree: git.WorkTree{Staged: 1}}, err: errFixture,
+		}),
+		fixture("c", domain.RepoStateNotCloned, repoStatus{err: errFixture}),
+		fixture("d", domain.RepoStateOK, repoStatus{Snapshot: git.Snapshot{Ahead: 3}}),
 	}
 	widths := newSlotWidths(icons)
 	want := lipgloss.Width(statusSlots(sts[0], icons, th, widths))

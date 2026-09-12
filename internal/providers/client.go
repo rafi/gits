@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -22,11 +23,14 @@ const (
 )
 
 // tokenEnvVarNames are the per-provider environment variable fallbacks for
-// Options.Token. Providers absent from the table need no token.
+// Options.Token. A provider with no names needs no token at all.
 var tokenEnvVarNames = map[Provider][]string{
 	ProviderGitHub:    {"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"},
 	ProviderGitLab:    {"GITLAB_TOKEN"},
 	ProviderBitbucket: {"BITBUCKET_TOKEN"},
+	// A filesystem project is read from disk and authenticates against
+	// nothing, so it has no environment fallback to name.
+	ProviderFilesystem: nil,
 }
 
 type gitProvider interface {
@@ -37,18 +41,23 @@ type gitProvider interface {
 // empty, TokenCommand is executed to obtain one; when both are empty, the
 // token falls back to provider-specific environment variables.
 type Options struct {
+	// Log traces provider work — page fetches, token command runs — for `-v`.
+	// Nothing a user must read goes here.
+	Log             *slog.Logger
 	Token           string
 	TokenCommand    string
 	IncludeArchived bool
 	Timeout         time.Duration
-	GitClient       git.Client
+	// GitClient is read-only: provider discovery only ever asks whether a
+	// path is a repository.
+	GitClient git.Reader
 }
 
 // NewGitProvider returns the provider for providerName, resolving its token
 // first when that provider needs one.
 func NewGitProvider(ctx context.Context, providerName string, opts Options) (gitProvider, error) {
 	provider := Provider(providerName)
-	if _, needsToken := tokenEnvVarNames[provider]; needsToken {
+	if names := tokenEnvVarNames[provider]; len(names) > 0 {
 		var err error
 		opts.Token, err = resolveToken(ctx, provider, opts)
 		if err != nil {

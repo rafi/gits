@@ -1,8 +1,12 @@
 package list
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rafi/gits/domain"
@@ -111,6 +115,94 @@ func TestExecListNameRepos(t *testing.T) {
 	if got := deps.Result(); got != want {
 		t.Errorf("Result Output = %q, want %q", got, want)
 	}
+}
+
+// countingGit answers IsRepo by stat and counts every Remote call, so a test
+// can prove which output formats resolve Repo Src and which never touch git.
+type countingGit struct {
+	clitest.FakeGit
+
+	remote      string
+	mu          sync.Mutex
+	remoteCalls int
+}
+
+func (g *countingGit) Remote(context.Context, string) (string, error) {
+	g.mu.Lock()
+	g.remoteCalls++
+	g.mu.Unlock()
+	return g.remote, nil
+}
+
+// IsRepo answers by stat rather than the embedded always-true, so the
+// filesystem walk finds the fixture's repositories instead of stopping at the
+// project root.
+func (g *countingGit) IsRepo(_ context.Context, path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
+}
+
+func (g *countingGit) calls() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.remoteCalls
+}
+
+// fsProject is a filesystem-backed project whose repositories are cloned on
+// disk, so they classify `ok` with no Repo Src — the only shape whose Src is
+// resolved lazily.
+func fsProject(t *testing.T) domain.Project {
+	t.Helper()
+	root := t.TempDir()
+	for _, name := range []string{"api", "web"} {
+		if err := os.MkdirAll(filepath.Join(root, name, ".git"), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	return domain.Project{Path: root, Source: &domain.ProviderSource{Type: "filesystem", Search: root}}
+}
+
+// TestExecListSrcResolutionIsLazy pins ticket 11: `list -o name` and `-o tree`
+// never print Repo Src and so must issue zero `git ls-remote` calls, while the
+// table, wide and JSON formats display it and resolve it once per repository.
+func TestExecListSrcResolutionIsLazy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("name and tree issue no remote calls", func(t *testing.T) {
+		t.Parallel()
+
+		for _, format := range []string{"name", "tree"} {
+			g := &countingGit{remote: "git@x:a/b.git"}
+			deps := clitest.New(t, g)
+			deps.Cache = hitCache{}
+			deps.Projects = domain.ProjectListKeyed{"acme": fsProject(t)}
+
+			if err := ExecList(format, []string{"acme"}, deps.RuntimeCLI); err != nil {
+				t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
+			}
+			if got := g.calls(); got != 0 {
+				t.Errorf("%s format: Remote calls = %d, want 0", format, got)
+			}
+		}
+	})
+
+	t.Run("table, wide and json resolve src once per repo", func(t *testing.T) {
+		t.Parallel()
+
+		for _, format := range []string{"table", "wide", "json"} {
+			g := &countingGit{remote: "git@x:a/b.git"}
+			deps := clitest.New(t, g)
+			deps.Cache = hitCache{}
+			deps.Projects = domain.ProjectListKeyed{"acme": fsProject(t)}
+
+			if err := ExecList(format, []string{"acme"}, deps.RuntimeCLI); err != nil {
+				t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
+			}
+			if got := g.calls(); got != 2 {
+				t.Errorf("%s format: Remote calls = %d, want 2 (one per repo)", format, got)
+			}
+		}
+	})
 }
 
 // TestExecListNameProjects covers `gits list -o name` with no project named:
@@ -272,6 +364,61 @@ func TestExecListJSON(t *testing.T) {
 	}
 }
 
+// TestExecListDeterministicOrder covers the table and tree formats rendering a
+// multi-project map in a stable, sorted order rather than the map's random
+// iteration order. Three projects named out of order must come out
+// alphabetically, the same way every run.
+func TestExecListDeterministicOrder(t *testing.T) {
+	t.Parallel()
+
+	build := func(t *testing.T) *clitest.Deps {
+		t.Helper()
+		deps := clitest.New(t, nil)
+		deps.Cache = hitCache{}
+		deps.Projects = domain.ProjectListKeyed{
+			"charlie": {Source: &domain.ProviderSource{Type: "github", Search: "c"},
+				Repos: []domain.Repository{{Name: "c", Src: "git@github.com:c/c.git"}}},
+			"alpha": {Source: &domain.ProviderSource{Type: "github", Search: "a"},
+				Repos: []domain.Repository{{Name: "a", Src: "git@github.com:a/a.git"}}},
+			"bravo": {Source: &domain.ProviderSource{Type: "github", Search: "b"},
+				Repos: []domain.Repository{{Name: "b", Src: "git@github.com:b/b.git"}}},
+		}
+		return deps
+	}
+
+	for _, format := range []string{"table", "wide", "tree"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+
+			// Rendered repeatedly: a map's iteration order is randomized per
+			// range, so a run that only happened to sort would drift here.
+			var first string
+			for i := range 8 {
+				deps := build(t)
+				if err := ExecList(format, []string{"alpha", "bravo", "charlie"}, deps.RuntimeCLI); err != nil {
+					t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
+				}
+				got := deps.Result()
+
+				a := strings.Index(got, "alpha")
+				b := strings.Index(got, "bravo")
+				c := strings.Index(got, "charlie")
+				if a < 0 || b < 0 || c < 0 {
+					t.Fatalf("Result Output = %q, want all three project names", got)
+				}
+				if a >= b || b >= c {
+					t.Errorf("order = alpha@%d bravo@%d charlie@%d, want alphabetical", a, b, c)
+				}
+				if i == 0 {
+					first = got
+				} else if got != first {
+					t.Errorf("run %d differs from run 0:\n%q\nvs\n%q", i, got, first)
+				}
+			}
+		})
+	}
+}
+
 // TestExecListUnknownFormat covers an unrecognized format being rejected
 // before any project is loaded. The fixture's Provider Source is invalid, so
 // a load would fail with its own error — the format error arriving instead is
@@ -304,5 +451,32 @@ func TestExecListUnknownFormat(t *testing.T) {
 	if err := ExecList("name", []string{"acme"}, deps.RuntimeCLI); err == nil ||
 		strings.Contains(err.Error(), "unknown output format") {
 		t.Errorf("ExecList(\"name\") error = %v, want the load to have been attempted", err)
+	}
+}
+
+// TestExecListTracingStaysOutOfOutput proves the split ticket 15 established
+// and ticket 16 preserved: debug tracing goes to the logger, never to Result
+// Output and never to Diagnostic Output. `list` over a filesystem source
+// traces its provider search, so the records exist to be misplaced.
+func TestExecListTracingStaysOutOfOutput(t *testing.T) {
+	t.Parallel()
+
+	deps := clitest.New(t, &countingGit{remote: "git@x:a/b.git"})
+	deps.Projects = domain.ProjectListKeyed{"acme": fsProject(t)}
+
+	if err := ExecList("name", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecList error = %v, want nil", err)
+	}
+
+	if !strings.Contains(deps.Trace(), "searching for repos on disk") {
+		t.Fatalf("trace = %q, want the provider search recorded", deps.Trace())
+	}
+	for name, out := range map[string]string{
+		"Result Output":     deps.Result(),
+		"Diagnostic Output": deps.Diagnostic(),
+	} {
+		if strings.Contains(out, "level=") || strings.Contains(out, "msg=") {
+			t.Errorf("%s = %q, want no log records in it", name, out)
+		}
 	}
 }

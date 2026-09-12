@@ -1,36 +1,18 @@
 package providers
 
 import (
-	"context"
-	"errors"
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/git"
 )
-
-// fakeRemoteGit stubs only Remote; NewFilesystemRepo touches nothing else.
-type fakeRemoteGit struct {
-	git.Client
-
-	remote    string
-	remoteErr error
-}
-
-func (f fakeRemoteGit) Remote(context.Context, string) (string, error) {
-	return f.remote, f.remoteErr
-}
 
 func TestNewFilesystemRepo(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	t.Run("name from path, src passthrough", func(t *testing.T) {
 		t.Parallel()
 
-		g := fakeRemoteGit{remote: "should-not-be-used"}
-		repo, err := NewFilesystemRepo(ctx, "/code/myrepo", "git@host:o/r.git", g)
+		repo, err := NewFilesystemRepo("/code/myrepo", "git@host:o/r.git")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -48,35 +30,31 @@ func TestNewFilesystemRepo(t *testing.T) {
 		}
 	})
 
-	t.Run("empty src falls back to git remote", func(t *testing.T) {
+	// An empty Repo Src is left empty rather than resolved from the clone's
+	// own remote: reading it costs a git subprocess, deferred to the commands
+	// that display Src (see loader.ResolveSrc). No git client is consulted here.
+	t.Run("empty src stays empty, no git subprocess", func(t *testing.T) {
 		t.Parallel()
 
-		g := fakeRemoteGit{remote: "git@host:o/derived.git"}
-		repo, err := NewFilesystemRepo(ctx, "/code/myrepo", "", g)
+		repo, err := NewFilesystemRepo("/code/myrepo", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if repo.Src != "git@host:o/derived.git" {
-			t.Errorf("Src = %q, want git-remote fallback", repo.Src)
+		if repo.Src != "" {
+			t.Errorf("Src = %q, want empty (resolution is lazy)", repo.Src)
 		}
 		if repo.State == domain.RepoStateError {
 			t.Errorf("State = %q, want non-error", repo.State)
 		}
 	})
 
-	t.Run("remote error marks state error with reason", func(t *testing.T) {
+	// A user-specific home dir cannot be expanded and is the one input that
+	// makes NewFilesystemRepo return an error.
+	t.Run("unexpandable path errors", func(t *testing.T) {
 		t.Parallel()
 
-		g := fakeRemoteGit{remoteErr: errors.New("not a git repo")}
-		repo, err := NewFilesystemRepo(ctx, "/code/myrepo", "", g)
-		if err != nil {
-			t.Fatalf("NewFilesystemRepo should not propagate remote error, got: %v", err)
-		}
-		if repo.State != domain.RepoStateError {
-			t.Errorf("State = %q, want %q", repo.State, domain.RepoStateError)
-		}
-		if repo.Reason != "not a git repo" {
-			t.Errorf("Reason = %q, want %q", repo.Reason, "not a git repo")
+		if _, err := NewFilesystemRepo("~nobody-else/repo", ""); err == nil {
+			t.Error("NewFilesystemRepo(unexpandable path) = nil, want error")
 		}
 	})
 }

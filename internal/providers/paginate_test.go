@@ -16,7 +16,7 @@ func TestPaginate(t *testing.T) {
 		t.Parallel()
 
 		pages := []int{}
-		err := paginate(ctx, "things", constantPause(0), func(page int) (bool, error) {
+		err := paginate(ctx, nil, "things", constantPause(0), func(page int) (bool, error) {
 			pages = append(pages, page)
 			return page < 3, nil
 		})
@@ -33,7 +33,7 @@ func TestPaginate(t *testing.T) {
 
 		boom := errors.New("boom")
 		calls := 0
-		err := paginate(ctx, "things", constantPause(0), func(int) (bool, error) {
+		err := paginate(ctx, nil, "things", constantPause(0), func(int) (bool, error) {
 			calls++
 			return true, boom
 		})
@@ -55,7 +55,7 @@ func TestPaginate(t *testing.T) {
 		calls := 0
 		// Bounded, so a loop that ignores cancellation ends the test with a
 		// failure rather than spinning until the suite times out.
-		err := paginate(cancelCtx, "things", constantPause(0), func(page int) (bool, error) {
+		err := paginate(cancelCtx, nil, "things", constantPause(0), func(page int) (bool, error) {
 			calls++
 			cancel()
 			return page < 10, nil
@@ -73,7 +73,7 @@ func TestPaginate(t *testing.T) {
 
 		cancelCtx, cancel := context.WithCancel(ctx)
 		calls := 0
-		err := paginate(cancelCtx, "things", constantPause(time.Hour), func(int) (bool, error) {
+		err := paginate(cancelCtx, nil, "things", constantPause(time.Hour), func(int) (bool, error) {
 			calls++
 			cancel() // canceled while "fetching"; the pause must not block
 			return true, nil
@@ -97,7 +97,7 @@ func TestPaginate(t *testing.T) {
 			asked++
 			return 0
 		}
-		err := paginate(ctx, "things", pause, func(page int) (bool, error) {
+		err := paginate(ctx, nil, "things", pause, func(page int) (bool, error) {
 			return page < 3, nil
 		})
 		if err != nil {
@@ -120,7 +120,7 @@ func TestPaginate(t *testing.T) {
 			asked++
 			return d
 		}
-		err := paginate(ctx, "things", pause, func(page int) (bool, error) {
+		err := paginate(ctx, nil, "things", pause, func(page int) (bool, error) {
 			return page < 4, nil
 		})
 		if err != nil {

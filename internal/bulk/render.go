@@ -2,122 +2,53 @@ package bulk
 
 import (
 	"fmt"
-	"strings"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/types"
 )
 
-// Render draws res's groups as Result Output and returns every result's error
-// in stable tree order, the interruption included. A renderer that is not
-// Lines calls this and then Epilogue, so the two share one traversal.
-//
-// It encodes that traversal's contract once, and each clause is a mistake a
-// hand-rolled loop makes silently: a nil result slot is skipped (the
-// repository was never started), errors are collected from every result —
-// including the ones a body chooses not to show — a blank line separates
-// printed groups, and each shown group gets its project title above its body,
-// unless a single repository was named. The body callback returns the group's
-// rendered content ("" prints nothing under the title) and whether the group
-// appears at all.
-func Render[T any](
-	res Results[T],
-	deps types.RuntimeCLI,
-	body func(Group[T]) (string, bool),
-) []error {
-	var errs []error
-	printed := 0
-	for _, g := range res.Groups {
-		for _, r := range g.Results {
-			if r == nil {
-				continue // not started (canceled before dequeue)
-			}
-			if r.Err != nil {
-				errs = append(errs, r.Err)
-			}
-		}
-
-		content, show := body(g)
-		if !show {
-			continue
-		}
-		if printed > 0 {
-			fmt.Fprintln(deps.Out)
-		}
-		if !res.Single {
-			lipgloss.Fprintln(deps.Out, cli.ProjectTitleWithBullet(g.Project, deps.Theme))
-		}
-		printed++
-		if content != "" {
-			lipgloss.Fprintln(deps.Out, content)
-		}
-	}
-	if res.Interrupted != nil {
-		errs = append(errs, res.Interrupted)
-	}
-	return errs
-}
-
-// Epilogue decides the run's outcome from the errors Render collected. A whole
-// tree writes the error epilogue as Diagnostic Output and fails when anything
-// counted; a single named repository returns its own error as itself, so a
-// warning still downgrades the exit code at the root instead of being counted
-// as a failure.
-func Epilogue[T any](res Results[T], errs []error, deps types.RuntimeCLI) error {
-	if res.Single {
-		if len(errs) > 0 {
-			return errs[0]
-		}
-		return nil
-	}
-	return cli.RenderErrors(deps.Err, errs, true)
-}
-
-// Lines is the stock renderer: one line per repository — the padded title
-// followed by the body's text, or by its error — drawn under each project's
-// title as Result Output, then the error epilogue as Diagnostic Output. Four
-// of the five Bulk Commands set it as a field value.
+// Lines is the stock renderer: one line per repository — the padded display
+// path followed by the body's text, or by its bare error — as Result Output,
+// a blank line between projects, then the error epilogue as Diagnostic
+// Output. Four of the five Bulk Commands hand their results straight to it.
 func Lines(res Results[string], deps types.RuntimeCLI) error {
-	errs := Render(res, deps, func(g Group[string]) (string, bool) {
-		var lines []string
-		for _, r := range g.Results {
-			if r == nil {
-				continue
+	width := 0
+	for i, r := range res.Results {
+		if i == 0 || r.Repo.ProjectKey != res.Results[i-1].Repo.ProjectKey {
+			if i > 0 {
+				fmt.Fprintln(deps.Out)
 			}
-			lines = append(lines, indentMultiline(repoLineOf(r, deps).String()))
+			width = maxPathWidth(r.Repo.Project, deps.HomeDir)
 		}
-		return strings.Join(lines, "\n"), true
-	})
-	return Epilogue(res, errs, deps)
-}
-
-// repoLine is one result line: the padded repository title followed by either
-// the styled error or the command-specific body.
-type repoLine struct {
-	Title      lipgloss.Style
-	Body       string
-	Err        error
-	ErrorStyle lipgloss.Style
-}
-
-func (r repoLine) String() string {
-	if r.Err != nil {
-		return fmt.Sprintf("%s %s", r.Title, r.ErrorStyle.Render(r.Err.Error()))
+		title := cli.RepoTitle(r.Repo.Repository, r.Repo.Project, deps.HomeDir, deps.Theme).
+			Width(width)
+		body := r.Value
+		if r.Err != nil {
+			body = deps.Theme.Error.Render(r.Err.Error())
+		}
+		lipgloss.Fprintln(deps.Out, indentMultiline(fmt.Sprintf("%s %s", title, body)))
 	}
-	return fmt.Sprintf("%s %s", r.Title, r.Body)
+	return Epilogue(res, deps)
 }
 
-// repoLineOf assembles one result's line from the title the module measured
-// and the body's own text.
-func repoLineOf(res *Result[string], deps types.RuntimeCLI) repoLine {
-	return repoLine{
-		Title:      res.Repo.Title,
-		Body:       res.Value,
-		Err:        res.Err,
-		ErrorStyle: deps.Theme.Error,
+// Epilogue writes the error epilogue as Diagnostic Output and returns the
+// error that decides the run's exit code: nil when nothing counted, since
+// warnings are listed on their repositories' lines and not here.
+func Epilogue[T any](res Results[T], deps types.RuntimeCLI) error {
+	return cli.RenderErrors(deps.Err, res.Errors(), true)
+}
+
+// maxPathWidth returns the rendered width of the widest repository display
+// path in a project, so the lines beneath one project align.
+func maxPathWidth(project domain.Project, homeDir string) int {
+	width := 0
+	for _, repo := range project.Repos {
+		width = max(width, lipgloss.Width(cli.RepoRelPath(project, repo, homeDir)))
 	}
+	return width
 }
 
 // indentMultiline reformats a rendered repository line so its continuation

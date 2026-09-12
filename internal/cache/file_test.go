@@ -1,15 +1,18 @@
 package cache
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -298,5 +301,34 @@ func TestCacheFileGetNoCrossTalk(t *testing.T) {
 	}
 	if got2.Desc != "" {
 		t.Errorf("second project desc = %q, want empty (leaked from first read)", got2.Desc)
+	}
+}
+
+// TestCacheFileTracesToItsLogger proves the cache reports its hits and misses
+// to the logger it was constructed with, rather than to a global one — and
+// that a zero-value File, which every other test here builds, traces to
+// nothing instead of panicking.
+func TestCacheFileTracesToItsLogger(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	var buf bytes.Buffer
+	cf := NewFileCache(time.Hour, logging.New(&buf, true))
+
+	proj := hashedProject(t)
+	if ok, err := cf.Get("absent", &proj); ok || err != nil {
+		t.Fatalf("Get(missing) = (%v, %v), want (false, nil)", ok, err)
+	}
+	if got := buf.String(); !strings.Contains(got, "cache file not found") {
+		t.Errorf("trace = %q, want the miss recorded on the logger passed in", got)
+	}
+
+	// A File built without a logger must still be usable.
+	buf.Reset()
+	bare := &File{ttl: time.Hour}
+	if ok, err := bare.Get("absent", &proj); ok || err != nil {
+		t.Fatalf("zero-value Get(missing) = (%v, %v), want (false, nil)", ok, err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a File built without a logger wrote %q, want nothing", buf.String())
 	}
 }

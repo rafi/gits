@@ -82,26 +82,18 @@ func layoutFor(width int) (nameW int, showStats bool) {
 	}
 }
 
-// repoTracker is one repository's live tracker. The module calls a completion
-// when the repo finishes; the row spins (an indeterminate huh-style spinner)
-// until then, so there is nothing to drive between start and completion.
-type repoTracker interface {
-	MarkDone()
-	MarkErrored()
-}
-
 // reporter renders live progress for a run: one in-place row per active repo
 // plus an overall total pinned at the bottom. Implementations must tolerate the
-// full lifecycle being driven concurrently from worker goroutines: Start once,
-// RepoStart per repo (its row driven and marked on that worker — MarkErrored
-// folds into the failed-count), Done per completed repo, and a final Stop that
-// erases the live block and blocks until the render goroutine has drained
-// (AC-7) so results can be flushed as Result Output without interleaving.
+// lifecycle being driven concurrently from worker goroutines: Begin once,
+// Start per repo — its row spins until the returned finish is called on that
+// worker, which also folds a failure into the failed count — and a final Stop
+// that erases the live block and blocks until the render goroutine has
+// drained (AC-7) so results can be flushed as Result Output without
+// interleaving.
 type reporter interface {
-	Start(verb string, total int)       // begin; record the totals
-	RepoStart(label string) repoTracker // add a live row for one repo
-	Done()                              // overall: one repo finished
-	Stop()                              // erase the block, drain the render goroutine
+	Begin(verb string, total int)         // begin; record the totals
+	Start(label string) func(failed bool) // add a live row; finish it with the result
+	Stop()                                // erase the block, drain the render goroutine
 }
 
 // newReporter selects a progress reporter based on whether w is a terminal.
@@ -117,16 +109,9 @@ func newReporter(w io.Writer) reporter {
 // nopReporter is the no-op reporter used for non-TTY writers and tests.
 type nopReporter struct{}
 
-func (*nopReporter) Start(string, int)            {}
-func (*nopReporter) RepoStart(string) repoTracker { return nopRepoTracker{} }
-func (*nopReporter) Done()                        {}
-func (*nopReporter) Stop()                        {}
-
-// nopRepoTracker is the no-op per-repo tracker.
-type nopRepoTracker struct{}
-
-func (nopRepoTracker) MarkDone()    {}
-func (nopRepoTracker) MarkErrored() {}
+func (*nopReporter) Begin(string, int)              {}
+func (*nopReporter) Start(string) func(failed bool) { return func(bool) {} }
+func (*nopReporter) Stop()                          {}
 
 // styles holds the lipgloss styles for one render. Colors are emitted as-is and
 // downsampled to the terminal's profile at the write site (see render).
@@ -192,7 +177,7 @@ func newLiveReporter(w io.Writer) *liveReporter {
 	return &liveReporter{w: w, st: newStyles(), width: width}
 }
 
-func (r *liveReporter) Start(verb string, total int) {
+func (r *liveReporter) Begin(verb string, total int) {
 	r.mu.Lock()
 	r.verb = verb
 	r.total = total
@@ -219,18 +204,29 @@ func (r *liveReporter) renderLoop() {
 	}
 }
 
-func (r *liveReporter) RepoStart(label string) repoTracker {
+// Start adds a live row for one repository and returns its finish: it drops
+// the row from the block so the finished repo vanishes rather than lingering
+// as an idle bar, counts the repo as done, and folds a failure into the
+// run-wide failed count.
+func (r *liveReporter) Start(label string) func(failed bool) {
 	row := &liveRow{name: label}
 	r.mu.Lock()
 	r.rows = append(r.rows, row)
 	r.mu.Unlock()
-	return &liveRepoTracker{r: r, row: row}
-}
-
-func (r *liveReporter) Done() {
-	r.mu.Lock()
-	r.doneCnt++
-	r.mu.Unlock()
+	return func(failed bool) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.doneCnt++
+		if failed {
+			r.errs++
+		}
+		for i, candidate := range r.rows {
+			if candidate == row {
+				r.rows = append(r.rows[:i], r.rows[i+1:]...)
+				return
+			}
+		}
+	}
 }
 
 // Stop is idempotent and safe to call on a reporter that was never started: the
@@ -380,37 +376,4 @@ func eraseLines(n int) string {
 		b.WriteString(ansiEraseLine)
 	}
 	return b.String()
-}
-
-// liveRepoTracker maps the repoTracker contract onto one live row. The row
-// spins until the module calls a completion marker, which removes the row from
-// the block so finished repos disappear rather than lingering as idle bars; the
-// run-wide failed-count is folded in by MarkErrored.
-type liveRepoTracker struct {
-	r    *liveReporter
-	row  *liveRow
-	once sync.Once
-}
-
-func (t *liveRepoTracker) MarkDone()    { t.finish(false) }
-func (t *liveRepoTracker) MarkErrored() { t.finish(true) }
-
-// finish drops the row from the live block so the finished repo's row
-// vanishes, and folds a failure into the reporter's error count — the
-// tracker owns the count, so a repo is tallied exactly once even on double
-// completion.
-func (t *liveRepoTracker) finish(errored bool) {
-	t.once.Do(func() {
-		t.r.mu.Lock()
-		if errored {
-			t.r.errs++
-		}
-		for i, row := range t.r.rows {
-			if row == t.row {
-				t.r.rows = append(t.r.rows[:i], t.r.rows[i+1:]...)
-				break
-			}
-		}
-		t.r.mu.Unlock()
-	})
 }

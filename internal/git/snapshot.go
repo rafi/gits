@@ -72,35 +72,7 @@ func parsePorcelainV2(out string) Snapshot {
 		kind, rest, _ := strings.Cut(line, " ")
 		switch kind {
 		case "#":
-			key, value, _ := strings.Cut(rest, " ")
-			switch key {
-			case "branch.head":
-				snap.Branch = value
-				if value == "(detached)" {
-					snap.Branch = "HEAD"
-				}
-			case "branch.upstream":
-				snap.Upstream = value
-			case "branch.ab":
-				// Git emits this header only when the upstream ref resolves;
-				// a gone upstream emits branch.upstream without it.
-				snap.Tracking = true
-				for f := range strings.FieldsSeq(value) {
-					if len(f) < abFieldLen {
-						continue
-					}
-					n, err := strconv.Atoi(f[1:])
-					if err != nil {
-						continue
-					}
-					switch f[0] {
-					case '+':
-						snap.Ahead = n
-					case '-':
-						snap.Behind = n
-					}
-				}
-			}
+			parseBranchHeader(&snap, rest)
 		case "1", "2":
 			if len(rest) >= xyFieldLen {
 				if rest[0] != '.' {
@@ -118,4 +90,43 @@ func parsePorcelainV2(out string) Snapshot {
 		}
 	}
 	return snap
+}
+
+// parseBranchHeader applies one `# branch.*` header line, rest being the
+// line with its "# " prefix already cut.
+func parseBranchHeader(snap *Snapshot, rest string) {
+	key, value, _ := strings.Cut(rest, " ")
+	switch key {
+	case "branch.head":
+		snap.Branch = value
+		if value == "(detached)" {
+			snap.Branch = detachedBranch
+		}
+	case "branch.upstream":
+		snap.Upstream = value
+	case "branch.ab":
+		// Git emits this header only when the upstream ref resolves;
+		// a gone upstream emits branch.upstream without it.
+		snap.Tracking = true
+		parseAheadBehind(snap, value)
+	}
+}
+
+// parseAheadBehind reads the `+N -M` pair of a branch.ab header.
+func parseAheadBehind(snap *Snapshot, value string) {
+	for f := range strings.FieldsSeq(value) {
+		if len(f) < abFieldLen {
+			continue
+		}
+		n, err := strconv.Atoi(f[1:])
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case '+':
+			snap.Ahead = n
+		case '-':
+			snap.Behind = n
+		}
+	}
 }

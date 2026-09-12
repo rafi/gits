@@ -62,6 +62,16 @@ func echo(delay func(string) time.Duration) body {
 // lineFor is a stable, greppable result body for a repository.
 func lineFor(name string) string { return "LINE:" + name }
 
+// run drives cmd over args and renders the results with Lines, as the four
+// line-rendering Bulk Commands do.
+func run(cmd Command[string], args []string, deps types.RuntimeCLI) error {
+	res, err := cmd.Run(args, deps)
+	if err != nil {
+		return err
+	}
+	return Lines(res, deps)
+}
+
 // inOrder asserts that every want appears in got, in the order given.
 func inOrder(t *testing.T, got string, want ...string) {
 	t.Helper()
@@ -94,11 +104,10 @@ func TestRunStableOrder(t *testing.T) {
 		clitest.Cloned("charlie"), clitest.Cloned("delta"))
 
 	cmd := Command[string]{
-		Verb:   "testing",
-		Body:   echo(func(name string) time.Duration { return order[name] }),
-		Render: Lines,
+		Verb: "testing",
+		Body: echo(func(name string) time.Duration { return order[name] }),
 	}
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err != nil {
+	if err := run(cmd, []string{"proj"}, d.RuntimeCLI); err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
 	}
 
@@ -107,9 +116,8 @@ func TestRunStableOrder(t *testing.T) {
 }
 
 // TestRunSubProjectOrder: the tree is walked depth-first, a project's own
-// repositories before its sub-projects, and the groups a renderer receives
-// carry that same order — the contract status's JSON renderer inverts
-// positionally to rebuild the tree.
+// repositories before its sub-projects, the results come back in that order
+// with their owning project, and the tree the run visited comes back whole.
 func TestRunSubProjectOrder(t *testing.T) {
 	t.Parallel()
 
@@ -120,43 +128,30 @@ func TestRunSubProjectOrder(t *testing.T) {
 	root.SubProjects = []domain.Project{sub}
 	d.Projects["root"] = root
 
-	var got Results[string]
-	cmd := Command[string]{
-		Verb: "testing",
-		Body: echo(nil),
-		Render: func(res Results[string], deps types.RuntimeCLI) error {
-			got = res
-			return Lines(res, deps)
-		},
-	}
-	if err := cmd.Run([]string{"root"}, d.RuntimeCLI); err != nil {
+	cmd := Command[string]{Verb: "testing", Body: echo(nil)}
+	got, err := cmd.Run([]string{"root"}, d.RuntimeCLI)
+	if err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
 	}
+	if err := Lines(got, d.RuntimeCLI); err != nil {
+		t.Fatalf("Lines error = %v, want nil", err)
+	}
 
-	inOrder(t, d.Result(), "root", lineFor("r1"), lineFor("r2"), "sub", lineFor("s1"))
+	inOrder(t, d.Result(), lineFor("r1"), lineFor("r2"), lineFor("s1"))
 
-	if len(got.Groups) != 2 {
-		t.Fatalf("groups = %d, want one per project node", len(got.Groups))
+	if got.Project.Name != "root" || len(got.Project.SubProjects) != 1 {
+		t.Fatalf("Project = %+v, want the whole tree the run visited", got.Project)
 	}
-	if got.Groups[0].Project.Name != "root" || got.Groups[1].Project.Name != "sub" {
-		t.Fatalf("group order = %q, %q, want root, sub",
-			got.Groups[0].Project.Name, got.Groups[1].Project.Name)
+	var values, owners []string
+	for _, res := range got.Results {
+		values = append(values, res.Value)
+		owners = append(owners, res.Repo.Project.Name)
 	}
-	if got.Single {
-		t.Error("Single = true for a whole-tree run")
+	if want := []string{lineFor("r1"), lineFor("r2"), lineFor("s1")}; fmt.Sprint(values) != fmt.Sprint(want) {
+		t.Fatalf("collected values = %v, want %v", values, want)
 	}
-	var names []string
-	for _, g := range got.Groups {
-		for _, res := range g.Results {
-			if res == nil {
-				t.Fatal("unexpected nil result without cancellation")
-			}
-			names = append(names, res.Value)
-		}
-	}
-	want := []string{lineFor("r1"), lineFor("r2"), lineFor("s1")}
-	if fmt.Sprint(names) != fmt.Sprint(want) {
-		t.Fatalf("collected values = %v, want %v", names, want)
+	if want := []string{"root", "root", "sub"}; fmt.Sprint(owners) != fmt.Sprint(want) {
+		t.Fatalf("owning projects = %v, want %v", owners, want)
 	}
 }
 
@@ -169,8 +164,8 @@ func TestRunUsesDependencyDestinations(t *testing.T) {
 
 	d := deps(t, 2, clitest.Cloned("a"), clitest.Cloned("b"))
 
-	cmd := Command[string]{Verb: "testing", Body: echo(nil), Render: Lines}
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err != nil {
+	cmd := Command[string]{Verb: "testing", Body: echo(nil)}
+	if err := run(cmd, []string{"proj"}, d.RuntimeCLI); err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
 	}
 
@@ -200,12 +195,11 @@ func TestRunNoStall(t *testing.T) {
 			}
 			return 40 * time.Millisecond
 		}),
-		Render: Lines,
 	}
 
 	// Serial sum = 200 + 19*40 = 960ms; a pool of 4 finishes well under 600ms.
 	start := time.Now()
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err != nil {
+	if err := run(cmd, []string{"proj"}, d.RuntimeCLI); err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
 	}
 	if elapsed := time.Since(start); elapsed > 600*time.Millisecond {
@@ -220,8 +214,8 @@ func TestRunWorkerClamp(t *testing.T) {
 
 	d := deps(t, 0, clitest.Cloned("a"), clitest.Cloned("b"))
 
-	cmd := Command[string]{Verb: "testing", Body: echo(nil), Render: Lines}
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err != nil {
+	cmd := Command[string]{Verb: "testing", Body: echo(nil)}
+	if err := run(cmd, []string{"proj"}, d.RuntimeCLI); err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
 	}
 	for _, want := range []string{lineFor("a"), lineFor("b")} {
@@ -250,9 +244,8 @@ func TestRunErrorAggregation(t *testing.T) {
 				return lineFor("fine"), nil
 			}
 		},
-		Render: Lines,
 	}
-	err := cmd.Run([]string{"proj"}, d.RuntimeCLI)
+	err := run(cmd, []string{"proj"}, d.RuntimeCLI)
 	if err == nil {
 		t.Fatal("Run error = nil, want the real failure to fail the run")
 	}
@@ -298,11 +291,18 @@ func TestRunCancellation(t *testing.T) {
 			}
 			return lineFor(repo.GetName()), nil
 		},
-		Render: Lines,
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- cmd.Run([]string{"proj"}, d.RuntimeCLI) }()
+	var got Results[string]
+	go func() {
+		res, err := cmd.Run([]string{"proj"}, d.RuntimeCLI)
+		if err == nil {
+			got = res
+			err = Lines(res, d.RuntimeCLI)
+		}
+		done <- err
+	}()
 	var err error
 	select {
 	case err = <-done:
@@ -322,47 +322,75 @@ func TestRunCancellation(t *testing.T) {
 		t.Errorf("Diagnostic Output = %q, want the interruption to name how many were skipped",
 			diagnostic)
 	}
+	// The repositories never started have no result at all — nothing for a
+	// renderer to skip over — and the interruption accounts for them.
+	if n := len(got.Results); n >= total || n != int(started.Load()) {
+		t.Errorf("results = %d, want exactly the %d repositories that started", n, started.Load())
+	}
+	if got.Interrupted == nil ||
+		!strings.Contains(got.Interrupted.Error(), fmt.Sprintf("%d of %d", total-len(got.Results), total)) {
+		t.Errorf("Interrupted = %v, want the unstarted count named", got.Interrupted)
+	}
 }
 
 // TestRunSingleRepository covers the single-repository dispatch: only the named
-// repository runs, its line renders without a project title, and its error
-// returns as itself — so a warning still downgrades the exit code at the root
-// rather than being counted as a failure.
+// repository runs, the tree the run reports is the project narrowed to it,
+// and its warning shows on its line without failing the run.
 func TestRunSingleRepository(t *testing.T) {
 	t.Parallel()
 
 	d := deps(t, 1, clitest.Cloned("api"), clitest.Cloned("web"))
 
 	var reached []string
-	var single bool
 	cmd := Command[string]{
 		Verb: "testing",
 		Body: func(_ context.Context, repo Repo, _ types.RuntimeCLI) (string, error) {
 			reached = append(reached, repo.GetName())
 			return lineFor(repo.GetName()), types.NewWarning("skip me")
 		},
-		Render: func(res Results[string], deps types.RuntimeCLI) error {
-			single = res.Single
-			return Lines(res, deps)
-		},
 	}
 
-	err := cmd.Run([]string{"proj", "api"}, d.RuntimeCLI)
-	if !types.IsWarning(err) {
-		t.Fatalf("Run error = %v, want the repository's warning passed through", err)
+	res, err := cmd.Run([]string{"proj", "api"}, d.RuntimeCLI)
+	if err != nil {
+		t.Fatalf("Run error = %v, want nil", err)
 	}
-	if !single {
-		t.Error("Single = false for a run naming one repository")
+	if err := Lines(res, d.RuntimeCLI); err != nil {
+		t.Fatalf("Lines error = %v, want a warning to leave the exit code alone", err)
 	}
 	if fmt.Sprint(reached) != fmt.Sprint([]string{"api"}) {
 		t.Errorf("body reached %v, want only the named repository", reached)
+	}
+	if len(res.Project.Repos) != 1 || res.Project.Repos[0].Name != "api" || len(res.Results) != 1 {
+		t.Errorf("Results = %+v, want the project narrowed to the named repository", res)
 	}
 	got := d.Result()
 	if !strings.Contains(got, "api") || !strings.Contains(got, "skip me") {
 		t.Errorf("Result Output = %q, want the named repository's line", got)
 	}
 	if strings.Contains(got, "proj") {
-		t.Errorf("Result Output = %q, want no project title on the single path", got)
+		t.Errorf("Result Output = %q, want no project title", got)
+	}
+}
+
+// TestRunSingleRepositoryFailure: a named repository's failure goes through
+// the same epilogue as a whole run, so the exit code and the diagnostic are
+// decided in one place.
+func TestRunSingleRepositoryFailure(t *testing.T) {
+	t.Parallel()
+
+	d := deps(t, 1, clitest.Cloned("api"))
+	cmd := Command[string]{
+		Verb: "testing",
+		Body: func(context.Context, Repo, types.RuntimeCLI) (string, error) {
+			return "", errors.New("boom")
+		},
+	}
+	err := run(cmd, []string{"proj", "api"}, d.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "completed with errors") {
+		t.Fatalf("error = %v, want the run reported as failed", err)
+	}
+	if got := d.Diagnostic(); !strings.Contains(got, "1 error:") || !strings.Contains(got, "boom") {
+		t.Errorf("Diagnostic Output = %q, want the epilogue", got)
 	}
 }
 
@@ -381,9 +409,8 @@ func TestRunStateGuard(t *testing.T) {
 			reached = append(reached, repo.GetName())
 			return lineFor(repo.GetName()), nil
 		},
-		Render: Lines,
 	}
-	err := cmd.Run([]string{"proj"}, d.RuntimeCLI)
+	err := run(cmd, []string{"proj"}, d.RuntimeCLI)
 	if err == nil {
 		t.Fatal("Run error = nil, want the guarded repositories to fail the run")
 	}
@@ -417,9 +444,8 @@ func TestRunAcceptsWidensTheGuard(t *testing.T) {
 			reached = append(reached, repo.GetName())
 			return lineFor(repo.GetName()), nil
 		},
-		Render: Lines,
 	}
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err == nil {
+	if err := run(cmd, []string{"proj"}, d.RuntimeCLI); err == nil {
 		t.Fatal("Run error = nil, want the undeclared state to fail the run")
 	}
 	if fmt.Sprint(reached) != fmt.Sprint([]string{"gone"}) {
@@ -427,48 +453,47 @@ func TestRunAcceptsWidensTheGuard(t *testing.T) {
 	}
 }
 
-// TestRunWrapsBodyErrors: a plain error is wrapped with the repository's name
-// and path, so no body repeats that call; an error a body already wrapped as a
-// warning passes through untouched, which is how a documented pass-over
-// condition stays visibly different in the source.
-func TestRunWrapsBodyErrors(t *testing.T) {
+// TestRunKeepsBodyErrorsBare: a body's error is kept exactly as returned, so
+// the repository's line shows the bare reason next to its title; the epilogue
+// list is where the repository's name and path are attached, and a warning
+// is left as it is on both.
+func TestRunKeepsBodyErrorsBare(t *testing.T) {
 	t.Parallel()
 
 	d := deps(t, 1, clitest.Cloned("api"))
 
-	var got error
-	capture := func(res Results[string], _ types.RuntimeCLI) error {
-		got = res.Groups[0].Results[0].Err
-		return nil
-	}
-
+	boom := errors.New("boom")
 	plain := Command[string]{
-		Verb:   "testing",
-		Body:   func(context.Context, Repo, types.RuntimeCLI) (string, error) { return "", errors.New("boom") },
-		Render: capture,
+		Verb: "testing",
+		Body: func(context.Context, Repo, types.RuntimeCLI) (string, error) { return "", boom },
 	}
-	if err := plain.Run([]string{"proj", "api"}, d.RuntimeCLI); err != nil {
-		t.Fatalf("Run error = %v, want nil from the capturing renderer", err)
+	res, err := plain.Run([]string{"proj", "api"}, d.RuntimeCLI)
+	if err != nil {
+		t.Fatalf("Run error = %v, want nil", err)
 	}
+	if got := res.Results[0].Err; got != boom { //nolint:errorlint // identity is the assertion
+		t.Fatalf("body error = %v, want it kept as returned", got)
+	}
+	errs := res.Errors()
 	var wrapped *types.Warning
-	if !errors.As(got, &wrapped) {
-		t.Fatalf("body error = %v (%T), want it wrapped for the repository", got, got)
+	if len(errs) != 1 || !errors.As(errs[0], &wrapped) {
+		t.Fatalf("Errors() = %v, want the failure wrapped for the epilogue", errs)
 	}
-	if wrapped.Title != "api" || wrapped.Type != types.ErrorType {
+	if wrapped.Title != "api" || wrapped.Type != types.ErrorType || !errors.Is(errs[0], boom) {
 		t.Errorf("wrapped error = %+v, want the repository named and a real failure", wrapped)
 	}
 
 	warning := types.NewWarning("already handled")
 	downgraded := Command[string]{
-		Verb:   "testing",
-		Body:   func(context.Context, Repo, types.RuntimeCLI) (string, error) { return "", warning },
-		Render: capture,
+		Verb: "testing",
+		Body: func(context.Context, Repo, types.RuntimeCLI) (string, error) { return "", warning },
 	}
-	if err := downgraded.Run([]string{"proj", "api"}, d.RuntimeCLI); err != nil {
-		t.Fatalf("Run error = %v, want nil from the capturing renderer", err)
+	res, err = downgraded.Run([]string{"proj", "api"}, d.RuntimeCLI)
+	if err != nil {
+		t.Fatalf("Run error = %v, want nil", err)
 	}
-	if !errors.Is(got, warning) || got != warning { //nolint:errorlint // identity is the assertion
-		t.Errorf("body error = %v, want the already-wrapped warning left untouched", got)
+	if errs := res.Errors(); len(errs) != 1 || errs[0] != warning { //nolint:errorlint // identity is the assertion
+		t.Errorf("Errors() = %v, want the warning left untouched", errs)
 	}
 }
 
@@ -492,9 +517,8 @@ func TestRunSkipsProjects(t *testing.T) {
 					reached = append(reached, repo.GetName())
 					return lineFor(repo.GetName()), nil
 				},
-				Render: Lines,
 			}
-			if err := cmd.Run(args, d.RuntimeCLI); err != nil {
+			if err := run(cmd, args, d.RuntimeCLI); err != nil {
 				t.Fatalf("Run error = %v, want nil", err)
 			}
 			if len(reached) != 0 {
@@ -545,9 +569,8 @@ func TestRunSkipsSubProjects(t *testing.T) {
 					reached = append(reached, repo.GetName())
 					return lineFor(repo.GetName()), nil
 				},
-				Render: Lines,
 			}
-			if err := cmd.Run(tc.args, d.RuntimeCLI); err != nil {
+			if err := run(cmd, tc.args, d.RuntimeCLI); err != nil {
 				t.Fatalf("Run error = %v, want nil", err)
 			}
 
@@ -581,45 +604,46 @@ func TestRunCollectsTypedResults(t *testing.T) {
 		Body: func(_ context.Context, repo Repo, _ types.RuntimeCLI) (*probe, error) {
 			return &probe{name: repo.GetName()}, nil
 		},
-		Render: func(res Results[*probe], _ types.RuntimeCLI) error {
-			for _, g := range res.Groups {
-				for _, r := range g.Results {
-					got = append(got, r.Value)
-				}
-			}
-			return nil
-		},
 	}
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err != nil {
+	res, err := cmd.Run([]string{"proj"}, d.RuntimeCLI)
+	if err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
+	}
+	for _, r := range res.Results {
+		got = append(got, r.Value)
 	}
 	if len(got) != 2 || got[0].name != "api" || got[1].name != "web" {
 		t.Fatalf("collected = %+v, want both probes in tree order", got)
 	}
 }
 
-// TestRunPadsTitles: every body receives its title already measured against
-// the widest in its project, so no body computes one and none can compute it
-// wrongly.
-func TestRunPadsTitles(t *testing.T) {
+// TestRunHandsDisplayPaths: every body receives its repository's display path,
+// and Lines pads the titles beneath one project to the widest of them so the
+// bodies align.
+func TestRunHandsDisplayPaths(t *testing.T) {
 	t.Parallel()
 
 	d := deps(t, 1, clitest.Cloned("api"), clitest.Cloned("much-longer-name"))
 
-	widths := map[string]int{}
+	var paths []string
 	cmd := Command[string]{
 		Verb: "testing",
 		Body: func(_ context.Context, repo Repo, _ types.RuntimeCLI) (string, error) {
-			widths[repo.Title.Value()] = repo.Title.GetWidth()
-			return "", nil
+			paths = append(paths, repo.Path)
+			return lineFor(repo.GetName()), nil
 		},
-		Render: func(Results[string], types.RuntimeCLI) error { return nil },
 	}
-	if err := cmd.Run([]string{"proj"}, d.RuntimeCLI); err != nil {
+	if err := run(cmd, []string{"proj"}, d.RuntimeCLI); err != nil {
 		t.Fatalf("Run error = %v, want nil", err)
 	}
-	want := len("much-longer-name")
-	if widths["api"] != want || widths["much-longer-name"] != want {
-		t.Fatalf("title widths = %v, want both padded to %d", widths, want)
+	if want := []string{"api", "much-longer-name"}; fmt.Sprint(paths) != fmt.Sprint(want) {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	lines := strings.Split(strings.TrimRight(d.Result(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("Result Output = %q, want one line per repository", d.Result())
+	}
+	if a, b := strings.Index(lines[0], "LINE:"), strings.Index(lines[1], "LINE:"); a != b {
+		t.Errorf("bodies start at columns %d and %d, want them aligned:\n%s", a, b, d.Result())
 	}
 }

@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"charm.land/lipgloss/v2"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -82,11 +82,14 @@ const (
 )
 
 // previewWidth returns the fzf preview pane width, or zero when unknown.
-// Fzf sets environment variables to detect width/height, see man fzf.
-func previewWidth() int {
+// Fzf sets environment variables to detect width/height, see man fzf. An
+// unparseable value is traced, not shown: the fallback width is not something
+// the user has to act on.
+func previewWidth(deps types.RuntimeCLI) int {
 	width, _, err := fzf.GetPreviewSize()
 	if err != nil {
-		log.Warnf("unable to parse FZF_PREVIEW_COLUMNS: %s", err)
+		logging.Or(deps.Log).DebugContext(deps.Ctx,
+			"unable to parse fzf preview size", "err", err)
 	}
 	return width
 }
@@ -98,12 +101,13 @@ func previewHeader(style lipgloss.Style, width int) lipgloss.Style {
 
 // browseTarget resolves the project name and explicit branch from the
 // command arguments. The project name comes from the first argument whenever
-// one is given — including the 3-arg form — and otherwise from the
-// interactively selected project. An empty branch means "select one".
+// one is given — including the 3-arg form, and resolved through the loader so
+// a path argument yields the project name it loads under — and otherwise from
+// the interactively selected project. An empty branch means "select one".
 func browseTarget(args []string, project domain.Project) (projName, branch string) {
 	projName = project.Name
 	if len(args) > 0 {
-		projName = args[0]
+		projName = loader.ProjectName(args[0])
 	}
 	if len(args) == branchArgIdx+1 {
 		branch = args[branchArgIdx]

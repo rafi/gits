@@ -6,6 +6,7 @@ package loader
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,16 +14,50 @@ import (
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/providers"
 	"github.com/rafi/gits/internal/types"
 )
 
-// GetProjects returns a list of populated projects filtered by name or path.
-func GetProjects(args []string, deps types.Runtime) (domain.ProjectListKeyed, error) {
+// Option tunes how GetProjects and GetProject populate a project. Callers that
+// pass none get the default behavior: a cache miss on a remote source falls
+// through to the provider.
+type Option func(*options)
+
+// options is the resolved set of loader tunables.
+type options struct {
+	// cacheOnly stops a remote Provider Source from being contacted: a cache
+	// miss leaves the project without its provider repositories rather than
+	// running a network fetch or a tokenCommand passphrase prompt. Shell
+	// completion loads this way so pressing Tab never blocks or prompts.
+	cacheOnly bool
+}
+
+// CacheOnly makes a load never contact a remote Provider Source: cached
+// repositories are returned, and a miss yields an empty repository list rather
+// than a provider fetch. Local filesystem discovery is offline and still runs.
+func CacheOnly() Option {
+	return func(o *options) { o.cacheOnly = true }
+}
+
+// GetProjects returns a list of populated projects filtered by name or path,
+// keyed by project name. A path argument names a project that is not in the
+// configuration, so its key is the name derived from the path rather than the
+// path the caller passed; callers needing the resolved name read it from the
+// key or from Project.Name. The args slice is never modified.
+func GetProjects(args []string, deps types.Runtime, opts ...Option) (domain.ProjectListKeyed, error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	// names filters the configured projects. A path argument replaces the
+	// candidates entirely, so it filters nothing.
+	names := args
+
 	// Support path based project directories. Resolve to an absolute path
 	// first: the filesystem walk returns dirs relative to its root, so a
 	// relative root would be joined onto itself ("dir/dir"), and "." or "~"
@@ -38,17 +73,17 @@ func GetProjects(args []string, deps types.Runtime) (domain.ProjectListKeyed, er
 		}
 		project := newFilesystemProject(path)
 		deps.Projects = domain.ProjectListKeyed{project.Name: project}
-		args[0] = project.Name
+		names = nil
 	}
 
 	// Filter projects and populate each with metadata and state.
 	projs := domain.ProjectListKeyed{}
 	for name, proj := range deps.Projects {
-		if len(args) > 0 && !slices.Contains(args, name) {
+		if len(names) > 0 && !slices.Contains(names, name) {
 			continue
 		}
 		proj.Name = name
-		if err := populateProject(&proj, deps); err != nil {
+		if err := populateProject(&proj, deps, o); err != nil {
 			return nil, err
 		}
 		projs[name] = proj
@@ -57,8 +92,8 @@ func GetProjects(args []string, deps types.Runtime) (domain.ProjectListKeyed, er
 }
 
 // GetProject returns a project by name or path.
-func GetProject(name string, deps types.Runtime) (domain.Project, error) {
-	list, err := GetProjects([]string{name}, deps)
+func GetProject(name string, deps types.Runtime, opts ...Option) (domain.Project, error) {
+	list, err := GetProjects([]string{name}, deps, opts...)
 	if err != nil {
 		return domain.Project{}, err
 	}
@@ -67,6 +102,26 @@ func GetProject(name string, deps types.Runtime) (domain.Project, error) {
 		return proj, nil
 	}
 	return domain.Project{}, fmt.Errorf("%q not found", name)
+}
+
+// ProjectName returns the project name a GetProjects argument resolves to:
+// the argument itself for a configured project, and the name derived from the
+// path for a path argument — the same name GetProjects keys the result by.
+// A path that cannot be resolved is returned unchanged, since GetProjects
+// will report that failure itself.
+func ProjectName(arg string) string {
+	if !isPath(arg) {
+		return arg
+	}
+	path, err := homedir.Expand(arg)
+	if err != nil {
+		return arg
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return arg
+	}
+	return newFilesystemProject(path).Name
 }
 
 // isPath checks if a string is a path.
@@ -95,7 +150,7 @@ func newFilesystemProject(path string) domain.Project {
 }
 
 // populateProject populates a project with repositories, metadata and state.
-func populateProject(project *domain.Project, deps types.Runtime) error {
+func populateProject(project *domain.Project, deps types.Runtime, o options) error {
 	filesystemType := string(providers.ProviderFilesystem)
 	emptySource := (project.Source == nil || project.Source.Type == "")
 
@@ -105,10 +160,8 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 		var err error
 		for repoIdx, repo := range project.Repos {
 			project.Repos[repoIdx], err = providers.NewFilesystemRepo(
-				deps.Ctx,
 				repo.Dir,
 				repo.Src,
-				deps.Git,
 			)
 			if err != nil {
 				return err
@@ -131,14 +184,14 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 
 		// Populate repos from source.
 		if project.Source.Type != "" {
-			if err := getSource(project, deps); err != nil {
+			if err := getSource(project, deps, o); err != nil {
 				return err
 			}
 		}
 	}
 
 	// Load any remote sources, and check repositories state.
-	computeState(deps.Ctx, project, deps.Git)
+	computeState(deps.Ctx, deps.Log, project, deps.Git)
 
 	// Filter by user include/exclude config values.
 	project.Filter()
@@ -146,7 +199,7 @@ func populateProject(project *domain.Project, deps types.Runtime) error {
 }
 
 // getSource populates project repos from a provider source.
-func getSource(project *domain.Project, deps types.Runtime) error {
+func getSource(project *domain.Project, deps types.Runtime, o options) error {
 	var (
 		err         error
 		hasCache    bool
@@ -172,6 +225,14 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 	if hasCache {
 		return nil
 	}
+	// A cache-only load never contacts a remote Provider Source: with no cache
+	// to answer, the project keeps whatever repositories it was configured with
+	// (none, for a discovered source) rather than triggering a network fetch or
+	// a tokenCommand passphrase prompt. Shell completion loads this way. Local
+	// filesystem discovery is offline, so it still runs.
+	if o.cacheOnly && providers.IsRemote(source.Type) {
+		return nil
+	}
 	if err := loadFromProvider(project, deps); err != nil {
 		return err
 	}
@@ -189,21 +250,29 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 func loadFromProvider(project *domain.Project, deps types.Runtime) error {
 	source := project.Source
 	auth := deps.Settings.ProviderAuth(source.Type)
+	// A bad providerTimeout falls back to its default here; the value is
+	// validated and its warning surfaced once at startup (newRuntime), so the
+	// error is intentionally dropped rather than reported again per fetch.
+	timeout, _ := deps.Settings.ProviderTimeoutDuration()
 	c, err := providers.NewGitProvider(deps.Ctx, source.Type, providers.Options{
 		Token:           auth.Token,
 		TokenCommand:    auth.Command(),
 		IncludeArchived: deps.Settings.IncludeArchived,
-		Timeout:         deps.Settings.ProviderTimeoutDuration(),
+		Log:             deps.Log,
+		Timeout:         timeout,
 		GitClient:       deps.Git,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create provider: %w", err)
 	}
 
+	logger := logging.Or(deps.Log)
 	if providers.IsRemote(source.Type) {
-		log.Debugf("Fetching %s repos from %s…", source.Type, source.Search)
+		logger.DebugContext(deps.Ctx, "fetching repos from provider",
+			"provider", source.Type, "search", source.Search)
 	} else {
-		log.Debugf("Searching for repos at %s…", source.Search)
+		logger.DebugContext(deps.Ctx, "searching for repos on disk",
+			"path", source.Search)
 	}
 	if err := c.LoadRepos(deps.Ctx, source.Search, project); err != nil {
 		return fmt.Errorf(
@@ -222,20 +291,26 @@ func loadFromProvider(project *domain.Project, deps types.Runtime) error {
 // computeState resolves every project path, classifies each repository, and
 // orders the tree. Each concern is its own pass: classification reads the
 // paths expansion produces, and ordering depends on neither.
-func computeState(ctx context.Context, project *domain.Project, git git.Client) {
-	expandPaths(project)
+func computeState(
+	ctx context.Context,
+	logger *slog.Logger,
+	project *domain.Project,
+	git git.Reader,
+) {
+	expandPaths(ctx, logging.Or(logger), project)
 	classifyRepos(ctx, project, git)
 	sortTree(project)
 }
 
 // expandPaths resolves each project's configured path to an absolute one, and
 // gives every sub-project the path and source it inherits from its parent.
-func expandPaths(project *domain.Project) {
+func expandPaths(ctx context.Context, logger *slog.Logger, project *domain.Project) {
 	if project.Path != "" {
 		var err error
 		project.AbsPath, err = homedir.Expand(project.Path)
 		if err != nil {
-			log.Warnf("unable to expand path: %s", err)
+			logger.WarnContext(ctx, "unable to expand project path",
+				"project", project.Name, "path", project.Path, "err", err)
 		}
 	}
 
@@ -255,12 +330,12 @@ func expandPaths(project *domain.Project) {
 			src := *project.Source
 			sub.Source = &src
 		}
-		expandPaths(sub)
+		expandPaths(ctx, logger, sub)
 	}
 }
 
 // classifyRepos determines the state of every repository in the tree.
-func classifyRepos(ctx context.Context, project *domain.Project, git git.Client) {
+func classifyRepos(ctx context.Context, project *domain.Project, git git.Reader) {
 	for idx := range project.SubProjects {
 		classifyRepos(ctx, &project.SubProjects[idx], git)
 	}
@@ -276,7 +351,7 @@ func classifyRepo(
 	ctx context.Context,
 	project *domain.Project,
 	r *domain.Repository,
-	git git.Client,
+	git git.Reader,
 ) {
 	r.State = domain.RepoStateUnknown
 	if project.Source != nil {
@@ -316,16 +391,52 @@ func classifyRepo(
 		return
 	}
 
-	if r.Src == "" {
-		r.Src, err = git.Remote(ctx, r.AbsPath)
-		if err != nil {
-			r.State = domain.RepoStateError
-			r.Reason = err.Error()
-			return
-		}
-	}
-
+	// A readable clone is `ok`. Its Repo Src is resolved lazily by ResolveSrc,
+	// only for the commands that display it: classification asking git for
+	// every repository's remote URL here cost one subprocess per repository on
+	// every command, even ones that never print the value.
 	r.State = domain.RepoStateOK
+}
+
+// ResolveSrc fills in the Repo Src of every `ok` repository in the tree that
+// has none, reading it from the clone's git remote. It is the lazy counterpart
+// to what classifyRepo once did on every command: only the commands that
+// display Src — `list`'s table/wide SOURCE column and the JSON envelope — pay
+// the subprocess, and a repository whose remote cannot be read keeps its row
+// with the failure recorded as its Reason rather than failing the command.
+func ResolveSrc(ctx context.Context, gitClient git.Reader, project *domain.Project) {
+	for idx := range project.SubProjects {
+		ResolveSrc(ctx, gitClient, &project.SubProjects[idx])
+	}
+	for idx := range project.Repos {
+		resolveRepoSrc(ctx, gitClient, &project.Repos[idx])
+	}
+}
+
+// ResolveProjectsSrc resolves Repo Src across a keyed project list, writing the
+// resolved repositories back into the map (whose values are not addressable in
+// place).
+func ResolveProjectsSrc(ctx context.Context, gitClient git.Reader, projects domain.ProjectListKeyed) {
+	for name, proj := range projects {
+		ResolveSrc(ctx, gitClient, &proj)
+		projects[name] = proj
+	}
+}
+
+// resolveRepoSrc resolves one repository's Repo Src from its clone's remote,
+// when it has none. Only an `ok` repository with a resolved local path is
+// consulted; a failed lookup is recorded as the row's Reason, matching how the
+// table's SOURCE column renders a repository with no source.
+func resolveRepoSrc(ctx context.Context, gitClient git.Reader, r *domain.Repository) {
+	if r.Src != "" || r.State != domain.RepoStateOK || r.AbsPath == "" {
+		return
+	}
+	src, err := gitClient.Remote(ctx, r.AbsPath)
+	if err != nil {
+		r.Reason = err.Error()
+		return
+	}
+	r.Src = src
 }
 
 // sortTree orders sub-projects and repositories alphabetically at every level.
@@ -337,6 +448,10 @@ func sortTree(project *domain.Project) {
 		return project.SubProjects[i].Name < project.SubProjects[j].Name
 	})
 	sort.SliceStable(project.Repos, func(i, j int) bool {
-		return project.Repos[i].Name < project.Repos[j].Name
+		// Compare the display name, not the raw Name field: a repository
+		// declared with only dir: or src: has an empty Name and would
+		// otherwise sort as equal while named repositories sort alphabetically.
+		// GetName is what every renderer and GetRepo lookup uses.
+		return project.Repos[i].GetName() < project.Repos[j].GetName()
 	})
 }

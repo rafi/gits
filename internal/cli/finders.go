@@ -66,18 +66,21 @@ func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 		return domain.Project{}, types.NewWarning("no project selected")
 	}
 
-	// Find project by name.
+	// Find project by name. Naming a project that does not exist is a real
+	// failure, not a downgradeable warning: a script must be able to tell a
+	// typo from success.
 	p, err := loader.GetProject(projName, deps.Runtime)
 	if err != nil {
-		return p, types.NewWarning("unable to load project: %s", err)
+		return p, fmt.Errorf("unable to load project: %w", err)
 	}
 
-	// Find a sub-project if provided via 2nd argument.
+	// Find a sub-project if provided via 2nd argument. A named sub-project
+	// that does not exist is likewise a failure.
 	if len(args) > 1 && strings.HasSuffix(args[1], "/") {
 		var found bool
 		p, found = p.GetSubProject(args[1], "")
 		if !found {
-			return p, types.NewWarning("project %q not found", args[1])
+			return p, fmt.Errorf("project %q not found", args[1])
 		}
 		p.Name = args[1]
 	}
@@ -96,7 +99,9 @@ func getOrSelectRepo(
 	repoName := ""
 	if len(args) > 1 {
 		if strings.HasSuffix(args[1], "/") {
-			rootProject = args[0]
+			// The preview re-invokes gits with the root project, which for a
+			// path argument is the name the loader derived from it.
+			rootProject = loader.ProjectName(args[0])
 		} else {
 			repoName = args[1]
 		}
@@ -120,9 +125,11 @@ func getOrSelectRepo(
 
 // SelectProject returns an interactively selected project name.
 func SelectProject(deps types.RuntimeCLI) (string, error) {
-	// Collect project names
+	// Collect project names in a stable order so the picker does not reshuffle
+	// between runs.
 	buffer := bytes.Buffer{}
-	for name, project := range deps.Projects {
+	for _, name := range deps.Projects.SortedNames() {
+		project := deps.Projects[name]
 		project.Name = name
 		projectTitle := ProjectTitle(project, deps.Theme)
 		buffer.WriteString(projectTitle)
@@ -130,11 +137,10 @@ func SelectProject(deps types.RuntimeCLI) (string, error) {
 	}
 
 	// Run fzf with the sub-command 'list' as preview.
-	finder := fzf.New(deps.Err, "--nth=1")
+	finder := fzf.New(deps.Err, "--nth=1").WithFinder(deps.Settings.Finder)
 	finder.WithPrompt("project> ")
 
-	previewCmd := "gits -C=always --config='%s' list -o tree {1}"
-	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath)
+	previewCmd := previewCommandf(deps.ConfigPath, "list", "{1}", "-o", "tree")
 	finder.WithPreview(previewCmd, "")
 
 	projName, err := finder.Run(deps.Ctx, buffer)
@@ -171,11 +177,12 @@ func SelectRepo(
 	}
 
 	// Run fzf with the hidden sub-command 'repo-overview' as preview.
-	finder := fzf.New(deps.Err)
+	finder := fzf.New(deps.Err).WithFinder(deps.Settings.Finder)
 	finder.WithPrompt(fmt.Sprintf("[%s] repo> ", project.Name))
 
-	previewCmd := "gits -C=always --config='%s' repo-overview '%s' '%s'{}"
-	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath, rootProject, prefix)
+	// {} carries the selected line and is appended to the quoted prefix with
+	// no space: the two together are one argument.
+	previewCmd := previewCommand(deps.ConfigPath, "repo-overview", rootProject, prefix) + "{}"
 	finder.WithPreview(previewCmd, "")
 
 	repoName, err := finder.Run(deps.Ctx, buffer)
@@ -215,11 +222,12 @@ func SelectBranch(
 	repoFullName := repo.GetNameWithNamespace()
 
 	// Run fzf with the hidden sub-command 'branch-overview' as preview.
-	finder := fzf.New(deps.Err, "--delimiter="+delimiter, "--nth=2")
+	finder := fzf.New(deps.Err, "--delimiter="+delimiter, "--nth=2").
+		WithFinder(deps.Settings.Finder)
 	finder.WithPrompt(fmt.Sprintf("[%s/%s] branch> ", projName, repoFullName))
 
-	previewCmd := "gits -C=always --config='%s' branch-overview '%s' '%s' {2}"
-	previewCmd = fmt.Sprintf(previewCmd, deps.ConfigPath, projName, repoFullName)
+	previewCmd := previewCommandf(
+		deps.ConfigPath, "branch-overview", "{2}", projName, repoFullName)
 	finder.WithPreview(previewCmd, "")
 
 	selected, err := finder.Run(deps.Ctx, buffer)

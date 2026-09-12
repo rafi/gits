@@ -35,6 +35,10 @@ type Head struct {
 	Hash    string
 	Subject string
 	Time    time.Time
+	// Describe is `git describe --tags` for HEAD, empty when no tag is
+	// reachable. It is carried here so a single `git log` pass answers both
+	// the commit and the version, rather than a second `describe` subprocess.
+	Describe string
 }
 
 // CurrentBranch returns the checked-out branch's short name, or "HEAD" when
@@ -43,7 +47,7 @@ func (g *Git) CurrentBranch(ctx context.Context, path string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
+	args := []string{"rev-parse", "--abbrev-ref", headRev}
 	abbrRef, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return "", fmt.Errorf("unable to find ref: %w", err)
@@ -58,7 +62,7 @@ func (g *Git) WorkingDiff(ctx context.Context, path string) (DiffStat, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	output, err := g.Exec(ctx, path, []string{"diff", "--shortstat", "HEAD"})
+	output, err := g.Exec(ctx, path, []string{"diff", "--shortstat", headRev})
 	if err != nil {
 		return DiffStat{}, fmt.Errorf("unable to diff work tree: %w", err)
 	}
@@ -89,12 +93,18 @@ func parseShortStat(out string) DiffStat {
 	return ds
 }
 
-// HeadInfo returns the abbreviated hash, subject and commit time of HEAD.
+// HeadInfo returns the abbreviated hash, subject, commit time and tag
+// description of HEAD in one `git log` pass. `%(describe:tags)` needs git
+// ≥ 2.32 (2021); an older git renders the placeholder literally, which
+// parseHeadInfo treats as no tag.
 func (g *Git) HeadInfo(ctx context.Context, path string) (Head, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"log", "-1", "--abbrev=8", "--format=%h%x1f%s%x1f%ct"}
+	args := []string{
+		"log", "-1", "--abbrev=8",
+		"--format=%h%x1f%s%x1f%ct%x1f%(describe:tags)",
+	}
 	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return Head{}, fmt.Errorf("unable to read HEAD: %w", err)
@@ -102,36 +112,40 @@ func (g *Git) HeadInfo(ctx context.Context, path string) (Head, error) {
 	return parseHeadInfo(cleanOutput(output))
 }
 
-// parseHeadInfo splits the %h%x1f%s%x1f%ct log format into a Head. The hash is
-// taken up to the first separator and the timestamp after the last one, so a
-// stray %x1f inside the subject cannot corrupt either.
+// parseHeadInfo splits the %h%x1f%s%x1f%ct%x1f%(describe:tags) log format into
+// a Head. The hash is taken up to the first separator; the describe string
+// after the last and the commit time before it, so a stray %x1f inside the
+// subject cannot corrupt any of the fixed-shape fields around it. An older git
+// that does not know %(describe:tags) emits the placeholder verbatim, which is
+// read as no tag.
 func parseHeadInfo(out string) (Head, error) {
 	hash, rest, found := strings.Cut(out, "\x1f")
 	if !found {
 		return Head{}, fmt.Errorf("unexpected HEAD info: %q", out)
 	}
-	sep := strings.LastIndex(rest, "\x1f")
-	if sep < 0 {
+	descSep := strings.LastIndex(rest, "\x1f")
+	if descSep < 0 {
 		return Head{}, fmt.Errorf("unexpected HEAD info: %q", out)
 	}
-	ts, err := strconv.ParseInt(rest[sep+1:], 10, 64)
-	if err != nil {
-		return Head{}, fmt.Errorf("unexpected HEAD commit time: %q", rest[sep+1:])
+	describe := rest[descSep+1:]
+	if describe == "%(describe:tags)" {
+		describe = "" // older git left the placeholder unexpanded
 	}
-	return Head{Hash: hash, Subject: rest[:sep], Time: time.Unix(ts, 0)}, nil
-}
-
-// Describe generates a version description based on tags and hash.
-func (g *Git) Describe(ctx context.Context, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, localTimeout)
-	defer cancel()
-
-	args := []string{"describe", "--tags", "--always"}
-	output, err := g.Exec(ctx, path, args)
-	if err != nil {
-		return "", fmt.Errorf("unable to describe rev: %w", err)
+	rest = rest[:descSep]
+	tsSep := strings.LastIndex(rest, "\x1f")
+	if tsSep < 0 {
+		return Head{}, fmt.Errorf("unexpected HEAD info: %q", out)
 	}
-	return cleanOutput(output), nil
+	ts, err := strconv.ParseInt(rest[tsSep+1:], 10, 64)
+	if err != nil {
+		return Head{}, fmt.Errorf("unexpected HEAD commit time: %q", rest[tsSep+1:])
+	}
+	return Head{
+		Hash:     hash,
+		Subject:  rest[:tsSep],
+		Time:     time.Unix(ts, 0),
+		Describe: describe,
+	}, nil
 }
 
 // Diff returns a formatted string of ahead/behind counts.
@@ -140,7 +154,7 @@ func (g *Git) Diff(ctx context.Context, path, branch, target string) (int, int, 
 	defer cancel()
 
 	args := []string{
-		"rev-list", "--left-right", "--count", "--end-of-options",
+		"rev-list", "--left-right", "--count", argEndOfOptions,
 		branch + "..." + target,
 	}
 	output, err := g.Exec(ctx, path, args)

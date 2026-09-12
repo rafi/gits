@@ -2,74 +2,131 @@ package bulk
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
-	"charm.land/lipgloss/v2"
-
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/types"
 )
 
-// TestRepoLine: a result line is the padded title followed by the body, or —
-// when the result failed — by the styled error in its place.
-func TestRepoLine(t *testing.T) {
+// TestLinesRendersBodyOrBareError: a result line is the padded title followed
+// by the body, or — when the result failed — by the bare error in its place,
+// without the repository's name and path the epilogue attaches.
+func TestLinesRendersBodyOrBareError(t *testing.T) {
 	t.Parallel()
 
-	theme := config.NewThemeDefault()
-	title := theme.RepoTitle.SetString("api").Width(6)
-
-	line := repoLine{Title: title, Body: "[main <- origin/main] ok"}
-	if got := line.String(); !strings.Contains(got, "api") ||
-		!strings.Contains(got, "[main <- origin/main] ok") {
-		t.Errorf("String() = %q, want the title and the body", got)
-	}
-
-	line = repoLine{
-		Title:      title,
-		Body:       "never shown",
-		Err:        errors.New("not cloned"),
-		ErrorStyle: theme.Error,
-	}
-	got := line.String()
-	if !strings.Contains(got, "not cloned") {
-		t.Errorf("String() = %q, want the error", got)
-	}
-	if strings.Contains(got, "never shown") {
-		t.Errorf("String() = %q, want the error to replace the body", got)
-	}
-}
-
-// TestRenderHidesGroups: a body that reports a group as not shown takes the
-// project's title with it, and the group's errors are still collected — which
-// is what lets a filtered run drop a project whose every row was hidden
-// without losing the failures underneath.
-func TestRenderHidesGroups(t *testing.T) {
-	t.Parallel()
-
-	repo := func(name string) *Result[string] {
-		return &Result[string]{Value: name, Err: errors.New(name + " failed")}
-	}
-	res := Results[string]{Groups: []Group[string]{
-		{Project: domain.Project{Name: "shown"}, Results: []*Result[string]{repo("api")}},
-		{Project: domain.Project{Name: "hidden"}, Results: []*Result[string]{repo("web")}},
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{
+		{Name: "api", Dir: "api", AbsPath: "/code/acme/api"},
+		{Name: "web", Dir: "web", AbsPath: "/code/acme/web"},
+	}}
+	res := Results[string]{Project: proj, Results: []Result[string]{
+		{Repo: Repo{Repository: proj.Repos[0], Project: proj, Path: "api"},
+			Value: "[main <- origin/main] ok"},
+		{Repo: Repo{Repository: proj.Repos[1], Project: proj, Path: "web"},
+			Value: "never shown", Err: errors.New("not cloned")},
 	}}
 
 	deps := clitest.New(t, nil)
-	errs := Render(res, deps.RuntimeCLI, func(g Group[string]) (string, bool) {
-		return g.Project.Name, g.Project.Name != "hidden"
-	})
+	err := Lines(res, deps.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "completed with errors") {
+		t.Fatalf("Lines error = %v, want the failure to fail the run", err)
+	}
 
 	got := deps.Result()
-	if !strings.Contains(got, ":: shown") {
-		t.Errorf("Result Output = %q, want the shown project", got)
+	if !strings.Contains(got, "api") || !strings.Contains(got, "[main <- origin/main] ok") {
+		t.Errorf("Result Output = %q, want the title and the body", got)
 	}
-	if strings.Contains(got, "hidden") {
-		t.Errorf("Result Output = %q, want the hidden project's title gone too", got)
+	if !strings.Contains(got, "not cloned") || strings.Contains(got, "never shown") {
+		t.Errorf("Result Output = %q, want the error to replace the body", got)
 	}
-	if len(errs) != 2 {
-		t.Fatalf("errors = %v, want both collected — a hidden row still failed", errs)
+	if strings.Contains(got, "/code/acme/web") {
+		t.Errorf("Result Output = %q, want the bare error, not the epilogue's name and path", got)
+	}
+	if strings.Contains(got, "::") || strings.Contains(got, "acme") {
+		t.Errorf("Result Output = %q, want no project title", got)
+	}
+	if diag := deps.Diagnostic(); !strings.Contains(diag, "web (/code/acme/web): not cloned") {
+		t.Errorf("Diagnostic Output = %q, want the epilogue to name the repository and path", diag)
+	}
+}
+
+// TestLinesSeparatesProjects: the lines of consecutive projects are separated
+// by a blank line, and each project's titles are padded to its own widest.
+func TestLinesSeparatesProjects(t *testing.T) {
+	t.Parallel()
+
+	root := domain.Project{Name: "root", Repos: []domain.Repository{
+		{Name: "a", Dir: "a"}, {Name: "much-longer", Dir: "much-longer"},
+	}}
+	sub := domain.Project{Name: "sub", Repos: []domain.Repository{{Name: "s", Dir: "s"}}}
+	line := func(p domain.Project, key string, i int) Result[string] {
+		return Result[string]{
+			Repo: Repo{
+				Repository: p.Repos[i], Project: p, ProjectKey: key, Path: p.Repos[i].Dir,
+			},
+			Value: "BODY",
+		}
+	}
+	res := Results[string]{Project: root, Results: []Result[string]{
+		line(root, "0", 0), line(root, "0", 1), line(sub, "0/0", 0),
+	}}
+
+	deps := clitest.New(t, nil)
+	if err := Lines(res, deps.RuntimeCLI); err != nil {
+		t.Fatalf("Lines error = %v, want nil", err)
+	}
+	lines := strings.Split(strings.TrimRight(deps.Result(), "\n"), "\n")
+	if len(lines) != 4 || lines[2] != "" {
+		t.Fatalf("Result Output = %q, want two projects separated by a blank line", deps.Result())
+	}
+	if a, b := strings.Index(lines[0], "BODY"), strings.Index(lines[1], "BODY"); a != b {
+		t.Errorf("bodies at columns %d and %d, want them aligned within the project", a, b)
+	}
+	if a, s := strings.Index(lines[0], "BODY"), strings.Index(lines[3], "BODY"); s >= a {
+		t.Errorf("sub-project body at column %d, want it padded to its own width, not root's %d", s, a)
+	}
+}
+
+// TestErrorsWrapsForTheEpilogue: Errors attaches the repository to every plain
+// error, leaves a warning as it is, and ends with the interruption — so the
+// epilogue names what failed and the run fails when cut short.
+func TestErrorsWrapsForTheEpilogue(t *testing.T) {
+	t.Parallel()
+
+	repo := domain.Repository{Name: "api", AbsPath: "/code/api"}
+	warning := types.NewWarning("skipped")
+	res := Results[string]{
+		Results: []Result[string]{
+			{Repo: Repo{Repository: repo}, Err: errors.New("boom")},
+			{Repo: Repo{Repository: repo}},
+			{Repo: Repo{Repository: repo}, Err: warning},
+		},
+		Interrupted: errors.New("interrupted: 1 of 4 repositories not processed"),
+	}
+
+	errs := res.Errors()
+	if len(errs) != 3 {
+		t.Fatalf("Errors() = %v, want the failure, the warning and the interruption", errs)
+	}
+	if got := errs[0].Error(); got != "api (/code/api): boom" {
+		t.Errorf("errs[0] = %q, want the repository attached", got)
+	}
+	if errs[1] != warning { //nolint:errorlint // identity is the assertion
+		t.Errorf("errs[1] = %v, want the warning untouched", errs[1])
+	}
+	if !strings.Contains(errs[2].Error(), "interrupted") {
+		t.Errorf("errs[2] = %v, want the interruption last", errs[2])
+	}
+
+	deps := clitest.New(t, nil)
+	if err := Epilogue(res, deps.RuntimeCLI); err == nil {
+		t.Fatal("Epilogue error = nil, want the failure and the interruption to fail the run")
+	}
+	diag := deps.Diagnostic()
+	if !strings.Contains(diag, "2 errors:") || strings.Contains(diag, "skipped") {
+		t.Errorf("Diagnostic Output = %q, want two counted and the warning kept out", diag)
 	}
 }
 
@@ -107,37 +164,37 @@ func TestIndentMultiline(t *testing.T) {
 	}
 }
 
-// TestTitleWidths: each project node keeps its own group width — equal to its
-// widest repository title — and lookups survive the value copies the traversal
-// makes, since nodes are identified by their shared Repos backing array.
-func TestTitleWidths(t *testing.T) {
+// TestLinesGroupsProjectsCopiedThroughAppend: grouping must survive projects
+// whose values were copied and whose Repos slices were reallocated by an
+// append — the run-local ProjectKey is what identifies a node, not the
+// address of a repository the project happens to hold.
+func TestLinesGroupsProjectsCopiedThroughAppend(t *testing.T) {
 	t.Parallel()
 
-	home := "/home/nobody"
-	root := domain.Project{
-		Name: "root",
-		Repos: []domain.Repository{
-			{Name: "long", Dir: "a-rather-long-repo-name"},
-			{Name: "short", Dir: "short"},
-		},
-		SubProjects: []domain.Project{
-			{Name: "sub", Repos: []domain.Repository{{Name: "s", Dir: "s"}}},
-			{Name: "empty"},
-		},
-	}
+	root := domain.Project{Name: "root", Repos: []domain.Repository{{Name: "a", Dir: "a"}}}
+	sub := domain.Project{Name: "sub", Repos: []domain.Repository{{Name: "s", Dir: "s"}}}
 
-	widths := newTitleWidths(root, home)
-	rootCopy, subCopy := root, root.SubProjects[0]
-	if got, want := widths.For(rootCopy), maxTitleWidth(root, home); got != want {
-		t.Errorf("For(root) = %d, want %d", got, want)
+	// The first result holds the project as flatten saw it; the second holds
+	// a copy whose Repos array was reallocated after the fact.
+	grown := root
+	grown.Repos = append(slices.Clone(root.Repos), domain.Repository{Name: "b", Dir: "b"})
+
+	res := Results[string]{Project: root, Results: []Result[string]{
+		{Repo: Repo{Repository: root.Repos[0], Project: root, ProjectKey: "0", Path: "a"},
+			Value: "BODY"},
+		{Repo: Repo{Repository: grown.Repos[1], Project: grown, ProjectKey: "0", Path: "b"},
+			Value: "BODY"},
+		{Repo: Repo{Repository: sub.Repos[0], Project: sub, ProjectKey: "0/0", Path: "s"},
+			Value: "BODY"},
+	}}
+
+	deps := clitest.New(t, nil)
+	if err := Lines(res, deps.RuntimeCLI); err != nil {
+		t.Fatalf("Lines error = %v, want nil", err)
 	}
-	if got, want := widths.For(subCopy), maxTitleWidth(root.SubProjects[0], home); got != want {
-		t.Errorf("For(sub) = %d, want %d", got, want)
-	}
-	if got := widths.For(root.SubProjects[1]); got != 0 {
-		t.Errorf("For(empty) = %d, want 0", got)
-	}
-	if got, want := widths.For(rootCopy), lipgloss.Width("a-rather-long-repo-name"); got != want {
-		t.Errorf("For(root) = %d, want the widest title's rendered width %d", got, want)
+	lines := strings.Split(strings.TrimRight(deps.Result(), "\n"), "\n")
+	if len(lines) != 4 || lines[2] != "" {
+		t.Fatalf("Result Output = %q, want the two root rows grouped and the sub-project split off",
+			deps.Result())
 	}
 }

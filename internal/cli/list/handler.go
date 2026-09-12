@@ -46,5 +46,13 @@ Either your %q is empty, or you misspelled the project name.`,
 			deps.ConfigPath,
 		)
 	}
+	// The table, wide and JSON formats display each repository's Repo Src, so
+	// resolve it now — lazily, only for the formats that show it. `name` and
+	// `tree` never print a source and so never pay the per-repository git
+	// subprocess resolution costs.
+	switch format {
+	case "table", "wide", "json":
+		loader.ResolveProjectsSrc(deps.Ctx, deps.Git, projects)
+	}
 	return lister(projects, deps)
 }

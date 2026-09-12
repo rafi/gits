@@ -5,6 +5,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/ktrysmt/go-bitbucket"
@@ -17,6 +18,7 @@ const tokenFields = 2
 
 type bitbucketProvider struct {
 	client *bitbucket.Client
+	log    *slog.Logger
 }
 
 func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
@@ -24,7 +26,7 @@ func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
 	if len(userLogin) != tokenFields {
 		return nil, fmt.Errorf("token is invalid for %s", ProviderBitbucket)
 	}
-	provider := &bitbucketProvider{}
+	provider := &bitbucketProvider{log: opts.Log}
 	var err error
 	provider.client, err = bitbucket.NewBasicAuth(userLogin[0], userLogin[1])
 	if err != nil {
@@ -56,7 +58,7 @@ func (c *bitbucketProvider) LoadRepos(ctx context.Context, ownerName string, pro
 func (c *bitbucketProvider) fetchRepos(ctx context.Context, ownerName string) ([]domain.Repository, string, error) {
 	var items []bitbucket.Repository
 	what := fmt.Sprintf("Bitbucket repositories from %s", ownerName)
-	err := paginate(ctx, what, constantPause(0), func(page int) (bool, error) {
+	err := paginate(ctx, c.log, what, constantPause(0), func(page int) (bool, error) {
 		// go-bitbucket hardcodes context.Background internally, so honor
 		// the caller's context before each page we request.
 		if err := ctx.Err(); err != nil {

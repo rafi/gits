@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"io"
+	"log/slog"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cache"
@@ -22,6 +23,12 @@ type Runtime struct {
 	ConfigPath string
 	Git        git.Client
 	Settings   domain.Settings
+
+	// Log is the debug tracer: page fetches, cache hits and misses, git's
+	// stderr. It is never how a user is told something — that is Diagnostic
+	// Output on Err, as prose. Constructed once in cmd/gits and passed here
+	// so no package reaches for a global logger.
+	Log *slog.Logger
 }
 
 // RuntimeCLI is the runtime dependencies for the CLI client.

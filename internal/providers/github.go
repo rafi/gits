@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/shurcooL/githubv4"
@@ -30,6 +31,7 @@ const (
 
 type gitHubProvider struct {
 	client          *githubv4.Client
+	log             *slog.Logger
 	includeArchived bool
 
 	// nowFunc reads the clock for rate-limit pacing; tests replace it.
@@ -64,6 +66,7 @@ func newGitHubProvider(opts Options) *gitHubProvider {
 	}
 	return &gitHubProvider{
 		client:          githubv4.NewClient(httpClient),
+		log:             opts.Log,
 		includeArchived: opts.IncludeArchived,
 	}
 }
@@ -119,7 +122,7 @@ func (c *gitHubProvider) fetchRepos(ctx context.Context, ownerName string) ([]do
 	// The budget is read from the page just fetched, so each gap is priced
 	// by the most recent thing GitHub said about it.
 	pace := func() time.Duration { return rateLimitDelay(q.RateLimit, c.now()) }
-	err := paginate(ctx, what, pace, func(int) (bool, error) {
+	err := paginate(ctx, c.log, what, pace, func(int) (bool, error) {
 		if err := c.client.Query(ctx, &q, vars); err != nil {
 			return false, err
 		}
