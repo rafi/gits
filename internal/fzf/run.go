@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/rafi/gits/domain"
 )
 
 const fzfBin = "fzf"
@@ -35,6 +37,11 @@ const (
 // FZF is one configured fzf invocation.
 type FZF struct {
 	Args []string
+
+	// finder overrides the binary and default options from config
+	// (settings.finder). Its zero value keeps the built-in fzf binary and
+	// defaultOpts.
+	finder domain.Finder
 
 	// diagnostics is where fzf draws its own interface. That is Diagnostic
 	// Output: the finder is chrome around a selection, and the selection
@@ -74,6 +81,14 @@ func New(diagnostics io.Writer, args ...string) *FZF {
 	return &FZF{Args: args, diagnostics: diagnostics}
 }
 
+// WithFinder applies the config's settings.finder overrides: a non-empty
+// Binary replaces the fzf executable, a non-empty Args replaces defaultOpts,
+// and Extra is always appended. Returns the same finder for chaining.
+func (f *FZF) WithFinder(finder domain.Finder) *FZF {
+	f.finder = finder
+	return f
+}
+
 // WithPreview adds a preview command to the finder, with opts sizing the
 // preview window; an empty opts uses the default layout.
 func (f *FZF) WithPreview(cmd, opts string) {
@@ -92,22 +107,32 @@ func (f *FZF) WithPrompt(label string) {
 // Run executes fzf with given args and stdin. Canceling by the user maps to
 // ErrAborted, and an empty match to ErrNoMatch, so callers can exit quietly.
 func (f *FZF) Run(ctx context.Context, stdin bytes.Buffer) (string, error) {
-	_, err := exec.LookPath(fzfBin)
-	if err != nil {
-		return "", fmt.Errorf("%s not found in PATH", fzfBin)
+	bin := fzfBin
+	if f.finder.Binary != "" {
+		bin = f.finder.Binary
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return "", fmt.Errorf("%s not found in PATH", bin)
 	}
 
-	// Defaults first so any conflicting caller option wins (fzf is
-	// last-flag-wins); copying also avoids aliasing the caller's slice.
-	args := append([]string{}, defaultOpts...)
+	// The default option set, which the config may replace wholesale via
+	// settings.finder.args. Defaults come first so any conflicting caller
+	// option wins (fzf is last-flag-wins); copying also avoids aliasing.
+	base := defaultOpts
+	if len(f.finder.Args) > 0 {
+		base = f.finder.Args
+	}
+	args := append([]string{}, base...)
 	if os.Getenv("FZF_DEFAULT_OPTS") == "" {
 		args = append(args, defaultLayoutOpts...)
 	}
+	// settings.finder.extra is always appended, on top of args or a replaced base.
+	args = append(args, f.finder.Extra...)
 	args = append(args, f.Args...)
 
 	// Run shell command with stdin
 	var cmdOut bytes.Buffer
-	fzf := exec.CommandContext(ctx, fzfBin, args...)
+	fzf := exec.CommandContext(ctx, bin, args...)
 	fzf.Stdin = &stdin
 	fzf.Stdout = &cmdOut
 	fzf.Stderr = f.diagnostics

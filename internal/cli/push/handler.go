@@ -1,6 +1,6 @@
 // Package push implements `gits push`, the Bulk Command that pushes each
-// Repository's current branch to its Upstream. The flag set it exposes is
-// deliberately narrow — see docs/adr/0002-push-safety-model.md.
+// Repository's current branch to its Upstream.
+// See: docs/adr/0002-push-safety-model.md.
 package push
 
 import (
@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
 )
@@ -27,15 +26,17 @@ func ExecPush(opts git.PushOptions, args []string, deps types.RuntimeCLI) error 
 		return err
 	}
 
-	return bulk.Command[string]{
-		Verb:   "pushing",
-		Body:   pushRepo(opts),
-		Render: bulk.Lines,
+	res, err := bulk.Command[string]{
+		Verb: "pushing",
+		Body: pushRepo(opts),
 	}.Run(args, deps)
+	if err != nil {
+		return err
+	}
+	return bulk.Lines(res, deps)
 }
 
-// pushRepo returns a body that pushes one repository into its result line's
-// body: safe to call concurrently and never writes to a destination.
+// pushRepo returns a body that pushes one repository into its result lines.
 func pushRepo(opts git.PushOptions) func(
 	context.Context, bulk.Repo, types.RuntimeCLI,
 ) (string, error) {
@@ -66,16 +67,13 @@ func pushRepo(opts git.PushOptions) func(
 			// is documented to pass over it — so it is wrapped here as a
 			// warning, which the module leaves alone: it shows on the line
 			// without failing the run.
-			return "", cli.RepoWarning(
-				fmt.Errorf("skipped: %w", git.ErrNoUpstream), repo.Repository)
+			return "", types.NewWarning("skipped: %s", git.ErrNoUpstream)
 		case head.Gone:
 			// Pushing here would succeed and re-create the branch someone
 			// deleted on the Remote — the creative, ref-scattering behavior
 			// ADR-0002 exists to prevent — so it is passed over instead, with
 			// the Upstream named to tell this skip from the one above.
-			return "", cli.RepoWarning(
-				fmt.Errorf("skipped: %s: %w", head.Upstream, git.ErrUpstreamGone),
-				repo.Repository)
+			return "", types.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
 		}
 
 		remote, branch, ok := git.SplitUpstream(head.Upstream)

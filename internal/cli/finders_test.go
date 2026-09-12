@@ -2,17 +2,19 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
 )
 
-// fakeGit stubs the git.Client methods project population touches.
+// fakeGit stubs the git.Reader methods project population touches. Finders
+// only read, so the fake is a Reader and cannot satisfy a write at all.
 type fakeGit struct {
-	git.Client
+	git.Reader
+	clitest.FakeNoWrites
 }
 
 func (fakeGit) Remote(context.Context, string) (string, error) { return "git@x:a/b.git", nil }
@@ -99,14 +101,16 @@ func TestParseArgsNonInteractive(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown project warns", func(t *testing.T) {
+	t.Run("unknown project errors, not warns", func(t *testing.T) {
 		t.Parallel()
 
 		deps := finderDeps(t)
 		_, _, err := ParseArgs([]string{"ghost"}, true, deps)
-		var warn *types.Warning
-		if !errors.As(err, &warn) {
-			t.Errorf("ParseArgs(ghost) error = %T (%v), want *types.Warning", err, err)
+		if err == nil {
+			t.Fatal("ParseArgs(ghost) = nil, want error")
+		}
+		if types.IsWarning(err) {
+			t.Errorf("ParseArgs(ghost) is a downgradeable warning, want a real error: %v", err)
 		}
 	})
 }

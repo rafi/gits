@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
 )
@@ -18,20 +17,18 @@ import (
 //   - project name
 //   - repo
 func ExecPull(args []string, deps types.RuntimeCLI) error {
-	return bulk.Command[string]{
-		Verb:   "pulling",
-		Body:   pullRepo,
-		Render: bulk.Lines,
+	res, err := bulk.Command[string]{
+		Verb: "pulling",
+		Body: pullRepo,
 	}.Run(args, deps)
+	if err != nil {
+		return err
+	}
+	return bulk.Lines(res, deps)
 }
 
-// pullRepo pulls one repository and returns its result line's body: safe to
-// call concurrently and never writes to a destination.
+// pullRepo pulls one repository and returns its result line's body.
 func pullRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
-	// The branch and its Upstream arrive together, from git's own reading of
-	// whether that Upstream resolves. `status` derives the same Gone Upstream
-	// state from its working-tree snapshot instead — see Snapshot.GoneUpstream
-	// — because it takes one anyway; a fix to one belongs in the other.
 	head, err := deps.Git.HeadUpstream(ctx, repo.AbsPath)
 	if err != nil {
 		return "", err
@@ -39,17 +36,11 @@ func pullRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (strin
 
 	switch {
 	case head.Upstream == "":
-		// There is nowhere to pull from, and `push` passes over the same
-		// condition — so it is a warning, which the module leaves alone: it
-		// shows on the line without failing the run.
-		return "", cli.RepoWarning(
-			fmt.Errorf("skipped: %w", git.ErrNoUpstream), repo.Repository)
+		// There is nowhere to pull from
+		return "", types.NewWarning("skipped: %s", git.ErrNoUpstream)
 	case head.Gone:
-		// The ordinary end of a merged branch, not a broken Repository: the
-		// Upstream is named so the user knows which one went away.
-		return "", cli.RepoWarning(
-			fmt.Errorf("skipped: %s: %w", head.Upstream, git.ErrUpstreamGone),
-			repo.Repository)
+		// Branch is gone, merged and deleted?
+		return "", types.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
 	}
 
 	output, err := deps.Git.Pull(ctx, repo.AbsPath)

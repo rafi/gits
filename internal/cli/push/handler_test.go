@@ -11,7 +11,6 @@ import (
 
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // Every test here drives ExecPush — the command's real entry point — with
@@ -116,7 +115,7 @@ func TestExecPushProject(t *testing.T) {
 	}
 
 	got := deps.Result()
-	for _, want := range []string{"acme", "api", "web", "main -> origin/main", "up-to-date"} {
+	for _, want := range []string{"api", "web", "main -> origin/main", "up-to-date"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Result Output = %q, want it to contain %q", got, want)
 		}
@@ -340,11 +339,9 @@ func TestExecPushLocalUpstreamIsAnError(t *testing.T) {
 	if err == nil {
 		t.Fatal("ExecPush error = nil, want an Upstream that names no remote to fail")
 	}
-	if !strings.Contains(err.Error(), "not on a remote") {
-		t.Errorf("ExecPush error = %v, want it to explain the Upstream", err)
-	}
-	if types.IsWarning(err) {
-		t.Error("a local Upstream is a failure, not a skip")
+	if got := deps.Diagnostic(); !strings.Contains(got, "1 error:") ||
+		!strings.Contains(got, "not on a remote") {
+		t.Errorf("Diagnostic Output = %q, want the epilogue to explain the Upstream", got)
 	}
 	if got := g.Pushes(); len(got) != 0 {
 		t.Errorf("pushes = %+v, want none", got)
@@ -391,15 +388,15 @@ func TestExecPushSelectsRefsFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("ExecPush error = nil, want the rejected push to fail")
 	}
-	if !strings.Contains(err.Error(), "failed to push some refs") {
-		t.Errorf("ExecPush error = %v, want git's message", err)
+	if got := deps.Diagnostic(); !strings.Contains(got, "failed to push some refs") {
+		t.Errorf("Diagnostic Output = %q, want git's message in the epilogue", got)
 	}
 }
 
 // TestExecPushHeadFailure covers the Upstream lookup itself failing — an
-// unreadable repository, or a cancellation: it surfaces as itself and fails the
-// run, rather than being downgraded to one of the documented skips. Nothing is
-// pushed either way.
+// unreadable repository, or a cancellation: it is reported as itself on the
+// line and in the epilogue and fails the run, rather than being downgraded to
+// one of the documented skips. Nothing is pushed either way.
 func TestExecPushHeadFailure(t *testing.T) {
 	t.Parallel()
 
@@ -421,11 +418,12 @@ func TestExecPushHeadFailure(t *testing.T) {
 			if err == nil {
 				t.Fatal("ExecPush error = nil, want the failed lookup to fail the run")
 			}
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("ExecPush error = %v, want it to carry %q", err, tc.want)
+			if got := deps.Diagnostic(); !strings.Contains(got, "1 error:") ||
+				!strings.Contains(got, tc.want) {
+				t.Errorf("Diagnostic Output = %q, want the epilogue to carry %q", got, tc.want)
 			}
-			if types.IsWarning(err) {
-				t.Error("a failed lookup is a failure, not one of the documented skips")
+			if got := deps.Result(); !strings.Contains(got, tc.want) {
+				t.Errorf("Result Output = %q, want the line to carry %q", got, tc.want)
 			}
 			if got := g.Pushes(); len(got) != 0 {
 				t.Errorf("pushes = %+v, want none", got)

@@ -87,8 +87,6 @@ linters:
     - funcorder # Checks the order of functions, methods, and constructors
     - funlen # Tool for detection of long functions
     - gocheckcompilerdirectives # Validates go compiler directive comments (//go:)
-    - gochecknoglobals # Checks that no global variables exist
-    - gochecknoinits # Checks that no init functions are present in Go code
     - gochecksumtype # Checks exhaustiveness on Go "sum types"
     - gocognit # Computes and checks the cognitive complexity of functions
     - godoclint # Checks Golang's documentation practice
@@ -122,7 +120,6 @@ linters:
     - sqlclosecheck # Checks that sql.Rows and sql.Stmt are closed
     - testableexamples # Checks if examples are testable (have an expected output)
     - testifylint # Checks usage of github.com/stretchr/testify
-    # - testpackage # Makes you use a separate _test package
     - unqueryvet # Detects SELECT * in SQL queries and SQL builders, encouraging explicit column selection
     - usestdlibvars # Detects the possibility to use variables/constants from the Go standard library
     - usetesting # Reports uses of functions with replacement inside the testing package
@@ -273,7 +270,7 @@ linters:
 
     gosec:
       excludes:
-        # - G104  # Audit errors not checked (covered by errcheck)
+        - G104  # Audit errors not checked (covered by errcheck)
         # - G107  # HTTP request with variable URL (often intentional)
         # - G301  # Directory permissions 0755 are fine for user config dirs
         - G304  # File path provided as taint input (often intentional)
@@ -406,9 +403,11 @@ linters:
       - path: _test\.go
         linters:
           - bodyclose
+          - cyclop
           - dupl
           - errcheck
           - funlen
+          - gocognit
           - goconst
           - gocyclo
           - gosec

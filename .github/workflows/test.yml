@@ -29,6 +29,10 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
+          # `latest` satisfies the justfile's GOLANGCI_VERSION floor, so a
+          # local `just lint` and this job run the same config on the same
+          # or a newer linter. Raise that floor when a new release changes
+          # what CI reports.
           version: latest
 
   govulncheck:

@@ -51,8 +51,9 @@ func (f fakeBrowseGit) Log(context.Context, string, string) (string, error) {
 	return f.commitLog, nil
 }
 
-// compile-time check: fakeBrowseGit must satisfy the git client interface.
-var _ git.Client = fakeBrowseGit{}
+// compile-time check: the previews need only reads, so the fake is checked
+// against the read-only half of the seam.
+var _ git.Reader = fakeBrowseGit{}
 
 func TestRenderDigits(t *testing.T) {
 	t.Parallel()

@@ -54,7 +54,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 		return "", err
 	}
 
-	width := previewWidth()
+	width := previewWidth(deps)
 
 	// Initialize renderer, respect OS appearance (light/dark background).
 	// The probe writes a query to Result Output's destination and reads the

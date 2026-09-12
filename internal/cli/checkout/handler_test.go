@@ -3,11 +3,8 @@ package checkout
 import (
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"testing"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
@@ -28,8 +25,7 @@ import (
 // until that seam exists.
 
 var (
-	errBoom     = errors.New("boom")
-	errFakeExit = errors.New("fake exit")
+	errBoom = errors.New("boom")
 )
 
 // fakeBranchClient implements the two methods promptRepo reaches before the
@@ -137,40 +133,15 @@ func TestExecCheckoutTitlesEverySubProject(t *testing.T) {
 }
 
 // TestPromptRepoBranchesErrorDoesNotExit proves T3 (#4): a Branches failure
-// surfaces as a returned error instead of aborting the whole process via
-// [log.Fatal] / [os.Exit]. logrus's exit is neutralized so the buggy path (if
-// present) records the exit and panics before the TTY prompt, rather than
-// killing the test binary.
+// surfaces as a returned error instead of aborting the whole process. The
+// original defect called [log.Fatal], which exits; if it ever returns here,
+// the test binary dies and this test fails loudly by not reporting at all.
 func TestPromptRepoBranchesErrorDoesNotExit(t *testing.T) {
 	t.Parallel()
 
-	std := log.StandardLogger()
-	origExit, origOut := std.ExitFunc, std.Out
-	exited := false
-	std.ExitFunc = func(int) { exited = true; panic(errFakeExit) }
-	std.SetOutput(io.Discard) // swallow the Fatal log line
-	t.Cleanup(func() { std.ExitFunc = origExit; std.SetOutput(origOut) })
-
 	deps := clitest.New(t, fakeBranchClient{err: errBoom})
 
-	var (
-		got string
-		err error
-	)
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if err, ok := r.(error); !ok || !errors.Is(err, errFakeExit) {
-					panic(r)
-				}
-			}
-		}()
-		got, _, err = promptRepo("title", "/path", deps.RuntimeCLI)
-	}()
-
-	if exited {
-		t.Fatal("promptRepo called log.Fatal (os.Exit) on Branches failure; want a returned error")
-	}
+	got, _, err := promptRepo("title", "/path", deps.RuntimeCLI)
 	if err == nil {
 		t.Fatalf("promptRepo with failing Branches = (%q, nil), want a wrapped error", got)
 	}

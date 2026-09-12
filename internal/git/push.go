@@ -7,9 +7,7 @@ import (
 )
 
 // PushOptions is the vetted subset of `git push` flags gits passes through.
-// The set is closed by design: it has no representation for `--force`,
-// `--force-with-lease`, `-u`/`--set-upstream`, `--mirror` or `-q`/`--quiet`,
-// so no caller can reach them. See docs/adr/0002-push-safety-model.md.
+// See docs/adr/0002-push-safety-model.md.
 type PushOptions struct {
 	All        bool // push all branches
 	Branches   bool // git's synonym for --all
@@ -20,11 +18,7 @@ type PushOptions struct {
 	DryRun     bool // -n: report what would be pushed, push nothing
 }
 
-// Validate rejects flag combinations gits refuses to fan out. The three
-// ref-selecting flags are mutually exclusive: git itself only rejects --tags
-// against --all/--branches, treating --all and --branches as synonyms, but a
-// command given both meant one of them and the ambiguity is not worth
-// resolving across a whole project.
+// Validate rejects flag combinations gits refuses to fan out.
 func (o PushOptions) Validate() error {
 	if o.All && o.Branches || o.All && o.Tags || o.Branches && o.Tags {
 		return fmt.Errorf("--all, --branches and --tags are mutually exclusive")
@@ -94,7 +88,7 @@ func (g *Git) Push(
 
 	args := append([]string{"push"}, opts.args()...)
 	if target.Remote != "" {
-		args = append(args, "--end-of-options", target.Remote)
+		args = append(args, argEndOfOptions, target.Remote)
 		if target.Refspec != "" {
 			args = append(args, target.Refspec)
 		}

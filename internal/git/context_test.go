@@ -20,7 +20,7 @@ func TestContextCancellationAbortsOperation(t *testing.T) {
 	cancel() // cancel before invoking, so the command must not run
 
 	start := time.Now()
-	if _, err := g.Describe(ctx, "."); err == nil {
+	if _, err := g.HeadInfo(ctx, "."); err == nil {
 		t.Fatal("expected error from a canceled context, got nil")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {

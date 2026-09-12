@@ -63,37 +63,53 @@ func makeTableHeader(projects domain.ProjectListKeyed) (header []string) {
 	return header
 }
 
-// makeTableProjects recursively builds table rows.
+// makeTableProjects recursively builds table rows. Projects are walked in
+// SortedNames order so two runs render the same table; within a project the
+// loader already sorted repositories and sub-projects (see sortTree).
 func makeTableProjects(projects domain.ProjectListKeyed, single, wide bool, homeDir string) [][]string {
 	rows := [][]string{}
-	for _, proj := range projects {
+	for _, name := range projects.SortedNames() {
+		proj := projects[name]
 		// Draw row columns, include project column if listing multiple projects.
 		for _, repo := range proj.Repos {
-			child := []string{}
-			if !single {
-				child = append(child, proj.Name)
-			}
-			child = append(child, repo.GetName(), string(repo.State), repo.GetSource())
-			if wide {
-				dir := cli.Path(repo.AbsPath, homeDir)
-				child = append(child, dir)
-			}
-			rows = append(rows, child)
+			rows = append(rows, makeTableRow(proj, repo, single, wide, homeDir))
 		}
 		if len(proj.SubProjects) > 0 {
-			subProjs := make(domain.ProjectListKeyed)
-			for _, subProj := range proj.SubProjects {
-				if single {
-					for idx, repo := range subProj.Repos {
-						subProj.Repos[idx].Name = filepath.Join(subProj.Name, repo.Name)
-					}
-				} else {
-					subProj.Name = filepath.Join(proj.Name, subProj.Name)
-				}
-				subProjs[subProj.Name] = subProj
-			}
+			subProjs := qualifySubProjects(proj, single)
 			rows = append(rows, makeTableProjects(subProjs, single, wide, homeDir)...)
 		}
 	}
 	return rows
+}
+
+// makeTableRow renders one repository's cells, in header order.
+func makeTableRow(proj domain.Project, repo domain.Repository, single, wide bool, homeDir string) []string {
+	row := []string{}
+	if !single {
+		row = append(row, proj.Name)
+	}
+	row = append(row, repo.GetName(), string(repo.State), repo.GetSource())
+	if wide {
+		row = append(row, cli.Path(repo.AbsPath, homeDir))
+	}
+	return row
+}
+
+// qualifySubProjects keys a project's sub-projects for the recursive call,
+// prefixing the parent's name onto whichever column carries it: the
+// repository name when a single project is listed and there is no project
+// column, the sub-project's own name otherwise.
+func qualifySubProjects(proj domain.Project, single bool) domain.ProjectListKeyed {
+	subProjs := make(domain.ProjectListKeyed, len(proj.SubProjects))
+	for _, subProj := range proj.SubProjects {
+		if single {
+			for idx, repo := range subProj.Repos {
+				subProj.Repos[idx].Name = filepath.Join(subProj.Name, repo.Name)
+			}
+		} else {
+			subProj.Name = filepath.Join(proj.Name, subProj.Name)
+		}
+		subProjs[subProj.Name] = subProj
+	}
+	return subProjs
 }

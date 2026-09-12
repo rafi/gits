@@ -2,12 +2,13 @@ package providers
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rafi/gits/internal/logging"
 )
 
-// paginate drives a provider fetch loop: it logs each page, invokes
+// paginate drives a provider fetch loop: it traces each page, invokes
 // fetchPage until it reports there are no further pages, and stops early on
 // context cancellation.
 //
@@ -15,14 +16,19 @@ import (
 // next one. It is asked after the page it prices, so a provider whose
 // response carries its own rate-limit budget can answer from what it just
 // read. A positive answer sleeps without ignoring cancellation.
+//
+// Page fetches are debug tracing, not Diagnostic Output: a default run says
+// nothing about them, and `-v` shows the walk.
 func paginate(
 	ctx context.Context,
+	logger *slog.Logger,
 	what string,
 	pause func() time.Duration,
 	fetchPage func(page int) (more bool, err error),
 ) error {
+	logger = logging.Or(logger)
 	for page := 1; ; page++ {
-		log.Infof("Fetching %s (%d)…", what, page)
+		logger.DebugContext(ctx, "fetching page", "what", what, "page", page)
 		more, err := fetchPage(page)
 		if err != nil {
 			return err
@@ -31,8 +37,8 @@ func paginate(
 			return nil
 		}
 		if wait := pause(); wait > 0 {
-			log.Infof("Waiting %s before the next page of %s…",
-				wait.Round(time.Millisecond), what)
+			logger.DebugContext(ctx, "waiting before the next page",
+				"what", what, "wait", wait.Round(time.Millisecond))
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

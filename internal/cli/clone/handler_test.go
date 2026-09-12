@@ -90,7 +90,7 @@ func TestExecCloneProject(t *testing.T) {
 		t.Errorf("clones = %+v, want %+v", g.Clones(), want)
 	}
 	got := deps.Result()
-	for _, want := range []string{"acme", "gone", "Cloning into", "already cloned"} {
+	for _, want := range []string{"gone", "Cloning into", "already cloned"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Result Output = %q, want it to contain %q", got, want)
 		}
@@ -171,6 +171,48 @@ func TestExecCloneFailureReportsEpilogue(t *testing.T) {
 	got := deps.Diagnostic()
 	if !strings.Contains(got, "1 error:") || !strings.Contains(got, "repository not found") {
 		t.Errorf("Diagnostic Output = %q, want the error epilogue", got)
+	}
+}
+
+// hitCache reports every project as already cached, so the loader leaves the
+// fixture's repositories exactly as declared instead of contacting a provider.
+type hitCache struct{}
+
+func (hitCache) Get(string, *domain.Project) (bool, error) { return true, nil }
+func (hitCache) Save(string, domain.Project) error         { return nil }
+func (hitCache) Flush(domain.Project) error                { return nil }
+
+// TestExecCloneRemoteOnly covers the state clone must never hand to git: a
+// provider-backed repository with no local home (remote-only). It is passed
+// over with a warning naming the config keys that would give it a path, git is
+// never reached, and the run's exit code is unaffected — a pass-over, not a
+// failure.
+func TestExecCloneRemoteOnly(t *testing.T) {
+	t.Parallel()
+
+	g := &fakeGit{out: "Cloning into 'api'…"}
+	deps := clitest.New(t, g)
+	deps.Cache = hitCache{}
+	// No project path and a remote provider source, with the repository
+	// declaring no dir: — the exact shape the loader classifies as remote-only.
+	deps.Projects = domain.ProjectListKeyed{"acme": {
+		Source: &domain.ProviderSource{Type: "github", Search: "acme"},
+		Repos:  []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
+	}}
+
+	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil — remote-only is a pass-over", err)
+	}
+
+	if got := g.Clones(); len(got) != 0 {
+		t.Errorf("clones = %+v, want none: a remote-only repo has no local path", got)
+	}
+	if got := deps.Result(); !strings.Contains(got, "no local path") ||
+		!strings.Contains(got, "`path:`") || !strings.Contains(got, "`dir:`") {
+		t.Errorf("Result Output = %q, want the line to name the config keys", got)
+	}
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want empty — a pass-over is not an error", got)
 	}
 }
 

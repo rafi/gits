@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,8 +90,8 @@ func TestLoadConfigProviderSettings(t *testing.T) {
 	if !f.Settings.IncludeArchived {
 		t.Error("includeArchived = false, want true")
 	}
-	if got := f.Settings.ProviderTimeoutDuration(); got != 90*time.Second {
-		t.Errorf("providerTimeout = %v, want 90s", got)
+	if got, err := f.Settings.ProviderTimeoutDuration(); err != nil || got != 90*time.Second {
+		t.Errorf("providerTimeout = %v (err %v), want 90s", got, err)
 	}
 }
 
@@ -148,6 +149,63 @@ func TestLoadConfigUnsupportedExt(t *testing.T) {
 	}
 }
 
+// TestLoadConfigSourceAndReposRejected proves a project that sets both a
+// Provider Source and an explicit repos list is rejected by name — for a
+// top-level project and for a nested sub-project — rather than silently
+// discarding the repos (remote sources) or appending them (filesystem).
+func TestLoadConfigSourceAndReposRejected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "top-level project",
+			content: `
+both:
+  source:
+    type: github
+    search: acme
+  repos:
+    - name: pinned
+      dir: ~/code/pinned
+`,
+		},
+		{
+			name: "nested sub-project",
+			content: `
+parent:
+  path: ~/code
+  subprojects:
+    - name: both
+      source:
+        type: gitlab
+        search: group
+      repos:
+        - name: pinned
+          dir: ~/code/pinned
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := writeTemp(t, "c.yaml", tt.content)
+			err := (&File{}).loadConfig(path)
+			if err == nil {
+				t.Fatal("loadConfig(source+repos) = nil, want error")
+			}
+			for _, want := range []string{"both", "source:", "repos:"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q missing %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadConfigWorkerCountDefault(t *testing.T) {
 	t.Parallel()
 
@@ -173,6 +231,15 @@ func TestConvertDeprecatedProjectsKey(t *testing.T) {
 	// Deprecated projects are still captured.
 	if _, ok := f.Projects["legacy"]; !ok {
 		t.Errorf("legacy project not captured; got %v", f.Projects)
+	}
+	// The deprecation is recorded as a Warning for the caller to render on
+	// Diagnostic Output, rather than printed to os.Stderr from here.
+	if len(f.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want one deprecation notice", f.Warnings)
+	}
+	if !strings.Contains(f.Warnings[0], "projects:") ||
+		!strings.Contains(f.Warnings[0], "deprecated") {
+		t.Errorf("Warnings[0] = %q, want the deprecation notice naming the key", f.Warnings[0])
 	}
 	// And Convert surfaces the deprecation error.
 	if err := f.Convert(); err == nil {
@@ -330,6 +397,41 @@ func TestLoadConfigColorToggle(t *testing.T) {
 		}
 		if os.Getenv("CLICOLOR_FORCE") != "1" {
 			t.Errorf("CLICOLOR_FORCE = %q, want 1", os.Getenv("CLICOLOR_FORCE"))
+		}
+	})
+}
+
+// TestNewConfigFromFileErrors pins the failure cases the startup path turns
+// into an exit code: a named-but-absent file, a malformed file and an
+// unsupported extension are all errors. The non-error case — no file named and
+// none found — is covered by TestNewConfigDefaultsWithoutFile.
+func TestNewConfigFromFileErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("named file that does not exist errors", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "absent.yaml")
+		if err := NewConfigFromFile(path, &File{}); err == nil {
+			t.Error("NewConfigFromFile(absent) = nil, want a read error")
+		}
+	})
+
+	t.Run("malformed file errors", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeTemp(t, "c.yaml", ":\tnot yaml [")
+		if err := NewConfigFromFile(path, &File{}); err == nil {
+			t.Error("NewConfigFromFile(malformed) = nil, want a parse error")
+		}
+	})
+
+	t.Run("unsupported extension errors", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeTemp(t, "c.ini", "nope")
+		if err := NewConfigFromFile(path, &File{}); err == nil {
+			t.Error("NewConfigFromFile(.ini) = nil, want an unsupported-format error")
 		}
 	})
 }

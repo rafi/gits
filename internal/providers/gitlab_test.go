@@ -3,6 +3,10 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,4 +77,100 @@ func TestSkipGitLabProject(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newTestGitLabProvider builds a provider pointed at a local test server.
+func newTestGitLabProvider(t *testing.T, url string) *gitLabProvider {
+	t.Helper()
+	client, err := gitlab.NewClient("dummy", gitlab.WithBaseURL(url))
+	if err != nil {
+		t.Fatalf("gitlab.NewClient: %v", err)
+	}
+	return &gitLabProvider{client: client}
+}
+
+// TestGitLabLoadReposFlatWalk proves 13: a two-level group tree costs one
+// GetGroup, one descendant-groups walk and one include_subgroups project
+// walk — not a request pair per group — and still yields the same tree.
+func TestGitLabLoadReposFlatWalk(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	var includeSubGroups string
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/groups/acme"):
+				fmt.Fprint(w, `{"id":1,"name":"Acme","path":"acme","full_path":"acme"}`)
+			case strings.HasSuffix(r.URL.Path, "/descendant_groups"):
+				fmt.Fprint(w, `[
+					{"id":2,"name":"Backend","path":"backend","full_path":"acme/backend"},
+					{"id":4,"name":"Deep","path":"deep","full_path":"acme/backend/deep"},
+					{"id":3,"name":"Frontend","path":"frontend","full_path":"acme/frontend"}
+				]`)
+			case strings.HasSuffix(r.URL.Path, "/projects"):
+				includeSubGroups = r.URL.Query().Get("include_subgroups")
+				fmt.Fprint(w, `[
+					{"id":10,"path":"top","namespace":{"full_path":"acme"},"ssh_url_to_repo":"git@x:acme/top.git"},
+					{"id":11,"path":"api","namespace":{"full_path":"acme/backend"},"ssh_url_to_repo":"git@x:acme/backend/api.git"},
+					{"id":12,"path":"core","namespace":{"full_path":"acme/backend/deep"},"ssh_url_to_repo":"git@x:acme/backend/deep/core.git"},
+					{"id":13,"path":"web","namespace":{"full_path":"acme/frontend"},"ssh_url_to_repo":"git@x:acme/frontend/web.git"}
+				]`)
+			default:
+				t.Errorf("unexpected request path %q", r.URL.Path)
+			}
+		}))
+	defer server.Close()
+
+	p := newTestGitLabProvider(t, server.URL)
+	project := &domain.Project{}
+	if err := p.LoadRepos(context.Background(), "acme", project); err != nil {
+		t.Fatalf("LoadRepos: %v", err)
+	}
+
+	if len(paths) != 3 {
+		t.Errorf("LoadRepos made %d requests (%v), want 3", len(paths), paths)
+	}
+	if includeSubGroups != "true" {
+		t.Errorf("include_subgroups = %q, want \"true\"", includeSubGroups)
+	}
+	if project.Name != "Acme" {
+		t.Errorf("project.Name = %q, want \"Acme\"", project.Name)
+	}
+
+	got := flattenGitLabTree(project, "")
+	want := []string{
+		"/top(10)",
+		"backend(2)/api(11)",
+		"backend/deep(4)/core(12)",
+		"frontend(3)/web(13)",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("tree = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("tree[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// flattenGitLabTree renders "<group path>(<group id>)/<repo>(<repo id>)" for
+// every repository, depth-first, so tree shape and identity compare as text.
+func flattenGitLabTree(p *domain.Project, prefix string) []string {
+	lines := []string{}
+	for _, repo := range p.Repos {
+		lines = append(lines, fmt.Sprintf("%s/%s(%s)", prefix, repo.Name, repo.ID))
+	}
+	for i := range p.SubProjects {
+		sub := &p.SubProjects[i]
+		subPrefix := sub.Name + "(" + sub.ID + ")"
+		if prefix != "" {
+			subPrefix = strings.SplitN(prefix, "(", 2)[0] + "/" + subPrefix
+		}
+		lines = append(lines, flattenGitLabTree(sub, subPrefix)...)
+	}
+	return lines
 }

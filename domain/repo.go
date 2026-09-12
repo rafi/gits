@@ -60,6 +60,14 @@ func (r Repository) GetName() string {
 	}
 }
 
+// Key identifies a repository uniquely within a project tree: the local path
+// the loader resolved for it, with its display name to tell apart the ones
+// whose path could not be resolved at all. It is an in-process identity, not
+// wire vocabulary — nothing serializes it.
+func (r Repository) Key() string {
+	return r.AbsPath + "\x00" + r.GetName()
+}
+
 // GetNameWithNamespace returns GetName prefixed with the repository's
 // namespace, when it has one.
 func (r Repository) GetNameWithNamespace() string {

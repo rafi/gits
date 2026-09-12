@@ -59,7 +59,7 @@ func TestRunTokenCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resetTokenCache(t)
-			got, err := runTokenCommand(t.Context(), tt.command)
+			got, err := runTokenCommand(t.Context(), nil, tt.command)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("runTokenCommand(%q) = %q, want error", tt.command, got)
@@ -85,7 +85,7 @@ func TestRunTokenCommandErrorIncludesStderr(t *testing.T) {
 		t.Skip("shell fixtures assume a POSIX shell")
 	}
 	resetTokenCache(t)
-	_, err := runTokenCommand(t.Context(), "echo 'gpg: decryption failed' >&2; exit 2")
+	_, err := runTokenCommand(t.Context(), nil, "echo 'gpg: decryption failed' >&2; exit 2")
 	if err == nil {
 		t.Fatal("runTokenCommand(failing) = nil error, want error")
 	}
@@ -108,7 +108,7 @@ func TestRunTokenCommandCaches(t *testing.T) {
 	command := "printf x >> " + counter + "; echo tok"
 
 	for range 3 {
-		got, err := runTokenCommand(t.Context(), command)
+		got, err := runTokenCommand(t.Context(), nil, command)
 		if err != nil {
 			t.Fatalf("runTokenCommand: %v", err)
 		}

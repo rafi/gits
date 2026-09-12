@@ -17,7 +17,6 @@ require (
 	github.com/ktrysmt/go-bitbucket v0.10.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
-	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/xlab/treeprint v1.2.0
 	gitlab.com/gitlab-org/api/client-go v1.46.0

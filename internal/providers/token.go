@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rafi/gits/internal/logging"
 )
 
 // tokenCommandTimeout bounds a settings token command. It is generous on
@@ -32,7 +33,7 @@ func resolveToken(ctx context.Context, provider Provider, opts Options) (string,
 		return opts.Token, nil
 	}
 	if cmd := strings.TrimSpace(opts.TokenCommand); cmd != "" {
-		token, err := runTokenCommand(ctx, cmd)
+		token, err := runTokenCommand(ctx, opts.Log, cmd)
 		if err != nil {
 			return "", fmt.Errorf("%s token command failed: %w", provider, err)
 		}
@@ -45,18 +46,19 @@ func resolveToken(ctx context.Context, provider Provider, opts Options) (string,
 // first non-empty line it prints, memoized per command string. stdin is not
 // connected: interactive helpers are expected to prompt via their own tty
 // (e.g. gpg-agent's pinentry), not to read from ours.
-func runTokenCommand(ctx context.Context, command string) (string, error) {
+func runTokenCommand(ctx context.Context, logger *slog.Logger, command string) (string, error) {
+	logger = logging.Or(logger)
 	tokenCacheMu.Lock()
 	defer tokenCacheMu.Unlock()
 	if token, ok := tokenCache[command]; ok {
-		log.Debugf("Using cached token from command %q", command)
+		logger.DebugContext(ctx, "using cached token", "command", command)
 		return token, nil
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, tokenCommandTimeout)
 	defer cancel()
 
-	log.Debugf("Running token command %q", command)
+	logger.DebugContext(ctx, "running token command", "command", command)
 	shell, args := shellCommand(command)
 	cmd := exec.CommandContext(ctx, shell, args...)
 	var stderr bytes.Buffer

@@ -22,141 +22,88 @@ func validateFormat(format string) error {
 	}
 }
 
-// renderJSON writes the collected results as the envelope `list -o json`
-// shares, with each probed repository's working-tree data nested under it.
-// With tree set, groups are the Traversal of a whole project; without it
-// they are one repository under its project.
-func renderJSON(w io.Writer, groups []bulk.Group[*repoStatus], tree bool, opts Options) error {
+// renderJSON writes the run's results as the envelope `list -o json` shares,
+// with each probed repository's working-tree data nested under it. The
+// document's tree is the one the run visited — a whole project, or one
+// repository under its project.
+func renderJSON(w io.Writer, res bulk.Results[*repoStatus], opts Options) error {
 	env := jsonout.Envelope{}
-	if len(groups) == 0 {
+	if res.Project.Name == "" {
+		// The named project was skipped: nothing ran, nothing to document.
 		return jsonout.Write(w, env)
 	}
-
-	var (
-		node jsonout.Project
-		keep bool
-	)
-	if tree {
-		node, keep, _ = buildNode(groups, 0, opts)
-	} else {
-		node, keep = buildLeaf(groups[0], opts)
-	}
-	if keep {
-		env[groups[0].Project.Name] = node
+	if node, keep := buildNode(res.Project, newRows(res), opts); keep {
+		env[res.Project.Name] = node
 	}
 	return jsonout.Write(w, env)
 }
 
-// buildNode rebuilds one project subtree from the flat groups, inverting the
-// Traversal's depth-first order: a group is followed by one subtree per
-// sub-project of its project. It returns the node, whether it survived the
-// active filters, and the index of the next unconsumed group.
-func buildNode(groups []bulk.Group[*repoStatus], i int, opts Options) (jsonout.Project, bool, int) {
-	if i >= len(groups) {
-		return jsonout.Project{}, false, i
-	}
-	g := groups[i]
-	node := jsonout.NewProject(g.Project)
-	node.Repos = buildRepos(g, opts)
-
-	next := i + 1
-	for range g.Project.SubProjects {
-		var (
-			sub  jsonout.Project
-			keep bool
-		)
-		sub, keep, next = buildNode(groups, next, opts)
-		if keep {
-			node.SubProjects = append(node.SubProjects, sub)
-		}
-	}
-	return node, keptNode(node, opts), next
-}
-
-// buildLeaf converts a single group without descending, for the single-repo
-// form where the group's project carries sub-projects the Traversal never
-// visited.
-func buildLeaf(g bulk.Group[*repoStatus], opts Options) (jsonout.Project, bool) {
-	node := jsonout.NewProject(g.Project)
-	node.Repos = buildRepos(g, opts)
-	return node, keptNode(node, opts)
-}
-
-// keptNode reports whether a project node appears in the document. A filtered
-// run drops nodes left with nothing under them, as the table drops a project
-// whose every row was hidden.
+// buildNode converts one project subtree, returning the node and whether it
+// survived the active filters. A filtered run drops nodes left with nothing
+// under them, as the table drops a project whose every row was hidden.
 //
 // One divergence the tree forces: a project with no surviving repositories of
 // its own stays when a sub-project survived, because that sub-project has
-// nowhere else to hang. The table has no such constraint — its groups are
-// flat, so it judges each one alone and the emptied parent's header just
-// goes. The node that stays omits `repos` entirely, as any project with none
-// does.
-func keptNode(node jsonout.Project, opts Options) bool {
-	if !opts.filtered() {
-		return true
-	}
-	return len(node.Repos) > 0 || len(node.SubProjects) > 0
-}
-
-// buildRepos converts one group's visible statuses, so the document holds
-// exactly the repositories the table would have shown rows for.
-func buildRepos(g bulk.Group[*repoStatus], opts Options) []jsonout.Repository {
-	sts, _ := visibleStatuses(g, opts)
-	repos := make([]jsonout.Repository, 0, len(sts))
+// nowhere else to hang. The table has no such constraint — it judges each
+// project alone and the emptied parent's table just goes. The node that stays
+// omits `repos` entirely, as any project with none does.
+func buildNode(p domain.Project, index rows, opts Options) (jsonout.Project, bool) {
+	node := jsonout.NewProject(p)
+	sts, _ := index.visible(p, opts)
 	for _, st := range sts {
-		repos = append(repos, buildRepo(st))
+		node.Repos = append(node.Repos, buildRepo(st))
 	}
-	if len(repos) == 0 {
-		// A project with no repositories omits the key rather than
-		// shipping an empty list.
-		return nil
+	for _, sub := range p.SubProjects {
+		if child, keep := buildNode(sub, index, opts); keep {
+			node.SubProjects = append(node.SubProjects, child)
+		}
 	}
-	return repos
+	if !opts.filtered() {
+		return node, true
+	}
+	return node, len(node.Repos) > 0 || len(node.SubProjects) > 0
 }
 
 // buildRepo converts one repository's identity, state and — where git was
 // actually consulted — its working tree.
 func buildRepo(st *repoStatus) jsonout.Repository {
-	repo := jsonout.NewRepository(st.repo)
+	repo := jsonout.NewRepository(st.repo.Repository)
 	if st.repo.State != domain.RepoStateOK {
 		// Nothing was probed: the state and its reason are the whole story.
 		return repo
 	}
 	if st.err != nil {
-		repo.Status = &jsonout.Status{Error: st.message}
+		repo.Status = &jsonout.Status{Error: st.err.Error()}
 		return repo
 	}
 
 	status := &jsonout.Status{
-		Branch:    st.branch,
-		Staged:    st.staged,
-		Unstaged:  st.unstaged,
-		Untracked: st.untracked,
-		Ahead:     st.ahead,
-		Behind:    st.behind,
-		Compared:  !st.noUpstream,
+		Branch:    st.Branch,
+		Staged:    st.Staged,
+		Unstaged:  st.Unstaged,
+		Untracked: st.Untracked,
+		Ahead:     st.Ahead,
+		Behind:    st.Behind,
+		Compared:  st.compared,
 		Version:   st.version,
 	}
 	// The object's absence is what says no Upstream is configured, so a branch
 	// that was never pushed is structurally distinct from one whose Upstream
 	// went away.
-	if st.upstream != "" {
+	if st.Upstream != "" {
 		status.Upstream = &jsonout.Upstream{
-			Name:    st.upstream,
-			Tracked: !st.upstreamGone,
+			Name:    st.Upstream,
+			Tracked: !st.GoneUpstream(),
 		}
 	}
-	// hasStat is the whole condition: the probe only runs under --stat, so a
-	// measured diff is already a --stat diff.
-	if st.hasStat {
-		status.Head = &jsonout.Head{Added: st.added, Deleted: st.deleted}
+	if st.stat != nil {
+		status.Head = &jsonout.Head{Added: st.stat.Added, Deleted: st.stat.Deleted}
 	}
-	if st.commit != "" {
+	if st.head.Hash != "" {
 		status.Commit = &jsonout.Commit{
-			Hash:    st.commit,
-			Subject: st.message,
-			Time:    st.when,
+			Hash:    st.head.Hash,
+			Subject: st.head.Subject,
+			Time:    st.head.Time,
 		}
 	}
 	repo.Status = status

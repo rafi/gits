@@ -12,7 +12,10 @@ import (
 )
 
 func completionDeps() types.Runtime {
-	return newRuntime(context.Background())
+	// Shell completion discards any setting warnings: pressing Tab must stay
+	// silent, and a bad duration has already fallen back to its default.
+	deps, _ := newRuntime(context.Background())
+	return deps
 }
 
 // completeProject returns a list of project names for shell completion.
@@ -44,9 +47,12 @@ func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) (
 
 	deps := completionDeps()
 
-	proj, err := loader.GetProject(args[0], deps)
+	// Load cache-only: pressing Tab must never trigger a provider network
+	// fetch or a tokenCommand passphrase prompt. A remote project with a cold
+	// cache simply offers no repository candidates.
+	proj, err := loader.GetProject(args[0], deps, loader.CacheOnly())
 	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	var completions []string
@@ -73,24 +79,24 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 
 	deps := completionDeps()
 
-	// Get project
-	proj, err := loader.GetProject(args[0], deps)
+	// Get project (cache-only, so Tab never fetches or prompts — see above).
+	proj, err := loader.GetProject(args[0], deps, loader.CacheOnly())
 	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	// Get repo
 	repoName := args[1]
 	repo, found := proj.GetRepo(repoName, "")
 	if !found {
-		return nil, cobra.ShellCompDirectiveError
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	// Find branches
 	var completions []string
 	branches, err := deps.Git.Branches(deps.Ctx, repo.AbsPath)
 	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	for _, branch := range branches {
 		if toComplete == "" || strings.HasPrefix(branch, toComplete) {

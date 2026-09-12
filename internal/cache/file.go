@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/fsutil"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -27,6 +28,7 @@ const cacheDirMode = 0o750
 // File is the file-backed cache client. Its ttl comes from the cacheTTL
 // setting: an explicit "0s" disables caching entirely (every Get is a miss).
 type File struct {
+	log *slog.Logger
 	ttl time.Duration
 }
 
@@ -38,9 +40,16 @@ type payload struct {
 	Project   domain.Project `json:"project"`
 }
 
-// NewFileCache returns a file-backed cache client with the given ttl.
-func NewFileCache(ttl time.Duration) Cacher {
-	return &File{ttl: ttl}
+// NewFileCache returns a file-backed cache client with the given ttl, tracing
+// its hits and misses to logger. A nil logger traces nothing.
+func NewFileCache(ttl time.Duration, logger *slog.Logger) Cacher {
+	return &File{ttl: ttl, log: logging.Or(logger)}
+}
+
+// logger returns the attached tracer, or a discarding one, so a File built as
+// a zero value still logs safely.
+func (cf *File) logger() *slog.Logger {
+	return logging.Or(cf.log)
 }
 
 func cacheFilePath(key string) (string, error) {
@@ -66,7 +75,7 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	}
 	fp, err := os.Open(path)
 	if os.IsNotExist(err) {
-		log.Debug("cache file not found")
+		cf.logger().Debug("cache file not found", "path", path)
 		return false, nil
 	}
 	if err != nil {
@@ -85,21 +94,18 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	// full) is a miss to be refreshed, never a hard error.
 	var p payload
 	if err := json.Unmarshal(content, &p); err != nil {
-		log.Warnf("ignoring corrupt cache file %s: %v", path, err)
+		cf.logger().Warn("ignoring corrupt cache file", "path", path, "err", err)
 		return false, nil
 	}
 
 	// Bust cache if version or checksum mismatch
 	if p.Version != version.GetMajorMinor() {
-		log.Debugf(
-			"version mismatch %s != %s. busting cache.",
-			p.Version,
-			version.GetMajorMinor(),
-		)
+		cf.logger().Debug("cache version mismatch, busting cache",
+			"cached", p.Version, "current", version.GetMajorMinor())
 		return false, nil
 	}
 	if p.Checksum != project.Hash {
-		log.Debug("checksum mismatch. busting cache.")
+		cf.logger().Debug("cache checksum mismatch, busting cache")
 		return false, nil
 	}
 
@@ -107,11 +113,11 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	cutoff := time.Now().Add(-cf.ttl)
 	cachedAt, err := time.Parse(cacheTimeFormat, p.Timestamp)
 	if err != nil {
-		log.Warnf("failed to parse cache timestamp: %v", err)
+		cf.logger().Warn("failed to parse cache timestamp", "err", err)
 		return false, nil
 	}
 	if cachedAt.Before(cutoff) {
-		log.Debug("cache expired")
+		cf.logger().Debug("cache expired", "ttl", cf.ttl)
 		return false, nil
 	}
 	*project = p.Project

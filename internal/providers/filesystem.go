@@ -3,43 +3,40 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/karrick/godirwalk"
 	"github.com/mitchellh/go-homedir"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/logging"
 )
 
 type filesystemProvider struct {
-	gitClient git.Client
+	gitClient git.Reader
+	log       *slog.Logger
 }
 
 func newFilesystemProvider(opts Options) *filesystemProvider {
-	return &filesystemProvider{gitClient: opts.GitClient}
+	return &filesystemProvider{gitClient: opts.GitClient, log: opts.Log}
 }
 
-// NewFilesystemRepo describes the repository cloned at path, taking its
-// Repo Src from remote or, when that is empty, from the clone's own Remote.
-func NewFilesystemRepo(ctx context.Context, path, remote string, gitClient git.Client) (domain.Repository, error) {
+// NewFilesystemRepo describes the repository cloned at path, with the Repo Src
+// it was handed. When that is empty the source is left unresolved: reading it
+// from the clone's own remote costs a git subprocess, which only the commands
+// that display Repo Src should pay (see loader.ResolveSrc). Callers that show
+// the source immediately — `orphan` — resolve it themselves.
+func NewFilesystemRepo(path, remote string) (domain.Repository, error) {
 	repo := domain.Repository{
 		Name: filepath.Base(path),
 		Dir:  path,
 		Src:  remote,
 	}
 
-	absPath, err := homedir.Expand(path)
-	if err != nil {
+	if _, err := homedir.Expand(path); err != nil {
 		return repo, fmt.Errorf("unable to expand path: %w", err)
-	}
-	if repo.Src == "" {
-		repo.Src, err = gitClient.Remote(ctx, absPath)
-		if err != nil {
-			repo.State = domain.RepoStateError
-			repo.Reason = err.Error()
-		}
 	}
 	return repo, nil
 }
@@ -51,9 +48,9 @@ func (c *filesystemProvider) LoadRepos(ctx context.Context, path string, project
 		return err
 	}
 	project.ID = path
-	return WalkRepos(ctx, path, c.gitClient, func(repoPath string) error {
+	return WalkRepos(ctx, c.log, path, c.gitClient, func(repoPath string) error {
 		// TODO: create subprojects in nested directories
-		repo, err := NewFilesystemRepo(ctx, repoPath, "", c.gitClient)
+		repo, err := NewFilesystemRepo(repoPath, "")
 		if err != nil {
 			return err
 		}
@@ -64,7 +61,14 @@ func (c *filesystemProvider) LoadRepos(ctx context.Context, path string, project
 
 // WalkRepos walks root and calls fn with the path of every git repository
 // found, without descending into repositories themselves.
-func WalkRepos(ctx context.Context, root string, gitClient git.Client, fn func(path string) error) error {
+func WalkRepos(
+	ctx context.Context,
+	logger *slog.Logger,
+	root string,
+	gitClient git.Reader,
+	fn func(path string) error,
+) error {
+	logger = logging.Or(logger)
 	return godirwalk.Walk(root, &godirwalk.Options{
 		Unsorted:            false,
 		FollowSymbolicLinks: false,
@@ -78,11 +82,11 @@ func WalkRepos(ctx context.Context, root string, gitClient git.Client, fn func(p
 			return filepath.SkipDir
 		},
 		// A directory that cannot be read is skipped, not fatal, and the
-		// report goes through the logger rather than the process stream: this
-		// is Diagnostic Output, and WalkRepos is handed no destination to
-		// write it to.
+		// report goes to the tracer the caller passed in rather than to a
+		// process stream: WalkRepos is handed no output destination.
 		ErrorCallback: func(path string, err error) godirwalk.ErrorAction {
-			log.Errorf("error during directory %s scan: %s", path, err)
+			logger.WarnContext(ctx, "skipping unreadable directory",
+				"path", path, "err", err)
 			return godirwalk.SkipNode
 		},
 	})

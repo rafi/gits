@@ -26,7 +26,7 @@ const (
 	goneTrack = "[gone]"
 	// detachedBranch is reported when no branch is checked out, for parity
 	// with CurrentBranch, which renders a detached HEAD this way.
-	detachedBranch = "HEAD"
+	detachedBranch = headRev
 )
 
 // HeadRef is the current branch together with the state of its Upstream, the
@@ -55,7 +55,7 @@ func (g *Git) HeadUpstream(ctx context.Context, path string) (HeadRef, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"for-each-ref", "--format=" + headUpstreamFormat, "refs/heads"}
+	args := []string{cmdForEachRef, "--format=" + headUpstreamFormat, refsHeads}
 	out, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return HeadRef{}, fmt.Errorf("unable to read upstream branch: %w", err)

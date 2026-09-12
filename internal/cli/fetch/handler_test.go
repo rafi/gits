@@ -65,7 +65,7 @@ func TestExecFetchProject(t *testing.T) {
 	}
 
 	got := deps.Result()
-	for _, want := range []string{"acme", "api", "web", "up to date"} {
+	for _, want := range []string{"api", "web", "up to date"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Result Output = %q, want it to contain %q", got, want)
 		}

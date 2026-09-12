@@ -1,10 +1,9 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // DefaultCacheTTL is the cache lifetime used when settings.cacheTTL is unset or
@@ -73,37 +72,41 @@ func (s Settings) ProviderAuth(providerType string) ProviderSettings {
 	}
 }
 
-// parseDurationOr parses a Go-duration setting value, falling back to def
-// (with a warning naming the setting) when it is empty or unparseable.
-func parseDurationOr(raw, name string, def time.Duration) time.Duration {
+// parseDurationOr parses a Go-duration setting value, falling back to def when
+// it is empty. An unparseable value returns def alongside an error naming the
+// setting, so the caller can surface it on Diagnostic Output rather than the
+// domain package reaching for a logger.
+func parseDurationOr(raw, name string, def time.Duration) (time.Duration, error) {
 	if raw == "" {
-		return def
+		return def, nil
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {
-		log.Warnf("invalid %s %q, using default: %v", name, raw, err)
-		return def
+		return def, fmt.Errorf("invalid %s %q, using default: %w", name, raw, err)
 	}
-	return d
+	return d, nil
 }
 
 // ProviderTimeoutDuration returns the parsed providerTimeout setting, or
 // DefaultProviderTimeout when it is empty or cannot be parsed as a Go
-// duration (e.g. "90s").
-func (s Settings) ProviderTimeoutDuration() time.Duration {
+// duration (e.g. "90s"). An unparseable value returns the default and an
+// error naming the setting.
+func (s Settings) ProviderTimeoutDuration() (time.Duration, error) {
 	return parseDurationOr(s.ProviderTimeout, "providerTimeout", DefaultProviderTimeout)
 }
 
 // GitTimeoutDuration returns the parsed gitTimeout setting, or
 // DefaultGitTimeout when it is empty or cannot be parsed as a Go duration
-// (e.g. "30m").
-func (s Settings) GitTimeoutDuration() time.Duration {
+// (e.g. "30m"). An unparseable value returns the default and an error naming
+// the setting.
+func (s Settings) GitTimeoutDuration() (time.Duration, error) {
 	return parseDurationOr(s.GitTimeout, "gitTimeout", DefaultGitTimeout)
 }
 
 // CacheTTLDuration returns the parsed cacheTTL setting, or DefaultCacheTTL when
-// it is empty or cannot be parsed as a Go duration (e.g. "168h").
-func (s Settings) CacheTTLDuration() time.Duration {
+// it is empty or cannot be parsed as a Go duration (e.g. "168h"). An
+// unparseable value returns the default and an error naming the setting.
+func (s Settings) CacheTTLDuration() (time.Duration, error) {
 	return parseDurationOr(s.CacheTTL, "cacheTTL", DefaultCacheTTL)
 }
 
@@ -190,8 +193,9 @@ type Theme struct {
 	TagIndicator Style `json:"tagIndicator"`
 
 	// Status
-	Diff  Style `json:"diff"`
-	Error Style `json:"error"`
+	Diff    Style `json:"diff"`
+	Error   Style `json:"error"`
+	Warning Style `json:"warning"`
 
 	// Status table
 	StatusHeader  Style `json:"statusHeader"`

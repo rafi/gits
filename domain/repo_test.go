@@ -97,3 +97,25 @@ func TestRepositoryContainedIn(t *testing.T) {
 		})
 	}
 }
+
+// TestRepositoryKeyIdentifiesWithinATree: the key separates repositories that
+// share a name but not a path, and those with no resolved path at all.
+func TestRepositoryKeyIdentifiesWithinATree(t *testing.T) {
+	t.Parallel()
+
+	a := Repository{Name: "api", AbsPath: "/code/acme/api"}
+	b := Repository{Name: "api", AbsPath: "/code/other/api"}
+	unresolved1 := Repository{Dir: "api"}
+	unresolved2 := Repository{Dir: "web"}
+
+	if a.Key() != (Repository{Name: "api", AbsPath: "/code/acme/api"}).Key() {
+		t.Errorf("Key() differs for equal repositories")
+	}
+	if a.Key() == b.Key() {
+		t.Errorf("Key() = %q for both paths, want the path to separate them", a.Key())
+	}
+	if unresolved1.Key() == unresolved2.Key() {
+		t.Errorf("Key() = %q for both, want the name to separate pathless repositories",
+			unresolved1.Key())
+	}
+}

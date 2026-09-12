@@ -56,3 +56,16 @@ func TestCloneTargetExists(t *testing.T) {
 		t.Errorf("Clone onto existing dir = %v, want ErrTargetExists", err)
 	}
 }
+
+// TestCloneEmptyPath proves Git.Clone refuses an empty target rather than
+// handing git a destination it turns into the working directory or fatally
+// rejects. The check precedes any git invocation, so no future caller (e.g. a
+// remote-only repository with no AbsPath) can repeat the empty-target bug.
+func TestCloneEmptyPath(t *testing.T) {
+	t.Parallel()
+
+	g := NewGit()
+	if _, err := g.Clone(context.Background(), "unused", ""); !errors.Is(err, ErrEmptyPath) {
+		t.Errorf("Clone with empty target = %v, want ErrEmptyPath", err)
+	}
+}

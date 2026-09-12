@@ -111,11 +111,13 @@ func TestParseShortStat(t *testing.T) {
 	}
 }
 
-// TestParseHeadInfo covers the %h%x1f%s%x1f%ct log format split.
+// TestParseHeadInfo covers the %h%x1f%s%x1f%ct%x1f%(describe:tags) log format
+// split, including a describe placeholder an older git leaves unexpanded and a
+// subject bearing the separator byte.
 func TestParseHeadInfo(t *testing.T) {
 	t.Parallel()
 
-	head, err := parseHeadInfo("abc12345\x1fAdd feature: parse \x1f in subjects\x1f1700000000")
+	head, err := parseHeadInfo("abc12345\x1fAdd feature: parse \x1f in subjects\x1f1700000000\x1fv1.0.0-2-gabc12345")
 	if err != nil {
 		t.Fatalf("parseHeadInfo: %v", err)
 	}
@@ -128,11 +130,33 @@ func TestParseHeadInfo(t *testing.T) {
 	if head.Time.Unix() != 1700000000 {
 		t.Errorf("Time = %v", head.Time)
 	}
+	if head.Describe != "v1.0.0-2-gabc12345" {
+		t.Errorf("Describe = %q", head.Describe)
+	}
+
+	// A tagless repository: git expands %(describe:tags) to the empty string.
+	tagless, err := parseHeadInfo("abc12345\x1fInitial commit\x1f1700000000\x1f")
+	if err != nil {
+		t.Fatalf("parseHeadInfo (tagless): %v", err)
+	}
+	if tagless.Describe != "" {
+		t.Errorf("Describe = %q, want empty for a tagless repository", tagless.Describe)
+	}
+
+	// An older git (< 2.32) does not know %(describe:tags) and prints the
+	// placeholder verbatim, which reads as no tag rather than a literal tag.
+	old, err := parseHeadInfo("abc12345\x1fInitial commit\x1f1700000000\x1f%(describe:tags)")
+	if err != nil {
+		t.Fatalf("parseHeadInfo (old git): %v", err)
+	}
+	if old.Describe != "" {
+		t.Errorf("Describe = %q, want empty when the placeholder is unexpanded", old.Describe)
+	}
 
 	if _, err := parseHeadInfo("garbage"); err == nil {
 		t.Error("expected error for malformed output")
 	}
-	if _, err := parseHeadInfo("h\x1fs\x1fnot-a-number"); err == nil {
+	if _, err := parseHeadInfo("h\x1fs\x1fnot-a-number\x1fv1"); err == nil {
 		t.Error("expected error for bad timestamp")
 	}
 }

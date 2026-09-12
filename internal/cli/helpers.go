@@ -28,8 +28,10 @@ var (
 	ErrNotCloned     = fmt.Errorf("not cloned")
 )
 
-// stateError maps a non-OK repository state to its sentinel error.
-func stateError(repo domain.Repository) error {
+// StateError maps a non-OK repository state to its error: the Reason the
+// state was classified for when it carries one, its sentinel otherwise. The
+// bulk module's state guard reports a turned-back repository through it.
+func StateError(repo domain.Repository) error {
 	switch repo.State {
 	case domain.RepoStateError:
 		// The error state carries the Reason it was classified for, and that
@@ -42,6 +44,11 @@ func stateError(repo domain.Repository) error {
 		return ErrNotRepository
 	case domain.RepoStateNotCloned:
 		return ErrNotCloned
+	case domain.RepoStateUnknown, domain.RepoStateRemoteOnly, domain.RepoStateOK:
+		// Not error states. A caller reaching here asked for the error of a
+		// repository that has none; report the state itself rather than
+		// inventing one.
+		fallthrough
 	default:
 		return errors.New(string(repo.State))
 	}
@@ -55,37 +62,15 @@ func stateError(repo domain.Repository) error {
 // The message is terminated here, so a caller that writes a repository title
 // ahead of it shares that line and appends no newline of its own.
 func AbortOnRepoState(w io.Writer, repo domain.Repository, style lipgloss.Style) error {
-	err := stateError(repo)
+	err := StateError(repo)
 	lipgloss.Fprintln(w, style.Render(err.Error()))
 	return RepoError(err, repo)
-}
-
-// RepoStateError wraps a non-OK repository's state through RepoError,
-// rendering no line — for the bulk module's state guard, which builds the
-// repository's result line itself and only needs the error. It counts toward
-// the exit code: a repository the command expected to work on is not there.
-func RepoStateError(repo domain.Repository) error {
-	return RepoError(stateError(repo), repo)
 }
 
 // RepoError wraps a repo failure as a *types.Warning (ErrorType) so it counts
 // as a real error and matches uniformly via [errors.As].
 func RepoError(err error, repo domain.Repository) error {
 	return &types.Warning{
-		Title:  repo.GetName(),
-		Reason: err.Error(),
-		Dir:    repo.AbsPath,
-		Cause:  err,
-	}
-}
-
-// RepoWarning is RepoError's downgraded counterpart (WarningType): the repo's
-// condition still renders on its line, but it does not count toward the exit
-// code. For conditions a command is documented to pass over — `push` skipping
-// a branch with no Upstream — where failing the run would contradict the skip.
-func RepoWarning(err error, repo domain.Repository) error {
-	return &types.Warning{
-		Type:   types.WarningType,
 		Title:  repo.GetName(),
 		Reason: err.Error(),
 		Dir:    repo.AbsPath,
@@ -201,11 +186,20 @@ func RepoTitle(repo domain.Repository, project domain.Project, homeDir string, t
 		SetString(RepoRelPath(project, repo, homeDir))
 }
 
-// Path returns a clean path with ~ for home directory.
+// Path returns a clean path with ~ for the home directory. The substitution
+// is a directory match, not a string prefix: a sibling that merely shares the
+// home directory's textual prefix (e.g. /Users/rafibar under /Users/rafi) is
+// left untouched, and an empty homeDir never matches.
 func Path(path, homeDir string) string {
 	path = filepath.Clean(path)
-	if rest, cut := strings.CutPrefix(path, homeDir); cut {
-		return "~" + rest
+	if homeDir == "" {
+		return path
+	}
+	if path == homeDir {
+		return "~"
+	}
+	if rest, cut := strings.CutPrefix(path, homeDir+string(filepath.Separator)); cut {
+		return "~" + string(filepath.Separator) + rest
 	}
 	return path
 }

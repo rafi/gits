@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,22 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rafi/gits/internal/logging"
+)
+
+// The git argument vocabulary repeated across this package's commands.
+const (
+	// cmdForEachRef walks refs without touching the working tree.
+	cmdForEachRef = "for-each-ref"
+	// refsHeads is the local-branch ref namespace.
+	refsHeads = "refs/heads"
+	// argEndOfOptions separates a caller-supplied name — a branch, a remote,
+	// a revision — from git's own flags, so a name starting with a dash is
+	// never read as one.
+	argEndOfOptions = "--end-of-options"
+	// headRev names the HEAD revision in git arguments; it is also what git
+	// reports as the branch name when HEAD is detached.
+	headRev = "HEAD"
 )
 
 // ErrNoUpstream names a branch with no upstream tracking branch configured —
@@ -31,6 +47,12 @@ var ErrUpstreamGone = errors.New("upstream tracking branch is gone")
 // exists — usually an existing clone, or leftovers from an interrupted one.
 var ErrTargetExists = errors.New(
 	"directory already exists — remove it if a previous clone was interrupted")
+
+// ErrEmptyPath is returned by Clone when handed an empty target path. Git
+// treats an empty destination as the current directory in some forms and
+// fatally rejects it in others; refusing it here stops a repository with no
+// local home (remote-only) from ever reaching git.
+var ErrEmptyPath = errors.New("empty clone target path")
 
 // ErrGitNotFound is returned by any operation that needs the git executable
 // when it isn't on PATH. It is deliberately per-operation: work that needs no
@@ -57,16 +79,14 @@ const (
 	terminateGrace = 10 * time.Second
 )
 
-// Client is the set of git operations the application depends on. It is
-// satisfied by the concrete *Git client and lets callers (notably the runtime
-// and the bulk module) be tested with a fake implementation.
-type Client interface {
-	Clone(ctx context.Context, remote string, path string) (string, error)
+// Reader is the read-only half of the git seam: every operation answers a
+// question about a repository and changes nothing in it. A helper or command
+// that takes a Reader states at compile time that it never writes — the same
+// narrowest-useful-operation rule ADR-0002 applies to `push`, applied to the
+// seam itself.
+type Reader interface {
 	IsRepo(ctx context.Context, path string) bool
 	Remote(ctx context.Context, path string) (string, error)
-	Fetch(ctx context.Context, path string) (string, error)
-	Pull(ctx context.Context, path string) (string, error)
-	Push(ctx context.Context, path string, target PushTarget, opts PushOptions) (string, error)
 	Log(ctx context.Context, path, ref string) (string, error)
 	CommitDates(ctx context.Context, path, branch string, days int) ([]string, error)
 	Refs(ctx context.Context, path string) ([]string, error)
@@ -75,18 +95,35 @@ type Client interface {
 	Remotes(ctx context.Context, path string) ([]string, error)
 	RemoteBranches(ctx context.Context, path string) ([]string, error)
 	FallbackRef(ctx context.Context, path, branch string) string
-	Checkout(ctx context.Context, path, branch string) error
 	CurrentBranch(ctx context.Context, path string) (string, error)
 	HeadUpstream(ctx context.Context, path string) (HeadRef, error)
 	Snapshot(ctx context.Context, path string) (Snapshot, error)
 	WorkingDiff(ctx context.Context, path string) (DiffStat, error)
 	HeadInfo(ctx context.Context, path string) (Head, error)
-	Describe(ctx context.Context, path string) (string, error)
 	Diff(ctx context.Context, path, branch, target string) (int, int, error)
+}
+
+// Writer is the mutating half: operations that touch the working tree, the
+// object store or a remote.
+type Writer interface {
+	Clone(ctx context.Context, remote string, path string) (string, error)
+	Fetch(ctx context.Context, path string) (string, error)
+	Pull(ctx context.Context, path string) (string, error)
+	Push(ctx context.Context, path string, target PushTarget, opts PushOptions) (string, error)
+	Checkout(ctx context.Context, path, branch string) error
+}
+
+// Client is the whole set of git operations the application depends on. It is
+// satisfied by the concrete *Git client and lets callers (notably the runtime
+// and the bulk module) be tested with a fake implementation.
+type Client interface {
+	Reader
+	Writer
 }
 
 // Git is the concrete client: every operation shells out to git.
 type Git struct {
+	log        *slog.Logger
 	netTimeout time.Duration
 }
 
@@ -94,6 +131,18 @@ type Git struct {
 // see ErrGitNotFound.
 func NewGit() Git {
 	return Git{netTimeout: defaultNetworkTimeout}
+}
+
+// SetLogger attaches the debug tracer git's own diagnostics go to. A client
+// without one traces nothing.
+func (g *Git) SetLogger(logger *slog.Logger) {
+	g.log = logger
+}
+
+// logger returns the attached tracer, or a discarding one, so a zero-value
+// Git built without NewGit still logs safely.
+func (g *Git) logger() *slog.Logger {
+	return logging.Or(g.log)
 }
 
 // SetNetworkTimeout overrides the timeout applied to network operations
@@ -115,6 +164,9 @@ func (g *Git) networkTimeout() time.Duration {
 
 // Clone clones repository to filesystem.
 func (g *Git) Clone(ctx context.Context, remote string, path string) (string, error) {
+	if path == "" {
+		return "", ErrEmptyPath
+	}
 	if _, err := os.Stat(path); err == nil {
 		return "", ErrTargetExists
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -126,13 +178,13 @@ func (g *Git) Clone(ctx context.Context, remote string, path string) (string, er
 		if err := os.MkdirAll(basePath, cloneParentMode); err != nil {
 			return "", err
 		}
-		log.Debugf("Created directory %s", basePath)
+		g.logger().DebugContext(ctx, "created clone parent directory", "path", basePath)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, g.networkTimeout())
 	defer cancel()
 
-	output, err := g.ExecCombined(ctx, basePath, []string{"clone", "--end-of-options", remote, path})
+	output, err := g.ExecCombined(ctx, basePath, []string{"clone", argEndOfOptions, remote, path})
 	if err != nil {
 		return "", fmt.Errorf("unable to clone: %w", err)
 	}
@@ -203,7 +255,7 @@ func (g *Git) Log(ctx context.Context, path, ref string) (string, error) {
 		"--pretty=%C(240)%h%C(reset) -%C(auto)%d%Creset %s %C(242)(%an %ar)",
 	}
 	if len(ref) > 0 {
-		args = append(args, "--end-of-options", ref)
+		args = append(args, argEndOfOptions, ref)
 	}
 	output, err := g.Exec(ctx, path, args)
 	if err != nil {
@@ -223,7 +275,7 @@ func (g *Git) CommitDates(ctx context.Context, path, branch string, days int) ([
 		"--format=format:%ad",
 		"--date=short",
 		fmt.Sprintf("--since=%d days ago", days),
-		"--end-of-options",
+		argEndOfOptions,
 		branch,
 	}
 	output, err := g.Exec(ctx, path, args)
@@ -239,9 +291,9 @@ func (g *Git) Refs(ctx context.Context, path string) ([]string, error) {
 	defer cancel()
 
 	args := []string{
-		"for-each-ref",
+		cmdForEachRef,
 		"--format=%(refname)",
-		"refs/heads",
+		refsHeads,
 		"refs/tags",
 		"--sort=-committerdate",
 	}
@@ -308,7 +360,7 @@ func (g *Git) Exec(ctx context.Context, path string, args []string) ([]byte, err
 		return stdout.Bytes(), err
 	}
 	if msg := cleanOutput(stderr.Bytes()); msg != "" {
-		log.Debugf("git -C %s: stderr: %s", path, msg)
+		g.logger().DebugContext(ctx, "git stderr", "path", path, "msg", msg)
 	}
 	return stdout.Bytes(), nil
 }

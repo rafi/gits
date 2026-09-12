@@ -16,10 +16,12 @@ func listTree(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	return nil
 }
 
-// makeTree builds a tree of a collection of projects.
+// makeTree builds a tree of a collection of projects. Projects are walked in
+// SortedNames order so two runs render the same tree.
 func makeTree(projects domain.ProjectListKeyed, deps types.RuntimeCLI) treeprint.Tree {
 	tree := treeprint.New()
-	for _, proj := range projects {
+	for _, name := range projects.SortedNames() {
+		proj := projects[name]
 		branch := makeTreeProject(proj, deps)
 		branch.SetValue(cli.ProjectTreeTitle(proj, deps.HomeDir, deps.Theme))
 		if len(projects) == 1 {

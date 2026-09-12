@@ -19,7 +19,7 @@ import (
 //   - project name
 //   - repo or sub-project name
 func ExecClone(args []string, deps types.RuntimeCLI) error {
-	return bulk.Command[string]{
+	res, err := bulk.Command[string]{
 		Verb: "cloning",
 		// A repository not yet cloned is this command's expected input, where
 		// every other Bulk Command passes over it. Only a defective
@@ -30,10 +30,13 @@ func ExecClone(args []string, deps types.RuntimeCLI) error {
 			domain.RepoStateRemoteOnly,
 			domain.RepoStateUnknown,
 		},
-		Skip:   skipped,
-		Body:   cloneRepo,
-		Render: bulk.Lines,
+		Skip: skipped,
+		Body: cloneRepo,
 	}.Run(args, deps)
+	if err != nil {
+		return err
+	}
+	return bulk.Lines(res, deps)
 }
 
 // skipped reports whether a project's configuration disables cloning it, and
@@ -42,14 +45,20 @@ func skipped(p domain.Project) bool {
 	return p.Clone != nil && !*p.Clone
 }
 
-// cloneRepo clones one repository and returns its result line's body: safe to
-// call concurrently and never writes to a destination.
+// cloneRepo clones one repository and returns its result line's body.
 func cloneRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
+	// A remote-only repository is provider-backed with no local home, so there
+	// is nothing to clone into. Pass over it with a warning that names the
+	// config keys that would give it one, rather than handing git an empty
+	// target.
+	if repo.State == domain.RepoStateRemoteOnly {
+		return "", types.NewWarning(
+			"no local path: set `path:` on the project or `dir:` on the repository")
+	}
+
 	output, err := deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
 	if errors.Is(err, git.ErrTargetExists) {
-		// Already cloned is a condition this command passes over, so it is
-		// wrapped here as a warning the module leaves alone: it shows on the
-		// repository's line without failing the run.
+		// Repo is already cloned, skip with a warning.
 		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
 		return "", types.NewWarning("already cloned at %s", repoPath)
 	}

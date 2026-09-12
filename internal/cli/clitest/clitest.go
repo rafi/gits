@@ -23,6 +23,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -41,6 +42,9 @@ type Deps struct {
 	t   *testing.T
 	out bytes.Buffer
 	err bytes.Buffer
+	// log captures debug tracing separately from Diagnostic Output, so a
+	// trace line can never be mistaken for something the user was shown.
+	log bytes.Buffer
 }
 
 // New builds test dependencies around gitClient, which may be nil when the
@@ -53,6 +57,7 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 	settings.Icons.ApplyDefaults()
 
 	deps := &Deps{t: t}
+	logger := logging.New(&deps.log, true)
 	deps.RuntimeCLI = types.RuntimeCLI{
 		Theme:   config.NewThemeDefault(),
 		HomeDir: HomeDir,
@@ -66,6 +71,7 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 			Settings: settings,
 			Projects: domain.ProjectListKeyed{},
 			Cache:    stubCache{},
+			Log:      logger,
 		},
 	}
 	return deps
@@ -86,17 +92,60 @@ func (d *Deps) Result() string { return ansi.Strip(d.out.String()) }
 // Diagnostic returns the captured Diagnostic Output with ANSI stripped.
 func (d *Deps) Diagnostic() string { return ansi.Strip(d.err.String()) }
 
+// Trace returns the captured debug log records, which are not Diagnostic
+// Output and never appear in it.
+func (d *Deps) Trace() string { return d.log.String() }
+
 // FakeGit is the base of a command test's fake git client: it answers the one
 // question repository classification asks of git — whether a path is a git
-// repository — and embeds the interface, so any call the test did not intend
-// panics on the nil embed. A command's own fake embeds it and implements the
-// calls that command makes.
-type FakeGit struct{ git.Client }
+// repository — and embeds the read-only half of the seam, so any query the
+// test did not intend panics on the nil embed. A command's own fake embeds it
+// and implements the calls that command makes.
+//
+// The write half is not embedded but implemented by FakeNoWrites, which panics
+// by name: a read-only command's test fake cannot quietly satisfy a write, and
+// a command that unexpectedly writes says which operation it reached instead of
+// failing as a nil interface. A test for a writing command overrides the one
+// method that command uses.
+type FakeGit struct {
+	git.Reader
+	FakeNoWrites
+}
 
 // IsRepo reports every path as a git repository. Classification stats the path
 // first, and NewProject creates a directory only for a repository it declares
 // cloned, so whether a fixture repository is `ok` is already decided by then.
 func (FakeGit) IsRepo(context.Context, string) bool { return true }
+
+// FakeNoWrites satisfies git.Writer by refusing: every method panics naming
+// itself. Embed it in a fake built around a bare git.Reader to get a full
+// git.Client that still cannot write unnoticed.
+type FakeNoWrites struct{}
+
+// Clone panics: a fake that has not overridden it was never meant to write.
+func (FakeNoWrites) Clone(context.Context, string, string) (string, error) {
+	panic("unexpected git write: Clone")
+}
+
+// Fetch panics: a fake that has not overridden it was never meant to write.
+func (FakeNoWrites) Fetch(context.Context, string) (string, error) {
+	panic("unexpected git write: Fetch")
+}
+
+// Pull panics: a fake that has not overridden it was never meant to write.
+func (FakeNoWrites) Pull(context.Context, string) (string, error) {
+	panic("unexpected git write: Pull")
+}
+
+// Push panics: a fake that has not overridden it was never meant to write.
+func (FakeNoWrites) Push(context.Context, string, git.PushTarget, git.PushOptions) (string, error) {
+	panic("unexpected git write: Push")
+}
+
+// Checkout panics: a fake that has not overridden it was never meant to write.
+func (FakeNoWrites) Checkout(context.Context, string, string) error {
+	panic("unexpected git write: Checkout")
+}
 
 // brokenDir is a Repo Dir naming another user's home directory, which cannot be
 // expanded and so leaves the repository with no local path at all.
@@ -157,6 +206,11 @@ func NewProject(t *testing.T, repos ...Repo) domain.Project {
 			// Nothing on disk: the named-but-absent directory is the state.
 		case domain.RepoStateError:
 			repo.Dir = brokenDir + r.name
+		case domain.RepoStateUnknown, domain.RepoStateRemoteOnly:
+			// Neither state is a fixture a test can ask for: unknown is the
+			// pre-classification zero value, and remote-only is what the
+			// loader decides from a Provider Source.
+			fallthrough
 		default:
 			t.Fatalf("fixture repository %q: unsupported state %q", r.name, r.state)
 		}
