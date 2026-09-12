@@ -7,13 +7,10 @@ import (
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/fzf"
 )
 
 const ReadMeFilename = "README.md"
@@ -23,23 +20,9 @@ const ReadMeFilename = "README.md"
 //   - project name
 //   - repo name
 func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
-	// Validate and load project.
-	if len(args) < 1 {
-		return fmt.Errorf("missing project name")
-	}
-	project, err := loader.GetProject(args[0], deps.Runtime)
+	repo, err := resolveProjectRepo(args, deps)
 	if err != nil {
-		return fmt.Errorf("unable to load project %q: %w", args[0], err)
-	}
-
-	// Validate and load repo.
-	if len(args) < 2 {
-		return fmt.Errorf("missing repo name")
-	}
-	repoName := args[1]
-	repo, found := project.GetRepo(repoName, "")
-	if !found {
-		return fmt.Errorf("repo %s/%s not found", args[0], repoName)
+		return err
 	}
 
 	// Abort if repository is not cloned or has errors.
@@ -64,11 +47,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 		return "", err
 	}
 
-	// Fzf sets environment variables to detect width/height, see man fzf.
-	width, _, err := fzf.GetPreviewSize()
-	if err != nil {
-		log.Warnf("unable to parse FZF_PREVIEW_COLUMNS: %s", err)
-	}
+	width := previewWidth()
 
 	// Initialize renderer, respect OS appearance (light/dark background).
 	background := "light"
@@ -84,7 +63,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 
 	headerStyle := deps.Theme.PreviewHeader.PaddingLeft(2)
 	if width > 0 {
-		headerStyle = headerStyle.Align(lipgloss.Center).Width(width - 2)
+		headerStyle = previewHeader(headerStyle, width)
 	}
 
 	nicePath := cli.Path(readmePath, deps.HomeDir)

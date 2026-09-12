@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"testing"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/config"
@@ -75,22 +79,79 @@ func TestRepoErrorIsPointerWarning(t *testing.T) {
 	}
 }
 
-// TestRepoStateErrorNoStdout verifies the non-printing state-error helper
-// returns the sentinel error for a non-OK repo without writing to stdout, so it
-// is safe to call inside a walk.RepoFunc.
-func TestRepoStateErrorNoStdout(t *testing.T) {
-	theme := config.NewThemeDefault()
-	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateNoLocal}
+// TestTermWidth: non-terminal writers (buffers, /dev/null) report not-a-TTY
+// with zero width, so callers can fall back to unbounded rendering.
+func TestTermWidth(t *testing.T) {
+	if w, isTTY := TermWidth(&bytes.Buffer{}); w != 0 || isTTY {
+		t.Errorf("TermWidth(buffer) = (%d, %v), want (0, false)", w, isTTY)
+	}
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	if w, isTTY := TermWidth(null); w != 0 || isTTY {
+		t.Errorf("TermWidth(devnull) = (%d, %v), want (0, false)", w, isTTY)
+	}
+}
 
-	line, err := RepoStateError(repo, theme.Error)
-	if err == nil {
-		t.Fatal("expected an error for a non-cloned repo")
+// TestRepoPathDerivation: RepoRelPath is the single source for repo display
+// paths — RepoTitle renders it and GetMaxLen measures it, including
+// ~-substituted home paths the old byte-length count overshot.
+func TestRepoPathDerivation(t *testing.T) {
+	home := "/home/nobody"
+	project := domain.Project{
+		Name:    "p",
+		AbsPath: "/somewhere/else",
+		Repos: []domain.Repository{
+			{Name: "far", AbsPath: home + "/code/deeply/nested/long-repo-name"},
+			{Name: "short", Dir: "short", AbsPath: "/somewhere/else/short"},
+		},
 	}
-	if line == "" {
-		t.Fatal("expected a rendered state line for the result, got empty")
+	theme := config.NewThemeDefault()
+
+	if got := RepoRelPath(project, project.Repos[0], home); got != "~/code/deeply/nested/long-repo-name" {
+		t.Errorf("RepoRelPath(home repo) = %q, want ~-substituted path", got)
 	}
-	// The returned error must count as a failure (ErrorType).
-	if RenderErrors([]error{err}, true) == nil {
-		t.Fatal("repo-state error should count as a real error")
+	if got := RepoRelPath(project, project.Repos[1], home); got != "short" {
+		t.Errorf("RepoRelPath(dir repo) = %q, want short", got)
+	}
+
+	widest := 0
+	for _, r := range project.Repos {
+		widest = max(widest, lipgloss.Width(RepoTitle(r, project, home, theme).Value()))
+	}
+	if got := GetMaxLen(project, home); got != widest {
+		t.Errorf("GetMaxLen = %d, want %d (rendered width of widest title)", got, widest)
+	}
+}
+
+// TestTitleWidths: each project node keeps its own group width — equal to its
+// GetMaxLen — and lookups survive the value copies the walker makes, since
+// nodes are identified by their shared Repos backing array.
+func TestTitleWidths(t *testing.T) {
+	home := "/home/nobody"
+	root := domain.Project{
+		Name: "root",
+		Repos: []domain.Repository{
+			{Name: "long", Dir: "a-rather-long-repo-name"},
+			{Name: "short", Dir: "short"},
+		},
+		SubProjects: []domain.Project{
+			{Name: "sub", Repos: []domain.Repository{{Name: "s", Dir: "s"}}},
+			{Name: "empty"},
+		},
+	}
+
+	widths := NewTitleWidths(root, home)
+	rootCopy, subCopy := root, root.SubProjects[0]
+	if got, want := widths.For(rootCopy), GetMaxLen(root, home); got != want {
+		t.Errorf("For(root) = %d, want %d", got, want)
+	}
+	if got, want := widths.For(subCopy), GetMaxLen(root.SubProjects[0], home); got != want {
+		t.Errorf("For(sub) = %d, want %d", got, want)
+	}
+	if got := widths.For(root.SubProjects[1]); got != 0 {
+		t.Errorf("For(empty) = %d, want 0", got)
 	}
 }

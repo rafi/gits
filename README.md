@@ -62,7 +62,7 @@ Available Commands:
 
 `gits` is configured by a YAML file. See [examples](#config-examples). `gits`
 will look for a config file at `~/.gits.yaml` or
-`$XDG_CONFIG_HOME/gits/.git.yaml`.
+`$XDG_CONFIG_HOME/gits/config.yaml`.
 
 You can run `gits` with project names as arguments, or a local path to a
 directory containing multiple projects.
@@ -84,7 +84,14 @@ To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your she
 
 ## Configuration
 
-Configuration file must be present at `~/.gits.yaml` or `$XDG_CONFIG_HOME/gits/.gits.yaml`.
+Configuration file must be present at `~/.gits.yaml` or
+`$XDG_CONFIG_HOME/gits/config.yaml`. JSON and TOML are supported too, so
+`.json`, `.yml` and `.toml` extensions work at either location. Use
+`gits -c <path>` to point at any other file.
+
+See [examples/config.yaml](./examples/config.yaml) for a fully documented
+config file listing every setting with its default value, or
+[examples/simple.yaml](./examples/simple.yaml) for a minimal one.
 
 > [!WARNING]
 > Each project in config file can either have a `source` or `repos` key, not both.
@@ -111,6 +118,15 @@ anotherproject:
   ...
 ```
 
+> [!NOTE]
+> When `dir` is omitted, the local directory is derived from the last path
+> segment of `src`, with only a trailing `.git` suffix stripped. Earlier
+> versions stripped everything after the last dot, so a dotted repository
+> name without a `.git` suffix (e.g. `rafi.github.io`) previously mapped to
+> `rafi.github` and now maps to `rafi.github.io`. If you cloned such a repo
+> with an older version, rename the directory (or set `dir:` explicitly) to
+> match.
+
 ### Settings
 
 Built-in behavior is configured under the reserved `settings:` key:
@@ -120,7 +136,7 @@ settings:
   cacheTTL: 168h   # How long provider caches stay valid. Go duration
                    # syntax (e.g. "24h", "30m"). Default: 168h (7 days).
                    # Invalid or empty values fall back to the default.
-  workerCount: 8   # Concurrent git workers. Default: max(NumCPU/2, 2).
+  workerCount: 8   # Concurrent git workers. Default: max(NumCPU, 2).
   verbose: false   # Enable debug logging.
   includeArchived: false  # Include archived repositories when listing
                           # from providers (GitHub, GitLab). Default: false.

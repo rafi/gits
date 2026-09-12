@@ -36,10 +36,8 @@ type Theme struct {
 	TagIndicator lipgloss.Style
 
 	// Status
-	Modified  lipgloss.Style
-	Untracked lipgloss.Style
-	Diff      lipgloss.Style
-	Error     lipgloss.Style
+	Diff  lipgloss.Style
+	Error lipgloss.Style
 
 	// Status table
 	StatusHeader  lipgloss.Style
@@ -140,10 +138,8 @@ func NewThemeDefault() Theme {
 		TagIndicator: lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 
 		// Status
-		Modified:  lipgloss.NewStyle().Foreground(lipgloss.Color("169")).Width(3).Align(lipgloss.Right),
-		Untracked: lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Width(3).Align(lipgloss.Right),
-		Diff:      lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Align(lipgloss.Right),
-		Error:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		Diff:  lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Align(lipgloss.Right),
+		Error: lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 
 		// Status table (ANSI16 palette so the terminal theme
 		// decides the exact shades, faint for informational fields)

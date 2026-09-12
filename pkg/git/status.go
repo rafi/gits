@@ -61,84 +61,6 @@ func (g *Git) UpstreamBranch(ctx context.Context, path string) (string, error) {
 	return cleanOutput(out), nil
 }
 
-// Modified returns the number of files changed in the work tree or the
-// index. `git status --porcelain` sees staged-but-uncommitted changes,
-// which `git diff` alone would miss; untracked (??) entries are excluded.
-func (g *Git) Modified(ctx context.Context, path string) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, localTimeout)
-	defer cancel()
-
-	args := []string{"status", "--porcelain"}
-	output, err := g.Exec(ctx, path, args)
-	if err != nil {
-		return 0, fmt.Errorf("unable to find modified files: %w", err)
-	}
-	modified := 0
-	for line := range strings.SplitSeq(cleanOutput(output), "\n") {
-		if line == "" || strings.HasPrefix(line, "??") {
-			continue
-		}
-		modified++
-	}
-	return modified, nil
-}
-
-// Untracked returns the number of untracked files
-func (g *Git) Untracked(ctx context.Context, path string) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, localTimeout)
-	defer cancel()
-
-	args := []string{"ls-files", "--others", "--exclude-standard"}
-	output, err := g.Exec(ctx, path, args)
-	if err != nil {
-		return 0, fmt.Errorf("unable to find untracked: %w", err)
-	}
-	return len(splitLines(cleanOutput(output))), nil
-}
-
-// WorkingState counts staged, unstaged and untracked paths in a single
-// `git status --porcelain` pass, so status rows need one probe instead of the
-// former Modified+Untracked pair.
-func (g *Git) WorkingState(ctx context.Context, path string) (WorkTree, error) {
-	ctx, cancel := context.WithTimeout(ctx, localTimeout)
-	defer cancel()
-
-	output, err := g.Exec(ctx, path, []string{"status", "--porcelain"})
-	if err != nil {
-		return WorkTree{}, fmt.Errorf("unable to read work-tree state: %w", err)
-	}
-	// No cleanOutput here: its TrimSpace would eat the leading space of the
-	// first XY entry (e.g. " M file"), turning an unstaged file into a staged
-	// one. parsePorcelain skips blank lines itself.
-	return parsePorcelain(string(output)), nil
-}
-
-// parsePorcelain tallies porcelain v1 XY lines. Conflict entries count as both
-// staged and unstaged; ignored (!!) entries are skipped.
-func parsePorcelain(out string) WorkTree {
-	var wt WorkTree
-	for line := range strings.SplitSeq(out, "\n") {
-		if len(line) < 2 {
-			continue
-		}
-		x, y := line[0], line[1]
-		switch {
-		case x == '?' && y == '?':
-			wt.Untracked++
-		case x == '!' && y == '!':
-			// ignored entry
-		default:
-			if x != ' ' && x != '?' {
-				wt.Staged++
-			}
-			if y != ' ' && y != '!' {
-				wt.Unstaged++
-			}
-		}
-	}
-	return wt
-}
-
 // WorkingDiff sums uncommitted line changes — staged and unstaged, like
 // `git diff HEAD --shortstat`. Untracked files contribute nothing, matching
 // diff semantics.
@@ -209,19 +131,6 @@ func parseHeadInfo(out string) (Head, error) {
 	return Head{Hash: hash, Subject: rest[:sep], Time: time.Unix(ts, 0)}, nil
 }
 
-// CurrentPosition returns a short log description of HEAD
-func (g *Git) CurrentPosition(ctx context.Context, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, localTimeout)
-	defer cancel()
-
-	args := []string{"log", "-1", "--color=always", "--format=%C(auto)%D %C(242)(%aN %ar)%Creset"}
-	output, err := g.Exec(ctx, path, args)
-	if err != nil {
-		return "", fmt.Errorf("unable to get current rev: %w", err)
-	}
-	return cleanOutput(output), nil
-}
-
 // Describe generates a version description based on tags and hash
 func (g *Git) Describe(ctx context.Context, path string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
@@ -240,22 +149,27 @@ func (g *Git) Diff(ctx context.Context, path, branch, target string) (int, int, 
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 
-	args := []string{"rev-list", "--left-right", "--end-of-options", branch + "..." + target}
+	args := []string{
+		"rev-list", "--left-right", "--count", "--end-of-options",
+		branch + "..." + target,
+	}
 	output, err := g.Exec(ctx, path, args)
 	if err != nil {
 		return 0, 0, fmt.Errorf("unable to compute diff: %w", err)
 	}
-	ahead, behind := 0, 0
-	for rev := range strings.SplitSeq(cleanOutput(output), "\n") {
-		if rev == "" {
-			continue
-		}
-		switch rev[0] {
-		case '<':
-			ahead++
-		case '>':
-			behind++
-		}
+	// --count prints a single "ahead<TAB>behind" line instead of one line
+	// per revision, so git does the tallying.
+	fields := strings.Fields(cleanOutput(output))
+	if len(fields) != 2 {
+		return 0, 0, fmt.Errorf("unexpected rev-list count output: %q", cleanOutput(output))
+	}
+	ahead, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("unexpected rev-list count output: %q", cleanOutput(output))
+	}
+	behind, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("unexpected rev-list count output: %q", cleanOutput(output))
 	}
 	return ahead, behind, nil
 }

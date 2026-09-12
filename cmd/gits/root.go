@@ -79,16 +79,28 @@ func setupLogger(cfg config.File) {
 	log.WithField("config", cfg.Filename).Debug("Loading config file")
 }
 
+// newRuntime builds the shared runtime dependencies for a command.
+func newRuntime(ctx context.Context) (types.Runtime, error) {
+	gitClient, err := git.NewGit()
+	if err != nil {
+		return types.Runtime{}, err
+	}
+	gitClient.SetNetworkTimeout(configFile.Settings.GitTimeoutDuration())
+	return types.Runtime{
+		Ctx:        ctx,
+		Projects:   configFile.Projects,
+		Settings:   configFile.Settings,
+		ConfigPath: configFile.Filename,
+		Git:        &gitClient,
+		Cache:      cache.NewFileCache(configFile.Settings.CacheTTLDuration()),
+	}, nil
+}
+
 // runWithDeps execute a command with dependencies.
 func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		// Setup runtime dependencies.
-		gitClient, err := git.NewGit()
-		if err != nil {
-			return err
-		}
-		gitClient.SetNetworkTimeout(configFile.Settings.GitTimeoutDuration())
-		cacheClient, err := cache.NewCacheClient("file", configFile.Settings.CacheTTLDuration())
+		runtime, err := newRuntime(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -107,14 +119,7 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error) cobra.PositionalArgs 
 		cmdErr := f(args, types.RuntimeCLI{
 			Theme:   theme,
 			HomeDir: homeDir,
-			Runtime: types.Runtime{
-				Ctx:        cmd.Context(),
-				Projects:   configFile.Projects,
-				Settings:   configFile.Settings,
-				ConfigPath: configFile.Filename,
-				Git:        &gitClient,
-				Cache:      cacheClient,
-			},
+			Runtime: runtime,
 		})
 
 		// Downgrade warnings to a subtle log line — real errors must still

@@ -3,14 +3,14 @@ package walk
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"charm.land/huh/v2/spinner"
 	"charm.land/lipgloss/v2"
-	"golang.org/x/term"
+
+	"github.com/rafi/gits/internal/cli"
 )
 
 // spinnerFrames are huh's "Meter" spinner animation frames, reused so each
@@ -84,46 +84,33 @@ type RepoTracker interface {
 // Reporter renders live progress for a walk: one in-place row per active repo
 // plus an overall total pinned at the bottom. Implementations must tolerate the
 // full lifecycle being driven concurrently from worker goroutines: Start once,
-// RepoStart per repo (its row driven and marked on that worker), Done per
-// completed repo, SetErrors as failures accrue, and a final Stop that erases the
-// live block and blocks until the render goroutine has drained (AC-7) so results
-// can be flushed to stdout without interleaving.
+// RepoStart per repo (its row driven and marked on that worker — MarkErrored
+// folds into the failed-count), Done per completed repo, and a final Stop that
+// erases the live block and blocks until the render goroutine has drained
+// (AC-7) so results can be flushed to stdout without interleaving.
 type Reporter interface {
-	Start(verb string, total, workers int) // begin; record the totals
-	RepoStart(label string) RepoTracker    // add a live row for one repo
-	Done()                                 // overall: one repo finished
-	SetErrors(n int)                       // fold the failed-count into the overall message
-	Stop()                                 // erase the block, drain the render goroutine
+	Start(verb string, total int)       // begin; record the totals
+	RepoStart(label string) RepoTracker // add a live row for one repo
+	Done()                              // overall: one repo finished
+	Stop()                              // erase the block, drain the render goroutine
 }
 
 // NewReporter selects a progress reporter based on whether w is a terminal.
 // Non-TTY writers (pipes, CI logs) get a no-op reporter so ANSI cursor controls
-// never garble captured output (AC-8). TTY detection is ours.
+// never garble captured output (AC-8).
 func NewReporter(w io.Writer) Reporter {
-	if f, ok := w.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+	if _, isTTY := cli.TermWidth(w); isTTY {
 		return newLiveReporter(w)
 	}
 	return &nopReporter{}
 }
 
-// detectWidth returns the terminal column count for w, or 0 when w is not a
-// terminal (tests, pipes) or its size cannot be determined.
-func detectWidth(w io.Writer) int {
-	if f, ok := w.(*os.File); ok {
-		if cols, _, err := term.GetSize(int(f.Fd())); err == nil {
-			return cols
-		}
-	}
-	return 0
-}
-
 // nopReporter is the no-op reporter used for non-TTY writers and tests.
 type nopReporter struct{}
 
-func (*nopReporter) Start(string, int, int)       {}
+func (*nopReporter) Start(string, int)            {}
 func (*nopReporter) RepoStart(string) RepoTracker { return nopRepoTracker{} }
 func (*nopReporter) Done()                        {}
-func (*nopReporter) SetErrors(int)                {}
 func (*nopReporter) Stop()                        {}
 
 // nopRepoTracker is the no-op per-repo tracker.
@@ -191,10 +178,11 @@ type liveReporter struct {
 }
 
 func newLiveReporter(w io.Writer) *liveReporter {
-	return &liveReporter{w: w, st: newStyles(), width: detectWidth(w)}
+	width, _ := cli.TermWidth(w)
+	return &liveReporter{w: w, st: newStyles(), width: width}
 }
 
-func (r *liveReporter) Start(verb string, total, _ int) {
+func (r *liveReporter) Start(verb string, total int) {
 	r.mu.Lock()
 	r.verb = verb
 	r.total = total
@@ -232,12 +220,6 @@ func (r *liveReporter) RepoStart(label string) RepoTracker {
 func (r *liveReporter) Done() {
 	r.mu.Lock()
 	r.doneCnt++
-	r.mu.Unlock()
-}
-
-func (r *liveReporter) SetErrors(n int) {
-	r.mu.Lock()
-	r.errs = n
 	r.mu.Unlock()
 }
 
@@ -388,20 +370,26 @@ func eraseLines(n int) string {
 // liveRepoTracker maps the RepoTracker contract onto one live row. The row
 // spins until the walker calls a completion marker, which removes the row from
 // the block so finished repos disappear rather than lingering as idle bars; the
-// run-wide failed-count is surfaced via Reporter.SetErrors.
+// run-wide failed-count is folded in by MarkErrored.
 type liveRepoTracker struct {
 	r    *liveReporter
 	row  *liveRow
 	once sync.Once
 }
 
-func (t *liveRepoTracker) MarkDone()    { t.remove() }
-func (t *liveRepoTracker) MarkErrored() { t.remove() }
+func (t *liveRepoTracker) MarkDone()    { t.finish(false) }
+func (t *liveRepoTracker) MarkErrored() { t.finish(true) }
 
-// remove drops the row from the live block so the finished repo's row vanishes.
-func (t *liveRepoTracker) remove() {
+// finish drops the row from the live block so the finished repo's row
+// vanishes, and folds a failure into the reporter's error count — the
+// tracker owns the count, so a repo is tallied exactly once even on double
+// completion.
+func (t *liveRepoTracker) finish(errored bool) {
 	t.once.Do(func() {
 		t.r.mu.Lock()
+		if errored {
+			t.r.errs++
+		}
 		for i, row := range t.r.rows {
 			if row == t.row {
 				t.r.rows = append(t.r.rows[:i], t.r.rows[i+1:]...)

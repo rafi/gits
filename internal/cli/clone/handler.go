@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
@@ -26,15 +25,15 @@ func ExecClone(args []string, deps types.RuntimeCLI) error {
 	}
 
 	if repo != nil {
-		// Clone a single repository.
-		res := cloneRepo(deps.Ctx, project, *repo, deps)
-		lipgloss.Println(cli.IndentMultiline(res.Line))
-		return res.Err
+		fn := cloneRepo(cli.NewTitleWidths(project, deps.HomeDir))
+		return walk.Single(deps.Ctx, project, *repo, deps, fn)
 	}
 
 	// Clone all project repositories through the shared walker. Projects with
 	// clone disabled are pruned first so the walker never queues their repos.
-	errs := walk.Walk(deps.Ctx, pruneSkipped(project), deps, "cloning", cloneRepo)
+	pruned := pruneSkipped(project)
+	fn := cloneRepo(cli.NewTitleWidths(pruned, deps.HomeDir))
+	errs := walk.Walk(deps.Ctx, pruned, deps, "cloning", fn)
 	return cli.RenderErrors(errs, true)
 }
 
@@ -57,36 +56,35 @@ func pruneSkipped(p domain.Project) domain.Project {
 	return p
 }
 
-// cloneRepo clones one repository and returns its rendered result. It is a
-// walk.RepoFunc: safe to call concurrently and never writes to stdout. Unlike
-// the other bulk commands it only rejects repos in an error state, since a
+// cloneRepo returns a walk.RepoFunc that clones one repository into a rendered
+// result: safe to call concurrently and never writes to stdout. Unlike the
+// other bulk commands it only rejects repos in an error state, since a
 // not-yet-cloned repo is the expected input here.
-func cloneRepo(
-	ctx context.Context,
-	project domain.Project,
-	repo domain.Repository,
-	deps types.RuntimeCLI,
-) walk.RepoResult {
-	line := cli.RepoLine{
-		Title:      cli.PaddedRepoTitle(repo, project, deps),
-		ErrorStyle: deps.Theme.Error,
-	}
+func cloneRepo(widths cli.TitleWidths) walk.RepoFunc {
+	return func(
+		ctx context.Context,
+		project domain.Project,
+		repo domain.Repository,
+		deps types.RuntimeCLI,
+	) walk.RepoResult {
+		line := cli.RepoLine{
+			Title:      cli.PaddedRepoTitle(repo, project, widths.For(project), deps),
+			ErrorStyle: deps.Theme.Error,
+		}
 
-	if repo.State == domain.RepoStateError {
-		line.Err = cli.RepoStateWarning(repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
+		if repo.State == domain.RepoStateError {
+			return walk.LineResult(line, cli.RepoStateWarning(repo))
+		}
 
-	output, err := deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
-	if errors.Is(err, git.ErrTargetExists) {
-		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
-		line.Err = types.NewWarning("already cloned at %s", repoPath)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
+		output, err := deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
+		if errors.Is(err, git.ErrTargetExists) {
+			repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
+			return walk.LineResult(line, types.NewWarning("already cloned at %s", repoPath))
+		}
+		if err != nil {
+			return walk.LineResult(line, cli.RepoError(err, repo))
+		}
+		line.Body = deps.Theme.GitOutput.Render(output)
+		return walk.LineResult(line, nil)
 	}
-	if err != nil {
-		line.Err = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
-	line.Body = deps.Theme.GitOutput.Render(output)
-	return walk.RepoResult{Line: line.String(), Err: nil}
 }

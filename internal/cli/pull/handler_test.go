@@ -57,7 +57,7 @@ func TestPullRepoOK(t *testing.T) {
 	deps := pullDeps(fakeGit{branch: "main", upstream: "origin/main", pullOut: "up to date"})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := pullRepo(context.Background(), project, okRepo(), deps)
+	res := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}
@@ -75,7 +75,7 @@ func TestPullRepoNotCloned(t *testing.T) {
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateNoLocal}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
-	res := pullRepo(context.Background(), project, repo, deps)
+	res := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, repo, deps)
 	if res.Err == nil {
 		t.Fatal("expected an error for a non-cloned repo")
 	}
@@ -93,7 +93,7 @@ func TestPullRepoNoUpstream(t *testing.T) {
 	deps := pullDeps(fakeGit{branch: "main", upstream: ""})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := pullRepo(context.Background(), project, okRepo(), deps)
+	res := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err == nil {
 		t.Fatal("expected an error when there is no upstream")
 	}
@@ -110,7 +110,7 @@ func TestPullRepoBranchError(t *testing.T) {
 	deps := pullDeps(fakeGit{branchErr: errors.New("detached HEAD")})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := pullRepo(context.Background(), project, okRepo(), deps)
+	res := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err == nil {
 		t.Fatal("expected an error when the current branch cannot be resolved")
 	}
@@ -126,7 +126,7 @@ func TestPullRepoUpstreamFailureNotMislabeled(t *testing.T) {
 	deps := pullDeps(fakeGit{branch: "main", upstreamErr: context.Canceled})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := pullRepo(context.Background(), project, okRepo(), deps)
+	res := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err == nil {
 		t.Fatal("expected an error")
 	}
@@ -144,7 +144,7 @@ func TestPullRepoNoUpstreamWarnsAsBefore(t *testing.T) {
 	deps := pullDeps(fakeGit{branch: "main", upstreamErr: git.ErrNoUpstream})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := pullRepo(context.Background(), project, okRepo(), deps)
+	res := pullRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "no upstream") {
 		t.Fatalf("want no-upstream message, got %v", res.Err)
 	}

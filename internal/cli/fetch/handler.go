@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"charm.land/lipgloss/v2"
-
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/walk"
@@ -23,46 +21,45 @@ func ExecFetch(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 
+	fn := fetchRepo(cli.NewTitleWidths(project, deps.HomeDir))
+
 	if repo != nil {
-		// Fetch a single repository.
-		res := fetchRepo(deps.Ctx, project, *repo, deps)
-		lipgloss.Println(cli.IndentMultiline(res.Line))
-		return res.Err
+		return walk.Single(deps.Ctx, project, *repo, deps, fn)
 	}
 
 	// Fetch all project repositories through the shared walker.
-	errs := walk.Walk(deps.Ctx, project, deps, "fetching", fetchRepo)
+	errs := walk.Walk(deps.Ctx, project, deps, "fetching", fn)
 	return cli.RenderErrors(errs, true)
 }
 
-// fetchRepo fetches one repository and returns its rendered result. It is a
-// walk.RepoFunc: safe to call concurrently and never writes to stdout.
-func fetchRepo(
-	ctx context.Context,
-	project domain.Project,
-	repo domain.Repository,
-	deps types.RuntimeCLI,
-) walk.RepoResult {
-	line := cli.RepoLine{
-		Title:      cli.PaddedRepoTitle(repo, project, deps),
-		ErrorStyle: deps.Theme.Error,
-	}
-	repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
+// fetchRepo returns a walk.RepoFunc that fetches one repository into a
+// rendered result: safe to call concurrently and never writes to stdout.
+func fetchRepo(widths cli.TitleWidths) walk.RepoFunc {
+	return func(
+		ctx context.Context,
+		project domain.Project,
+		repo domain.Repository,
+		deps types.RuntimeCLI,
+	) walk.RepoResult {
+		line := cli.RepoLine{
+			Title:      cli.PaddedRepoTitle(repo, project, widths.For(project), deps),
+			ErrorStyle: deps.Theme.Error,
+		}
+		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
 
-	// Abort if repository is not cloned or has errors.
-	if repo.State != domain.RepoStateOK {
-		line.Err = cli.RepoStateWarning(repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
-	}
+		// Abort if repository is not cloned or has errors.
+		if repo.State != domain.RepoStateOK {
+			return walk.LineResult(line, cli.RepoStateWarning(repo))
+		}
 
-	output, err := deps.Git.Fetch(ctx, repo.AbsPath)
-	if err != nil {
-		line.Err = cli.RepoError(err, repo)
-		return walk.RepoResult{Line: line.String(), Err: line.Err}
+		output, err := deps.Git.Fetch(ctx, repo.AbsPath)
+		if err != nil {
+			return walk.LineResult(line, cli.RepoError(err, repo))
+		}
+		line.Body = deps.Theme.GitOutput.Render(output)
+		if line.Title.Value() != repoPath {
+			line.Body = fmt.Sprintf("%s %s", repoPath, line.Body)
+		}
+		return walk.LineResult(line, nil)
 	}
-	line.Body = deps.Theme.GitOutput.Render(output)
-	if line.Title.Value() != repoPath {
-		line.Body = fmt.Sprintf("%s %s", repoPath, line.Body)
-	}
-	return walk.RepoResult{Line: line.String(), Err: nil}
 }

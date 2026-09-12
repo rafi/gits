@@ -18,7 +18,6 @@ import (
 func newTestGitHubProvider(url string, includeArchived bool) *gitHubProvider {
 	return &gitHubProvider{
 		client:          githubv4.NewEnterpriseClient(url, http.DefaultClient),
-		sourceType:      ProviderGitHub,
 		includeArchived: includeArchived,
 	}
 }
@@ -147,15 +146,12 @@ func TestGitHubFetchReposUnknownOwner(t *testing.T) {
 // request from the caller's context. A pre-cancelled context must abort before
 // any network round-trip and surface context.Canceled.
 func TestGitHubFetchReposCancelledCtx(t *testing.T) {
-	p, err := newGitHubProvider(Options{Token: "dummy-token"})
-	if err != nil {
-		t.Fatalf("newGitHubProvider: %v", err)
-	}
+	p := newGitHubProvider(Options{Token: "dummy-token"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before the call, so the query must not run
 
-	_, _, err = p.fetchRepos(ctx, "anyorg")
+	_, _, err := p.fetchRepos(ctx, "anyorg")
 	if err == nil {
 		t.Fatal("fetchRepos with a cancelled ctx = nil error, want context.Canceled")
 	}

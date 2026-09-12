@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -76,8 +75,7 @@ func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
 	if len(args) > 1 {
 		// Clone repository if address has been provided.
 		remoteURL := args[1]
-		baseName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
-		cwd = filepath.Join(cwd, baseName)
+		cwd = filepath.Join(cwd, domain.RepoDirName(remoteURL))
 		output, err := deps.Git.Clone(deps.Ctx, remoteURL, cwd)
 		if err != nil {
 			fmt.Println(output)
@@ -94,41 +92,33 @@ func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
 // ensureProject returns project by name, and creates it if it doesn't exist.
 // If no project name is provided, user will be prompted to select one.
 func ensureProject(args []string, node *yaml.Node, deps types.RuntimeCLI) (domain.Project, error) {
-	foundProject := false
 	if len(args) > 0 {
-		args = args[0:1]
-		for projName := range deps.Projects {
-			if projName == args[0] {
-				foundProject = true
-				break
+		if _, foundProject := deps.Projects[args[0]]; !foundProject {
+			// Create the project if it doesn't exist.
+			project := domain.Project{
+				Name:  args[0],
+				Repos: []domain.Repository{},
 			}
+			appendProject(project.Name, node.Content[0])
+			return project, nil
 		}
+		// Only the project name is relevant for selection.
+		args = args[:1]
 	}
 
-	if len(args) == 0 || foundProject {
-		// Get the project we'll be adding to.
-		var err error
-		project, _, err := cli.ParseArgs(args, true, deps)
-		if err != nil {
-			return project, err
-		}
-
-		// Disallow cloud projects.
-		if project.Source != nil {
-			return project, fmt.Errorf(
-				"project %q is sourced from %s, choose a regular non-cloud project",
-				project.Name,
-				project.Source.Type,
-			)
-		}
-		return project, nil
+	// Get the project we'll be adding to.
+	project, _, err := cli.ParseArgs(args, true, deps)
+	if err != nil {
+		return project, err
 	}
 
-	// Create the project if it doesn't exist.
-	project := domain.Project{
-		Name:  args[0],
-		Repos: []domain.Repository{},
+	// Disallow cloud projects.
+	if project.Source != nil {
+		return project, fmt.Errorf(
+			"project %q is sourced from %s, choose a regular non-cloud project",
+			project.Name,
+			project.Source.Type,
+		)
 	}
-	appendProject(project.Name, node.Content[0])
 	return project, nil
 }

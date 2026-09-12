@@ -11,21 +11,7 @@ var (
 
 	// metadata is extra build time data
 	metadata = ""
-	// gitCommit is the git sha1
-	gitCommit = "HEAD"
-	// gitTreeState is the state of the git tree
-	gitTreeState = ""
 )
-
-// BuildInfo describes the compile time information.
-type BuildInfo struct {
-	// Version is the current semver.
-	Version string `json:"version,omitempty"`
-	// GitCommit is the git sha1.
-	GitCommit string `json:"git_commit,omitempty"`
-	// GitTreeState is the state of the git tree.
-	GitTreeState string `json:"git_tree_state,omitempty"`
-}
 
 // GetVersion returns the semver string of the version
 func GetVersion() string {
@@ -47,13 +33,4 @@ func GetMajorMinor() string {
 		return version
 	}
 	return parts[0] + "." + parts[1]
-}
-
-// Get returns build info
-func Get() BuildInfo {
-	return BuildInfo{
-		Version:      GetVersion(),
-		GitCommit:    gitCommit,
-		GitTreeState: gitTreeState,
-	}
 }

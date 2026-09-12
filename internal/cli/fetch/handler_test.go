@@ -46,7 +46,7 @@ func TestFetchRepoOK(t *testing.T) {
 	deps := fetchDeps(fakeGit{out: "up to date"})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := fetchRepo(context.Background(), project, okRepo(), deps)
+	res := fetchRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}
@@ -62,7 +62,7 @@ func TestFetchRepoNotCloned(t *testing.T) {
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme", State: domain.RepoStateNoLocal}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
-	res := fetchRepo(context.Background(), project, repo, deps)
+	res := fetchRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, repo, deps)
 	if res.Err == nil {
 		t.Fatal("expected an error for a non-cloned repo")
 	}
@@ -79,7 +79,7 @@ func TestFetchRepoError(t *testing.T) {
 	deps := fetchDeps(fakeGit{err: errors.New("network down")})
 	project := domain.Project{Name: "p", Repos: []domain.Repository{okRepo()}}
 
-	res := fetchRepo(context.Background(), project, okRepo(), deps)
+	res := fetchRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, okRepo(), deps)
 	if res.Err == nil {
 		t.Fatal("expected an error when git fetch fails")
 	}

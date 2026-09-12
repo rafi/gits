@@ -26,7 +26,7 @@ func TestGitLabLoadReposCancelledCtx(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- p.LoadRepos(ctx, "somegroup", nil, &domain.Project{})
+		done <- p.LoadRepos(ctx, "somegroup", &domain.Project{})
 	}()
 
 	select {

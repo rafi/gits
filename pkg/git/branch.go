@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -81,6 +82,73 @@ func (g *Git) HasRemoteBranch(ctx context.Context, path, remote, branch string) 
 	args := []string{"show-ref", "--verify", "--quiet", ref}
 	_, err := g.Exec(ctx, path, args)
 	return err == nil
+}
+
+// RemoteBranches lists remote-tracking refs as "<remote>/<branch>" names.
+// Names come from the full refname with the refs/remotes/ prefix stripped,
+// not %(refname:short), which would abbreviate a remote HEAD such as
+// refs/remotes/origin/HEAD to just "origin".
+func (g *Git) RemoteBranches(ctx context.Context, path string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+
+	args := []string{"for-each-ref", "--format=%(refname)", "refs/remotes"}
+	output, err := g.Exec(ctx, path, args)
+	if err != nil {
+		return nil, fmt.Errorf("unable to list remote branches: %w", err)
+	}
+	refs := splitLines(cleanOutput(output))
+	for i, ref := range refs {
+		refs[i] = strings.TrimPrefix(ref, "refs/remotes/")
+	}
+	return refs, nil
+}
+
+// FallbackRef returns the remote-tracking ref conventionally comparable to
+// branch when no upstream is configured: "origin/<branch>" when origin has
+// it, otherwise the first configured remote with a matching remote branch.
+// Empty when no remote qualifies. A detached HEAD compares against the
+// remote's HEAD (its default branch) when that ref exists. One ref listing
+// answers for every remote, instead of a show-ref probe per remote.
+func (g *Git) FallbackRef(ctx context.Context, path, branch string) string {
+	if branch == "" {
+		return ""
+	}
+	refs, err := g.RemoteBranches(ctx, path)
+	if err != nil {
+		return ""
+	}
+	found := make(map[string]bool, len(refs))
+	remotes := []string{}
+	for _, ref := range refs {
+		// Remote names cannot contain "/", so everything before the first
+		// separator is the remote name.
+		remote, _, ok := strings.Cut(ref, "/")
+		if !ok {
+			continue
+		}
+		found[ref] = true
+		if !slices.Contains(remotes, remote) {
+			remotes = append(remotes, remote)
+		}
+	}
+	slices.Sort(remotes)
+	slices.SortStableFunc(remotes, func(a, b string) int {
+		switch {
+		case a == "origin":
+			return -1
+		case b == "origin":
+			return 1
+		default:
+			return 0
+		}
+	})
+	for _, remote := range remotes {
+		if found[remote+"/"+branch] {
+			return remote + "/" + branch
+		}
+	}
+	return ""
 }
 
 // Checkout switches the working tree to branch. Git's DWIM creates a tracking

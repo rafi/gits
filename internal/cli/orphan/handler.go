@@ -117,31 +117,16 @@ func findOrphanedRepos(ctx context.Context, project domain.Project, gitClient gi
 		)
 	}
 
-	walkErr := godirwalk.Walk(project.AbsPath, &godirwalk.Options{
-		Unsorted:            false,
-		FollowSymbolicLinks: false,
-		Callback: func(path string, de *godirwalk.Dirent) error {
-			if !de.IsDir() || !gitClient.IsRepo(ctx, path) {
-				return nil
-			}
-			// Add unknown repository to the list.
-			if _, known := knownRepos[path]; !known {
-				repo, err := providers.NewFilesystemRepo(ctx, path, "", gitClient)
-				if err != nil {
-					return err
-				}
-				orphanRepos = append(orphanRepos, repo)
-			}
-			return filepath.SkipDir
-		},
-		ErrorCallback: func(path string, err error) godirwalk.ErrorAction {
-			_, err = fmt.Fprintf(os.Stderr, "ERROR during directory %s scan: %s\n", path, err)
+	walkErr := providers.WalkRepos(ctx, project.AbsPath, gitClient, func(path string) error {
+		// Add unknown repository to the list.
+		if _, known := knownRepos[path]; !known {
+			repo, err := providers.NewFilesystemRepo(ctx, path, "", gitClient)
 			if err != nil {
-				log.Errorf("findOrphanedRepos: %s", err)
-				return godirwalk.Halt
+				return err
 			}
-			return godirwalk.SkipNode
-		},
+			orphanRepos = append(orphanRepos, repo)
+		}
+		return nil
 	})
 	if walkErr != nil {
 		return nil, walkErr

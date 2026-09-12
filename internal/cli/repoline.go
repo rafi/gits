@@ -22,13 +22,3 @@ func (r RepoLine) String() string {
 	}
 	return fmt.Sprintf("%s %s", r.Title, r.Body)
 }
-
-// RenderMinWidth renders s with the style, treating a fixed style width as a
-// minimum column width: content that is wider grows the column instead of
-// being wrapped onto a continuation line, which would break one-line rows.
-func RenderMinWidth(style lipgloss.Style, s string) string {
-	if w := style.GetWidth(); w > 0 && lipgloss.Width(s) > w {
-		style = style.Width(lipgloss.Width(s))
-	}
-	return style.Render(s)
-}

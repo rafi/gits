@@ -147,13 +147,10 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 	var (
 		err         error
 		hasCache    bool
-		shouldCache = deps.Settings.Cache == nil || *deps.Settings.Cache
 		source      = project.Source
+		shouldCache = (deps.Settings.Cache == nil || *deps.Settings.Cache) &&
+			providers.HasCache(source)
 	)
-
-	if source.Type == string(providers.ProviderFilesystem) {
-		shouldCache = false
-	}
 
 	// Grab source filter and concat a cache key.
 	if err := source.Validate(); err != nil {
@@ -173,17 +170,18 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 		c, err := providers.NewGitProvider(source.Type, providers.Options{
 			IncludeArchived: deps.Settings.IncludeArchived,
 			Timeout:         deps.Settings.ProviderTimeoutDuration(),
+			GitClient:       deps.Git,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create provider: %w", err)
 		}
 
-		if source.Type == string(providers.ProviderFilesystem) {
-			log.Debugf("Searching for repos at %s…", source.Search)
-		} else {
+		if providers.IsRemote(source.Type) {
 			log.Debugf("Fetching %s repos from %s…", source.Type, source.Search)
+		} else {
+			log.Debugf("Searching for repos at %s…", source.Search)
 		}
-		if err := c.LoadRepos(deps.Ctx, source.Search, deps.Git, project); err != nil {
+		if err := c.LoadRepos(deps.Ctx, source.Search, project); err != nil {
 			return fmt.Errorf(
 				"failed to load repos for %q project (%s): %w",
 				project.Name,
@@ -235,7 +233,7 @@ func computeState(ctx context.Context, project *domain.Project, git git.GitClien
 		if project.Source != nil {
 			r.Type = project.Source.Type
 		}
-		isRemote := r.Type != "" && r.Type != string(providers.ProviderFilesystem)
+		isRemote := providers.IsRemote(r.Type)
 
 		if r.Dir == "" && project.AbsPath == "" {
 			// No local destination can be derived: provider repos are

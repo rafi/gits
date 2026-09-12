@@ -8,36 +8,28 @@ import (
 	"github.com/ktrysmt/go-bitbucket"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/pkg/git"
 )
 
-var bitbucketTokenEnvVarNames = []string{"BITBUCKET_TOKEN"}
-
 type bitbucketProvider struct {
-	client     *bitbucket.Client
-	sourceType Provider
+	client *bitbucket.Client
 }
 
 func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
-	provider := &bitbucketProvider{sourceType: ProviderBitbucket}
-	token := opts.Token
-	if token == "" {
-		token = getFirstEnvValue(bitbucketTokenEnvVarNames)
-	}
-	if token == "" {
-		return nil, fmt.Errorf("token is required for %s", provider.sourceType)
-	}
-	userLogin := strings.SplitN(token, ":", 2)
+	userLogin := strings.SplitN(opts.Token, ":", 2)
 	if len(userLogin) != 2 {
-		return nil, fmt.Errorf("token is invalid for %s", provider.sourceType)
+		return nil, fmt.Errorf("token is invalid for %s", ProviderBitbucket)
 	}
+	provider := &bitbucketProvider{}
 	var err error
 	provider.client, err = bitbucket.NewBasicAuth(userLogin[0], userLogin[1])
 	if err != nil {
 		return nil, fmt.Errorf("bitbucket auth failed: %w", err)
 	}
-	// LimitPages stays 0 (unlimited) so every page is fetched; a larger
-	// page size reduces round-trips for big accounts.
+	// Pages are driven one at a time through the shared paginate() loop —
+	// go-bitbucket's built-in auto-pager would fetch every page in one
+	// blocking call, ignoring cancellation. A larger page size reduces
+	// round-trips for big accounts.
+	provider.client.DisableAutoPaging = true
 	provider.client.Pagelen = 100
 	// go-bitbucket's default HTTP client has no timeout, so a hung API
 	// call would block forever.
@@ -47,7 +39,7 @@ func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
 	return provider, nil
 }
 
-func (c *bitbucketProvider) LoadRepos(ctx context.Context, ownerName string, _ git.GitClient, project *domain.Project) error {
+func (c *bitbucketProvider) LoadRepos(ctx context.Context, ownerName string, project *domain.Project) error {
 	var err error
 	project.Repos, project.ID, err = c.fetchRepos(ctx, ownerName)
 	if err != nil {
@@ -57,20 +49,27 @@ func (c *bitbucketProvider) LoadRepos(ctx context.Context, ownerName string, _ g
 }
 
 func (c *bitbucketProvider) fetchRepos(ctx context.Context, ownerName string) ([]domain.Repository, string, error) {
-	// go-bitbucket hardcodes context.Background internally, so honor the
-	// caller's context at the boundaries we control.
-	if err := ctx.Err(); err != nil {
-		return nil, "", err
-	}
-	listOpts := &bitbucket.RepositoriesOptions{Owner: ownerName}
-	result, err := c.client.Repositories.ListForAccount(listOpts)
+	var items []bitbucket.Repository
+	what := fmt.Sprintf("Bitbucket repositories from %s", ownerName)
+	err := paginate(ctx, what, 0, func(page int) (bool, error) {
+		// go-bitbucket hardcodes context.Background internally, so honor
+		// the caller's context before each page we request.
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		listOpts := &bitbucket.RepositoriesOptions{Owner: ownerName, Page: &page}
+		result, err := c.client.Repositories.ListForAccount(listOpts)
+		if err != nil {
+			return false, fmt.Errorf("bitbucket: list repos for %q: %w", ownerName, err)
+		}
+		items = append(items, result.Items...)
+		// A short (or empty) page is the last one.
+		return len(result.Items) > 0 && len(result.Items) == int(result.Pagelen), nil
+	})
 	if err != nil {
-		return nil, "", fmt.Errorf("bitbucket: list repos for %q: %w", ownerName, err)
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
-	repos, ownerID := parseRepos(result.Items, ownerName)
+	repos, ownerID := parseRepos(items, ownerName)
 	return repos, ownerID, nil
 }
 

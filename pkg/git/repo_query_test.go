@@ -88,6 +88,41 @@ func TestRemotes(t *testing.T) {
 	}
 }
 
+// TestRemoteBranches proves remote-tracking refs list as "<remote>/<branch>"
+// names, and that a symbolic remote HEAD keeps its "origin/HEAD" name instead
+// of being abbreviated to "origin".
+func TestRemoteBranches(t *testing.T) {
+	g, _ := NewGit()
+	ctx := context.Background()
+	dir := setupRepo(t)
+	got, err := g.RemoteBranches(ctx, dir)
+	if err != nil {
+		t.Fatalf("RemoteBranches: %v", err)
+	}
+	if len(got) != 1 || got[0] != "origin/main" {
+		t.Errorf("RemoteBranches = %v, want [origin/main]", got)
+	}
+
+	if out, err := exec.CommandContext(ctx, "git", "-C", dir,
+		"symbolic-ref", "refs/remotes/origin/HEAD",
+		"refs/remotes/origin/main").CombinedOutput(); err != nil {
+		t.Fatalf("symbolic-ref: %v\n%s", err, out)
+	}
+	got, err = g.RemoteBranches(ctx, dir)
+	if err != nil {
+		t.Fatalf("RemoteBranches: %v", err)
+	}
+	want := map[string]bool{"origin/HEAD": true, "origin/main": true}
+	if len(got) != len(want) {
+		t.Fatalf("RemoteBranches = %v, want keys %v", got, want)
+	}
+	for _, b := range got {
+		if !want[b] {
+			t.Errorf("unexpected remote branch %q in %v", b, got)
+		}
+	}
+}
+
 func TestHasRemoteBranch(t *testing.T) {
 	g, _ := NewGit()
 	ctx := context.Background()
@@ -224,4 +259,53 @@ func TestUpstreamBranch(t *testing.T) {
 			t.Errorf("UpstreamBranch = %q, want origin/main", got)
 		}
 	})
+}
+
+// TestFallbackRef proves the no-upstream comparison ref is resolved from the
+// repo's actual remotes — preferring origin, falling back to any remote with
+// a matching branch — instead of hardcoding "origin".
+func TestFallbackRef(t *testing.T) {
+	g, _ := NewGit()
+	ctx := context.Background()
+	dir := setupRepo(t)
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := exec.CommandContext(ctx, "git",
+			append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	head, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := string(head[:len(head)-1])
+	run("remote", "add", "fork", dir)
+	run("update-ref", "refs/remotes/fork/feature", sha)
+
+	if got := g.FallbackRef(ctx, dir, "main"); got != "origin/main" {
+		t.Errorf("FallbackRef(main) = %q, want origin/main", got)
+	}
+	if got := g.FallbackRef(ctx, dir, "feature"); got != "fork/feature" {
+		t.Errorf("FallbackRef(feature) = %q, want fork/feature", got)
+	}
+	if got := g.FallbackRef(ctx, dir, "nope"); got != "" {
+		t.Errorf("FallbackRef(nope) = %q, want empty", got)
+	}
+	// Detached HEAD: no remote HEAD ref yet, so nothing to compare against.
+	if got := g.FallbackRef(ctx, dir, "HEAD"); got != "" {
+		t.Errorf("FallbackRef(HEAD) = %q, want empty", got)
+	}
+	// Once the remote's HEAD ref exists, a detached checkout compares
+	// against the remote default branch (parity with the pre-Snapshot path).
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	if got := g.FallbackRef(ctx, dir, "HEAD"); got != "origin/HEAD" {
+		t.Errorf("FallbackRef(HEAD, remote HEAD present) = %q, want origin/HEAD", got)
+	}
+
+	// origin preferred when both remotes have the branch.
+	run("update-ref", "refs/remotes/origin/feature", sha)
+	if got := g.FallbackRef(ctx, dir, "feature"); got != "origin/feature" {
+		t.Errorf("FallbackRef(feature, both remotes) = %q, want origin/feature", got)
+	}
 }

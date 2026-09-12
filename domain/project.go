@@ -33,6 +33,16 @@ type Project struct {
 // ProjectListKeyed is a list of projects with name keys.
 type ProjectListKeyed map[string]Project
 
+// SortedNames returns the project names in alphabetical order.
+func (p ProjectListKeyed) SortedNames() []string {
+	names := make([]string, 0, len(p))
+	for name := range p {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // GetRepo returns a repository by name and initial prefix.
 func (p *Project) GetRepo(name, prefix string) (Repository, bool) {
 	for _, repo := range p.Repos {
@@ -71,22 +81,31 @@ func (p *Project) GetSubProject(name, prefix string) (Project, bool) {
 }
 
 // ListReposWithNamespace returns a list of repository names with namespace.
-func (p *Project) ListReposWithNamespace(prefix ...string) []string {
+func (p *Project) ListReposWithNamespace() []string {
+	return p.listReposWithNamespace("")
+}
+
+// listReposWithNamespace recursively collects repository names with the given
+// namespace prefix.
+func (p *Project) listReposWithNamespace(prefix string) []string {
 	var names []string
-	if len(prefix) == 0 {
-		prefix = []string{""}
-	}
 	for _, repo := range p.Repos {
-		names = append(names, prefix[0]+repo.GetName())
+		names = append(names, prefix+repo.GetName())
 	}
 	for _, subProj := range p.SubProjects {
-		subPrefix := prefix[0] + subProj.Name + "/"
-		names = append(names, subProj.ListReposWithNamespace(subPrefix)...)
+		subPrefix := prefix + subProj.Name + "/"
+		names = append(names, subProj.listReposWithNamespace(subPrefix)...)
 	}
 
 	// Sort sub-projects and repositories alphabetically.
 	sort.Strings(names)
 	return names
+}
+
+// RepoDirName returns the repository directory name derived from its source
+// URL: the basename with any ".git" suffix removed.
+func RepoDirName(src string) string {
+	return strings.TrimSuffix(filepath.Base(src), ".git")
 }
 
 // GetRepoAbsPath returns an absolute path of one of its repositories.
@@ -97,9 +116,7 @@ func (p *Project) GetRepoAbsPath(repo Repository) (string, error) {
 		if lastSlash == -1 {
 			return "", fmt.Errorf("unable to get repo path %s", repo.Src)
 		}
-		name := repo.Src[lastSlash+1:]
-		name = strings.TrimSuffix(name, ".git")
-		return filepath.Join(path, name), nil
+		return filepath.Join(path, RepoDirName(repo.Src)), nil
 	}
 	expanded, err := homedir.Expand(repo.Dir)
 	if err != nil {

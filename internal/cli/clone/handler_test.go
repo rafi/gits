@@ -41,7 +41,7 @@ func TestCloneRepoStateError(t *testing.T) {
 	repo := domain.Repository{Name: "acme", AbsPath: "/nonexistent/acme", State: domain.RepoStateError}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
-	res := cloneRepo(context.Background(), project, repo, deps)
+	res := cloneRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, repo, deps)
 	if res.Err == nil {
 		t.Fatal("expected an error for a repo in error state")
 	}
@@ -98,7 +98,7 @@ func TestCloneRepoAlreadyCloned(t *testing.T) {
 	repo := domain.Repository{Name: "acme", AbsPath: "/nonexistent/acme", State: domain.RepoStateNoLocal}
 	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
 
-	res := cloneRepo(context.Background(), project, repo, deps)
+	res := cloneRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, repo, deps)
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "already cloned") {
 		t.Fatalf("want already-cloned warning, got %v", res.Err)
 	}

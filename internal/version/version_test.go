@@ -42,16 +42,3 @@ func TestGetVersion(t *testing.T) {
 		t.Errorf("GetVersion() with metadata = %q, want %q", got, "v1.0.0+deadbeef")
 	}
 }
-
-func TestGet(t *testing.T) {
-	info := Get()
-	if info.Version != GetVersion() {
-		t.Errorf("Get().Version = %q, want %q", info.Version, GetVersion())
-	}
-	if info.GitCommit != gitCommit {
-		t.Errorf("Get().GitCommit = %q, want %q", info.GitCommit, gitCommit)
-	}
-	if info.GitTreeState != gitTreeState {
-		t.Errorf("Get().GitTreeState = %q, want %q", info.GitTreeState, gitTreeState)
-	}
-}

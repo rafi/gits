@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"charm.land/lipgloss/v2"
@@ -33,6 +34,13 @@ type RepoResult struct {
 	Line    string // fully rendered output for this repo (may be multi-line)
 	Payload any    // structured result for callers rendering via Collect
 	Err     error  // nil, a real error, or a *types.Warning
+}
+
+// LineResult applies err to line and wraps its rendering into a RepoResult —
+// the shared epilogue of every cli.RepoLine-based RepoFunc.
+func LineResult(line cli.RepoLine, err error) RepoResult {
+	line.Err = err
+	return RepoResult{Line: line.String(), Err: err}
 }
 
 // GroupResult is one project's collected results in stable tree order. A nil
@@ -84,6 +92,51 @@ func Collect(
 	return collectReport(ctx, project, deps, verb, fn, NewReporter(os.Stderr))
 }
 
+// Single runs fn for one repository and renders its result line to stdout
+// without a project header — the single-repo counterpart of Walk. The repo's
+// error is returned as-is so warnings still downgrade the exit code at the
+// root instead of being counted as failures.
+func Single(
+	ctx context.Context,
+	project domain.Project,
+	repo domain.Repository,
+	deps types.RuntimeCLI,
+	fn RepoFunc,
+) error {
+	return singleTo(ctx, project, repo, deps, fn, os.Stdout)
+}
+
+// singleTo is Single with an injectable writer, for testing.
+func singleTo(
+	ctx context.Context,
+	project domain.Project,
+	repo domain.Repository,
+	deps types.RuntimeCLI,
+	fn RepoFunc,
+	w io.Writer,
+) error {
+	res := fn(ctx, project, repo, deps)
+	lipgloss.Fprintln(w, cli.IndentMultiline(res.Line))
+	return res.Err
+}
+
+// SingleCollect runs fn for one repository and returns the one-group shape
+// Collect produces, plus the repo's error — the single-repo counterpart of
+// Collect for callers that render grouped output themselves.
+func SingleCollect(
+	ctx context.Context,
+	project domain.Project,
+	repo domain.Repository,
+	deps types.RuntimeCLI,
+	fn RepoFunc,
+) ([]GroupResult, error) {
+	res := fn(ctx, project, repo, deps)
+	groups := []GroupResult{
+		{Project: project, Results: []*RepoResult{&res}},
+	}
+	return groups, res.Err
+}
+
 // walkTo is Walk with injectable result/progress writers, for testing.
 func walkTo(
 	ctx context.Context,
@@ -109,7 +162,13 @@ func walkReport(
 	reporter Reporter,
 ) []error {
 	groups, interrupted := collectReport(ctx, project, deps, verb, fn, reporter)
-	errs := render(resultsW, groups, deps)
+	return WithInterrupted(render(resultsW, groups, deps), interrupted)
+}
+
+// WithInterrupted appends the run-interrupted error from Collect (if any) to
+// the rendered errors, so Collect-based callers report an interruption exactly
+// like Walk does.
+func WithInterrupted(errs []error, interrupted error) []error {
 	if interrupted != nil {
 		errs = append(errs, interrupted)
 	}
@@ -134,13 +193,9 @@ func collectReport(
 
 	workers := max(deps.Settings.WorkerCount, 1) // AC-2: clamp to at least one worker
 
-	reporter.Start(verb, len(tasks), workers)
+	reporter.Start(verb, len(tasks))
 
-	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex // guards errCount; results slots are index-disjoint
-		errCount int
-	)
+	var wg sync.WaitGroup
 	taskCh := make(chan task)
 
 	for range workers {
@@ -150,14 +205,8 @@ func collectReport(
 				res := fn(ctx, t.project, t.repo, deps)
 				results[t.idx] = &res
 				if isFailure(res.Err) {
+					// The tracker owns the run-wide failed-count.
 					tracker.MarkErrored()
-					// Fold the count into the reporter while holding mu so
-					// counts are delivered in monotonic order; a late worker
-					// must not settle the spinner on a stale, smaller value.
-					mu.Lock()
-					errCount++
-					reporter.SetErrors(errCount)
-					mu.Unlock()
 				} else {
 					tracker.MarkDone()
 				}
@@ -231,6 +280,50 @@ func flatten(root domain.Project) ([]group, []task) {
 	return groups, tasks
 }
 
+// RenderGroups prints one block per project group and returns every non-nil
+// result's error in stable tree order. It encodes the shared traversal
+// contract once: nil result slots are skipped (cancelled before dequeue),
+// errors are collected from every result — including ones the body chooses
+// not to show — a blank line separates printed groups, and each shown group
+// gets its project title (when withTitles) above the body. The body callback
+// returns the group's rendered content ("" prints nothing under the title)
+// and whether the group appears at all.
+func RenderGroups(
+	w io.Writer,
+	groups []GroupResult,
+	deps types.RuntimeCLI,
+	withTitles bool,
+	body func(GroupResult) (string, bool),
+) []error {
+	var errs []error
+	printed := 0
+	for _, g := range groups {
+		for _, res := range g.Results {
+			if res == nil {
+				continue // not started (cancelled before dequeue)
+			}
+			if res.Err != nil {
+				errs = append(errs, res.Err)
+			}
+		}
+		content, show := body(g)
+		if !show {
+			continue
+		}
+		if printed > 0 {
+			fmt.Fprintln(w)
+		}
+		if withTitles {
+			lipgloss.Fprintln(w, cli.ProjectTitleWithBullet(g.Project, deps.Theme))
+		}
+		printed++
+		if content != "" {
+			lipgloss.Fprintln(w, content)
+		}
+	}
+	return errs
+}
+
 // render prints results in stable tree order grouped under each project header
 // and returns the aggregated errors in the same order.
 func render(
@@ -238,23 +331,16 @@ func render(
 	groups []GroupResult,
 	deps types.RuntimeCLI,
 ) []error {
-	var errs []error
-	for gi, g := range groups {
-		if gi > 0 {
-			fmt.Fprintln(w)
-		}
-		lipgloss.Fprintln(w, cli.ProjectTitleWithBullet(g.Project, deps.Theme))
+	return RenderGroups(w, groups, deps, true, func(g GroupResult) (string, bool) {
+		var lines []string
 		for _, res := range g.Results {
 			if res == nil {
-				continue // not started (cancelled before dequeue)
+				continue
 			}
-			lipgloss.Fprintln(w, cli.IndentMultiline(res.Line))
-			if res.Err != nil {
-				errs = append(errs, res.Err)
-			}
+			lines = append(lines, cli.IndentMultiline(res.Line))
 		}
-	}
-	return errs
+		return strings.Join(lines, "\n"), true
+	})
 }
 
 // isFailure reports whether err counts as a real failure (not a warning) for

@@ -1,0 +1,75 @@
+# git-cliff ~ configuration file
+# https://git-cliff.org/docs/configuration
+# Install: brew install git-cliff
+
+[changelog]
+# Must be a literal prefix of CHANGELOG.md — `--prepend` strips this string from
+# the existing file and re-emits it above the new entry. git-cliff appends its own
+# newline after the header, hence no trailing blank line here.
+header = """
+# Change-log
+
+- - -
+"""
+body = """
+{% if version %}\
+{% if previous.version %}\
+## [{{ version }}](https://github.com/rafi/gits/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}\
+{% else %}\
+## {{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}\
+{% endif %}\
+{% else %}\
+## Unreleased\
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope %}**({{ commit.scope }})** {% endif %}\
+{% if commit.breaking %}[**breaking**] {% endif %}\
+{{ commit.message }} - ({{ commit.id | truncate(length=7, end="") }}) - {{ commit.author.name }}\
+{% endfor %}\
+{% endfor %}
+
+- - -
+"""
+# Keep the body's trailing newline: `--prepend` in git-cliff 2.13 concatenates
+# without inserting one, so trimming would glue `- - -` onto the next heading.
+trim = false
+
+[git]
+conventional_commits = true
+# Drops merge commits and anything non-conventional, matching cog's
+# ignore_merge_commits + conventional-only behavior.
+filter_unconventional = true
+protect_breaking_commits = true
+tag_pattern = "v[0-9]*"
+topo_order = false
+sort_commits = "oldest"
+# `<!-- N -->` prefixes force group ordering (group_by sorts alphabetically);
+# `| striptags` in the template removes them at render time.
+commit_parsers = [
+  { message = "^chore\\(version\\)", skip = true },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance Improvements" },
+  { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+  { message = "^doc", group = "<!-- 4 -->Documentation" },
+  { message = "^style", group = "<!-- 5 -->Style" },
+  { message = "^test", group = "<!-- 6 -->Tests" },
+  { message = "^build", group = "<!-- 7 -->Build System" },
+  { message = "^ci", group = "<!-- 8 -->Continuous Integration" },
+  { message = "^revert", group = "<!-- 9 -->Revert" },
+  { message = "^chore", group = "<!-- 10 -->Miscellaneous Chores" },
+]
+
+[bump]
+features_always_bump_minor = true
+breaking_always_bump_major = true
+# Keep the release commit itself from driving the next bump.
+no_increment_regex = "^chore\\(version\\)"
+
+[remote.github]
+owner = "rafi"
+repo = "gits"

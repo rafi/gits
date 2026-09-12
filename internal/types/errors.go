@@ -31,14 +31,6 @@ func NewWarning(reason string, args ...any) error {
 	}
 }
 
-func NewError(reason string, args ...any) error {
-	return &Warning{
-		Type:   ErrorType,
-		Reason: fmt.Sprintf(reason, args...),
-		Cause:  lastError(args),
-	}
-}
-
 // IsWarning reports whether err is (or wraps) a *Warning of WarningType,
 // i.e. a downgradeable warning rather than a real failure.
 func IsWarning(err error) bool {
