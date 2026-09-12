@@ -23,6 +23,7 @@ import (
 // reports every path a repository.
 type fakeGit struct {
 	clitest.FakeGit
+
 	remote   string
 	out      string
 	cloneErr error
@@ -75,6 +76,8 @@ func addDeps(t *testing.T, g *fakeGit) (*clitest.Deps, string) {
 // repository's directory name is derived from its Repo Src — the basename
 // without the `.git` suffix — and both the directory and the Repo Src are
 // written into the config file.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
 func TestExecAddDerivesDirFromRepoSrc(t *testing.T) {
 	const src = "git@example.com:fixture/api.git"
 	g := &fakeGit{remote: src}
@@ -109,6 +112,8 @@ func TestExecAddDerivesDirFromRepoSrc(t *testing.T) {
 // TestExecAddCurrentDirectory covers `gits add myproj`: with no Repo Src
 // argument nothing is cloned, and the current directory is added under the
 // Repo Src its Remote reports.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
 func TestExecAddCurrentDirectory(t *testing.T) {
 	const src = "git@example.com:fixture/here.git"
 	g := &fakeGit{remote: src}
@@ -136,6 +141,8 @@ func TestExecAddCurrentDirectory(t *testing.T) {
 // account of the failure explains the returned error, so it belongs on
 // Diagnostic Output, and nothing is written to the config file or to Result
 // Output.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
 func TestExecAddCloneFailureReportsOnDiagnostic(t *testing.T) {
 	g := &fakeGit{out: "fatal: repository not found", cloneErr: errors.New("exit status 128")}
 	deps, _ := addDeps(t, g)

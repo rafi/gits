@@ -11,8 +11,8 @@ import (
 
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
 var (
@@ -53,14 +53,21 @@ func main() {
 		setupLogger(configFile)
 	})
 
-	// Root context cancelled on SIGINT so in-flight git operations stop
+	if err := execute(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// execute runs the command tree and returns rather than exiting, so the
+// signal handler is released before main reports the failure: [log.Fatal]
+// exits the process and would skip the deferred stop().
+func execute() error {
+	// Root context canceled on SIGINT so in-flight git operations stop
 	// promptly on Ctrl-C; per-op timeouts derive from this context.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		log.Fatal(err)
-	}
+	return rootCmd.ExecuteContext(ctx)
 }
 
 // setupLogger configures gits logger and sets the verbosity level.

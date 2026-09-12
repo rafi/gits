@@ -43,6 +43,8 @@ func repoOf(t *testing.T, doc map[string]any, idx int) map[string]any {
 // TestEnvelopeCarriesState: AC-3. Every repository reports its Repo State,
 // the field domain.Repository deliberately hides from the cache.
 func TestEnvelopeCarriesState(t *testing.T) {
+	t.Parallel()
+
 	env := FromProjects(domain.ProjectListKeyed{
 		"acme": {
 			Name: "acme",
@@ -67,6 +69,8 @@ func TestEnvelopeCarriesState(t *testing.T) {
 // TestEnvelopeCarriesReason: AC-3. The error state carries its Reason, and no
 // other state does.
 func TestEnvelopeCarriesReason(t *testing.T) {
+	t.Parallel()
+
 	env := FromProjects(domain.ProjectListKeyed{
 		"acme": {
 			Name: "acme",
@@ -89,6 +93,8 @@ func TestEnvelopeCarriesReason(t *testing.T) {
 // TestEnvelopeKeepsListShape: AC-2. The wire types mirror the fields
 // list -o json already shipped, sub-projects included.
 func TestEnvelopeKeepsListShape(t *testing.T) {
+	t.Parallel()
+
 	env := FromProjects(domain.ProjectListKeyed{
 		"acme": {
 			ID:     "1",
@@ -138,6 +144,8 @@ func TestEnvelopeKeepsListShape(t *testing.T) {
 // TestStatusMarshalMeasured: a successful probe emits every count, zeroes
 // included — a clean work tree must be distinguishable from an unmeasured one.
 func TestStatusMarshalMeasured(t *testing.T) {
+	t.Parallel()
+
 	raw, err := json.Marshal(Status{Branch: "main", Compared: true})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -157,11 +165,51 @@ func TestStatusMarshalMeasured(t *testing.T) {
 	if _, found := got["head"]; found {
 		t.Error("head emitted without --stat")
 	}
+	if _, found := got["upstream"]; found {
+		t.Error("upstream emitted for a branch with none: absence is what says so")
+	}
+}
+
+// TestStatusMarshalUpstream: the nested upstream object carries the Upstream's
+// name and whether a ref still resolves behind it, so a Gone Upstream is
+// distinguishable from a healthy one without a sentinel value.
+func TestStatusMarshalUpstream(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		up   Upstream
+	}{
+		{"tracked", Upstream{Name: "origin/main", Tracked: true}},
+		{"gone", Upstream{Name: "origin/feat-b"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw, err := json.Marshal(Status{Branch: "main", Upstream: &tc.up})
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			up, ok := got["upstream"].(map[string]any)
+			if !ok {
+				t.Fatalf("no upstream object in %s", raw)
+			}
+			if up["name"] != tc.up.Name || up["tracked"] != tc.up.Tracked {
+				t.Errorf("upstream = %v, want %+v", up, tc.up)
+			}
+		})
+	}
 }
 
 // TestStatusMarshalError: AC-5. A failed probe measured nothing, so it emits
 // nothing but its error — zero counts beside it would read as a clean tree.
 func TestStatusMarshalError(t *testing.T) {
+	t.Parallel()
+
 	raw, err := json.Marshal(Status{Error: "unable to read repo snapshot: boom"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -178,6 +226,8 @@ func TestStatusMarshalError(t *testing.T) {
 // TestStatusNested: the status object attaches under the repository, beside
 // the identity fields rather than replacing them.
 func TestStatusNested(t *testing.T) {
+	t.Parallel()
+
 	when := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
 	repo := NewRepository(domain.Repository{Name: "api", State: domain.RepoStateOK})
 	repo.Status = &Status{
@@ -214,6 +264,8 @@ func TestStatusNested(t *testing.T) {
 // TestWriteEndsWithNewline: the document is a line on stdout, so a shell
 // prompt or a following writer starts clean.
 func TestWriteEndsWithNewline(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	if err := Write(&buf, Envelope{}); err != nil {
 		t.Fatalf("Write: %v", err)

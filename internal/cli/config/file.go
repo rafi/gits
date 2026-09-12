@@ -19,12 +19,16 @@ import (
 	"github.com/rafi/gits/domain"
 )
 
+// minWorkerCount is the smallest bulk worker pool a machine gets, however
+// few CPUs it reports.
+const minWorkerCount = 2
+
 // File represents a config file with projects and settings.
 type File struct {
+	deprecations
+
 	client   *koanf.Koanf
 	Projects domain.ProjectListKeyed
-
-	deprecations
 
 	Filename string
 	Color    string
@@ -61,20 +65,20 @@ func NewConfigFromFile(filePath string, cfg *File) error {
 // applyDefaults fills runtime defaults and applies the never/always color
 // toggle. lipgloss v2 downsamples at the output writer, so force the profile
 // on the global stdout writer and mirror the intent into the environment so
-// per-writer outputs (e.g. the walk reporter's stderr) and child processes
-// (git, fzf) honor it too.
+// per-writer outputs (e.g. the progress reporter's destination) and child
+// processes (git, fzf) honor it too.
 func (f *File) applyDefaults() {
 	if f.Settings.WorkerCount == 0 {
-		f.Settings.WorkerCount = max(runtime.NumCPU(), 2)
+		f.Settings.WorkerCount = max(runtime.NumCPU(), minWorkerCount)
 	}
 	f.Settings.Icons.ApplyDefaults()
 
 	switch f.Color {
 	case ColorOptionNever.String():
-		os.Setenv("NO_COLOR", "1")
+		_ = os.Setenv("NO_COLOR", "1")
 		lipgloss.Writer.Profile = colorprofile.NoTTY
 	case ColorOptionAlways.String():
-		os.Setenv("CLICOLOR_FORCE", "1")
+		_ = os.Setenv("CLICOLOR_FORCE", "1")
 		lipgloss.Writer.Profile = colorprofile.TrueColor
 	}
 }
@@ -108,6 +112,8 @@ func (f *File) findDefaultPath() (string, error) {
 	}
 	for _, configPath := range configDirectories {
 		for _, configExt := range []string{".json", ".yaml", ".yml", ".toml"} {
+			//nolint:gosec // the path is built from this user's own HOME and
+			// XDG_CONFIG_HOME; there is no untrusted input to traverse with.
 			if _, err := os.Stat(configPath + configExt); !os.IsNotExist(err) {
 				return configPath + configExt, nil
 			}

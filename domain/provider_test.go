@@ -6,6 +6,8 @@ import (
 )
 
 func TestProviderSourceUniqueKey(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		ps   ProviderSource
@@ -18,6 +20,8 @@ func TestProviderSourceUniqueKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := tt.ps.UniqueKey(); got != tt.want {
 				t.Errorf("UniqueKey() = %q, want %q", got, tt.want)
 			}
@@ -26,6 +30,8 @@ func TestProviderSourceUniqueKey(t *testing.T) {
 }
 
 func TestProviderSourceValidate(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		ps        ProviderSource
@@ -44,6 +50,8 @@ func TestProviderSourceValidate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := tt.ps.Validate()
 			if tt.wantErr {
 				if err == nil {

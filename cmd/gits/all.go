@@ -1,3 +1,6 @@
+// Package main implements the gits command: a fast CLI Git manager for
+// multiple repositories grouped by projects, with GitHub, GitLab and
+// Bitbucket support.
 package main
 
 import (
@@ -18,9 +21,9 @@ import (
 	"github.com/rafi/gits/internal/cli/push"
 	"github.com/rafi/gits/internal/cli/status"
 	"github.com/rafi/gits/internal/cli/sync"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/internal/version"
-	"github.com/rafi/gits/pkg/git"
 )
 
 const (

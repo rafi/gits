@@ -10,6 +10,8 @@ import (
 	"github.com/rafi/gits/domain"
 )
 
+// Theme is the resolved render style of every element the CLI draws, built
+// from NewThemeDefault and overlaid with the user's settings.theme.
 type Theme struct {
 	// General
 	Normal        lipgloss.Style
@@ -60,57 +62,8 @@ type Theme struct {
 	ChartDates lipgloss.Style
 }
 
-func (t *Theme) ParseConfig(cfg domain.Theme) (err error) {
-	v := reflect.ValueOf(cfg)
-	vp := reflect.ValueOf(t)
-	typeOfS := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		name := typeOfS.Field(i).Name
-		if v.Field(i).Type().Name() == "Style" {
-			val := v.Field(i).Interface().(domain.Style)
-			if val.Color == "" && val.Align == "" && val.Width == 0 &&
-				!val.Bold && !val.Faint {
-				continue
-			}
-			style, err := parseThemeStyle(val)
-			if err != nil {
-				return err
-			}
-			vp.Elem().FieldByName(name).Set(reflect.ValueOf(style))
-		}
-	}
-	return nil
-}
-
-func parseThemeStyle(style domain.Style) (lipgloss.Style, error) {
-	s := lipgloss.NewStyle()
-	if style.Color != "" {
-		s = s.Foreground(lipgloss.Color(style.Color))
-	}
-	if style.Width > 0 {
-		s = s.Width(style.Width)
-	}
-	if style.Bold {
-		s = s.Bold(true)
-	}
-	if style.Faint {
-		s = s.Faint(true)
-	}
-	switch style.Align {
-	case "right":
-		s = s.Align(lipgloss.Right)
-	case "left":
-		s = s.Align(lipgloss.Left)
-	case "center":
-		s = s.Align(lipgloss.Center)
-	case "":
-	default:
-		return s, fmt.Errorf("invalid align value: %s", style.Align)
-	}
-	return s, nil
-}
-
+// NewThemeDefault returns the built-in theme, which ParseConfig then
+// overlays the user's configured styles onto.
 func NewThemeDefault() Theme {
 	theme := Theme{
 		// General
@@ -165,6 +118,62 @@ func NewThemeDefault() Theme {
 	return theme
 }
 
+// ParseConfig overlays the styles configured under settings.theme onto t,
+// matching the two structs field by field by name. A field left at its zero
+// value keeps the default style rather than blanking it.
+func (t *Theme) ParseConfig(cfg domain.Theme) error {
+	v := reflect.ValueOf(cfg)
+	vp := reflect.ValueOf(t)
+	typeOfS := v.Type()
+
+	for i := range v.NumField() {
+		val, ok := reflect.TypeAssert[domain.Style](v.Field(i))
+		if !ok {
+			continue
+		}
+		if val.Color == "" && val.Align == "" && val.Width == 0 &&
+			!val.Bold && !val.Faint {
+			continue
+		}
+		style, err := parseThemeStyle(val)
+		if err != nil {
+			return err
+		}
+		vp.Elem().FieldByName(typeOfS.Field(i).Name).Set(reflect.ValueOf(style))
+	}
+	return nil
+}
+
+func parseThemeStyle(style domain.Style) (lipgloss.Style, error) {
+	s := lipgloss.NewStyle()
+	if style.Color != "" {
+		s = s.Foreground(lipgloss.Color(style.Color))
+	}
+	if style.Width > 0 {
+		s = s.Width(style.Width)
+	}
+	if style.Bold {
+		s = s.Bold(true)
+	}
+	if style.Faint {
+		s = s.Faint(true)
+	}
+	switch style.Align {
+	case "right":
+		s = s.Align(lipgloss.Right)
+	case "left":
+		s = s.Align(lipgloss.Left)
+	case "center":
+		s = s.Align(lipgloss.Center)
+	case "":
+	default:
+		return s, fmt.Errorf("invalid align value: %s", style.Align)
+	}
+	return s, nil
+}
+
+// TableRowStyle returns the style for a table row, striping data rows and
+// setting the header apart.
 func (t *Theme) TableRowStyle(row, _ int) lipgloss.Style {
 	var s lipgloss.Style
 	switch {

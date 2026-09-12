@@ -1,3 +1,5 @@
+// Package status implements `gits status`, the Bulk Command that reports each
+// Repository's work-tree and Upstream state.
 package status
 
 import (
@@ -6,13 +8,12 @@ import (
 	"time"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/walk"
+	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/types"
 )
 
 // repoStatus is one repository's structured status, populated concurrently by
-// the walker (statusRepo) and rendered as a table row by render.go.
+// the probe (statusRepo) and rendered as a table row by render.go.
 type repoStatus struct {
 	repo   domain.Repository
 	title  string
@@ -32,6 +33,12 @@ type repoStatus struct {
 	// Remote was available to compare against, so ahead/behind are zero for
 	// want of a reference rather than because the branch is level.
 	noUpstream bool
+	// upstream is the configured Upstream's name, empty when the branch has
+	// none. Independent of noUpstream, which is about the comparison.
+	upstream string
+	// upstreamGone marks the Gone Upstream: upstream is configured, but no
+	// Remote branch is behind it any more.
+	upstreamGone bool
 
 	version string
 	commit  string
@@ -77,18 +84,15 @@ func (o Options) keep(st *repoStatus) bool {
 }
 
 // visibleStatuses returns one group's statuses in stable tree order, dropping
-// the repositories the walker never started and those an active filter hides,
+// the repositories the run never started and those an active filter hides,
 // plus the count it hid. Both renderers select rows through here so the JSON
 // document holds exactly what the table would have shown.
-func visibleStatuses(g walk.GroupResult, opts Options) (sts []*repoStatus, hidden int) {
+func visibleStatuses(g bulk.Group[*repoStatus], opts Options) (sts []*repoStatus, hidden int) {
 	for _, res := range g.Results {
 		if res == nil {
-			continue // not started (cancelled before dequeue)
+			continue // not started (canceled before dequeue)
 		}
-		st, ok := res.Payload.(*repoStatus)
-		if !ok {
-			continue
-		}
+		st := statusOf(res)
 		if opts.filtered() && !opts.keep(st) {
 			hidden++
 			continue
@@ -96,6 +100,21 @@ func visibleStatuses(g walk.GroupResult, opts Options) (sts []*repoStatus, hidde
 		sts = append(sts, st)
 	}
 	return sts, hidden
+}
+
+// statusOf returns the row a result carries, building one for a repository the
+// state guard turned back before the probe could. The collected value is the
+// probe's own type, so there is no assertion here to fail and no row to drop.
+func statusOf(res *bulk.Result[*repoStatus]) *repoStatus {
+	if res.Value != nil {
+		return res.Value
+	}
+	return &repoStatus{
+		repo:    res.Repo.Repository,
+		title:   res.Repo.Title.Value(),
+		err:     res.Err,
+		message: reason(res.Err),
+	}
 }
 
 // ExecStatus displays the status of all repositories, as a compact table or
@@ -111,62 +130,30 @@ func ExecStatus(format string, opts Options, args []string, deps types.RuntimeCL
 		return err
 	}
 
-	project, repo, err := cli.ParseArgs(args, true, deps)
-	if err != nil {
-		return err
-	}
-	probe := statusRepo(opts)
-
-	if repo != nil {
-		// Single repository: a one-row table without a project title.
-		groups, err := walk.SingleCollect(deps.Ctx, project, *repo, deps, probe)
-		if format == "json" {
-			// SingleCollect's only error is this one repository's, and that
-			// is already in the document — as its state, or as the nested
-			// status object's error. Returning it too would contradict the
-			// envelope, where a repository's condition is data rather than
-			// the command's outcome.
-			return renderJSON(deps.Out, groups, false, opts)
-		}
-		renderGroups(groups, false, opts, deps)
-		return err
-	}
-
-	// Collect every repository's structured status through the shared walker,
-	// then render the whole tree at once so table columns can be sized.
-	groups, interrupted := walk.Collect(deps.Ctx, project, deps, "checking status", probe)
-	if format == "json" {
-		// An interruption still fails: that document is incomplete, and
-		// nothing inside it says so.
-		if err := renderJSON(deps.Out, groups, true, opts); err != nil {
-			return err
-		}
-		return interrupted
-	}
-	errs := renderGroups(groups, true, opts, deps)
-	return cli.RenderErrors(deps.Err, walk.WithInterrupted(errs, interrupted), true)
+	// Unlike the four line-rendering Bulk Commands, status collects a
+	// structured result per repository, buffers the whole tree so table
+	// columns can be sized, and emits two formats with different rules about
+	// the exit code — so it supplies its own renderer instead of the stock one.
+	return bulk.Command[*repoStatus]{
+		Verb:   "checking status",
+		Body:   statusRepo(opts),
+		Render: render(format, opts),
+	}.Run(args, deps)
 }
 
-// statusRepo returns a walk.RepoFunc that probes one repository into a
-// structured status: safe to call concurrently and writes no output itself.
-func statusRepo(opts Options) walk.RepoFunc {
+// statusRepo returns a body that probes one repository into a structured
+// status: safe to call concurrently and writes no output itself.
+func statusRepo(opts Options) func(
+	context.Context, bulk.Repo, types.RuntimeCLI,
+) (*repoStatus, error) {
 	return func(
 		ctx context.Context,
-		project domain.Project,
-		repo domain.Repository,
+		repo bulk.Repo,
 		deps types.RuntimeCLI,
-	) walk.RepoResult {
+	) (*repoStatus, error) {
 		st := &repoStatus{
-			repo:  repo,
-			title: cli.RepoRelPath(project, repo, deps.HomeDir),
-		}
-
-		// Abort if repository is not cloned or has errors.
-		if repo.State != domain.RepoStateOK {
-			err := cli.RepoStateError(repo)
-			st.err = err
-			st.message = reason(err)
-			return walk.RepoResult{Payload: st, Err: err}
+			repo:  repo.Repository,
+			title: repo.Title.Value(),
 		}
 
 		// One porcelain-v2 pass covers worktree counts, branch and upstream
@@ -175,10 +162,15 @@ func statusRepo(opts Options) walk.RepoFunc {
 		if err != nil {
 			st.err = err
 			st.message = reason(err)
-			return walk.RepoResult{Payload: st, Err: cli.RepoError(err, repo)}
+			return st, err
 		}
 		st.staged, st.unstaged, st.untracked = snap.Staged, snap.Unstaged, snap.Untracked
 		st.branch = snap.Branch
+		// The snapshot is already taken, so the Gone Upstream is read from it
+		// rather than paying for a second query. `pull` and `push` take no
+		// snapshot and read the same state from a ref walk instead — see
+		// git.HeadUpstream; a fix to one belongs in the other.
+		st.upstream, st.upstreamGone = snap.Upstream, snap.GoneUpstream()
 
 		if opts.Stat {
 			// Tolerated like Describe: an unborn HEAD leaves the column blank.
@@ -191,11 +183,13 @@ func statusRepo(opts Options) walk.RepoFunc {
 			st.version = version
 		}
 
-		if snap.HasUpstream {
+		if snap.Tracking {
 			st.ahead, st.behind = snap.Ahead, snap.Behind
 		} else if ref := deps.Git.FallbackRef(ctx, repo.AbsPath, st.branch); ref != "" {
-			// No upstream configured: compare against the matching branch on
-			// the repo's actual remote.
+			// Nothing resolves to compare against — no Upstream configured, or
+			// a Gone one: compare against the matching branch on one of the
+			// repository's own Remotes, so a usable comparison is not
+			// discarded.
 			if ahead, behind, err := deps.Git.Diff(ctx, repo.AbsPath, st.branch, ref); err == nil {
 				st.ahead, st.behind = ahead, behind
 			} else {
@@ -209,7 +203,7 @@ func statusRepo(opts Options) walk.RepoFunc {
 			st.commit, st.message, st.when = head.Hash, head.Subject, head.Time
 		}
 
-		return walk.RepoResult{Payload: st}
+		return st, nil
 	}
 }
 

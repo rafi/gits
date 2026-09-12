@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rafi/gits/pkg/git"
+	"github.com/rafi/gits/internal/git"
 )
 
 // TestRuntimeUsableWithoutGit proves the git binary's absence is no longer a

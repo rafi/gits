@@ -1,4 +1,6 @@
-// Package domain
+// Package domain holds the ubiquitous language of gits — Project,
+// Sub-project, Repository, Provider Source and Repo State — together with
+// the settings that shape them. See CONTEXT.md.
 package domain
 
 import (
@@ -88,7 +90,7 @@ func (p *Project) ListReposWithNamespace() []string {
 // listReposWithNamespace recursively collects repository names with the given
 // namespace prefix.
 func (p *Project) listReposWithNamespace(prefix string) []string {
-	var names []string
+	names := make([]string, 0, len(p.Repos))
 	for _, repo := range p.Repos {
 		names = append(names, prefix+repo.GetName())
 	}
@@ -159,7 +161,7 @@ func (p *Project) Filter() {
 	}
 }
 
-// CalculateHash stores a SHA-256 digest of the project's marshalled form in
+// CalculateHash stores a SHA-256 digest of the project's marshaled form in
 // p.Hash. It is a cache checksum — it tells the loader whether a cached project
 // still matches the config it was built from — not a security boundary: nothing
 // authenticates the cache file, so the digest detects drift, not tampering.

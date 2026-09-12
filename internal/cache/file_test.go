@@ -195,6 +195,7 @@ func TestCacheFileSaveGetRoundTrip(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // every subtest points XDG_CACHE_HOME at its own dir with t.Setenv.
 func TestCacheFileFlush(t *testing.T) {
 	t.Run("removes existing cache file", func(t *testing.T) {
 		t.Setenv("XDG_CACHE_HOME", t.TempDir())

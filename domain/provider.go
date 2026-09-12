@@ -19,8 +19,10 @@ func (ps ProviderSource) UniqueKey() string {
 	return fmt.Sprintf("%s-%s", ps.Type, searchKey)
 }
 
+// Validate reports whether the Provider Source names a known type and
+// carries the search term that type requires.
 func (ps ProviderSource) Validate() error {
-	fieldName := ""
+	var fieldName string
 	switch ps.Type {
 	case "github":
 		fieldName = "owner"

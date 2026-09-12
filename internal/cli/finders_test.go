@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
-// fakeGit stubs the GitClient methods project population touches.
+// fakeGit stubs the git.Client methods project population touches.
 type fakeGit struct {
-	git.GitClient
+	git.Client
 }
 
 func (fakeGit) Remote(context.Context, string) (string, error) { return "git@x:a/b.git", nil }
@@ -45,9 +45,12 @@ func finderDeps(t *testing.T) types.RuntimeCLI {
 // TestParseArgsNonInteractive covers every ParseArgs path that does not need
 // an interactive finder.
 func TestParseArgsNonInteractive(t *testing.T) {
-	deps := finderDeps(t)
+	t.Parallel()
 
 	t.Run("project and repo by name", func(t *testing.T) {
+		t.Parallel()
+
+		deps := finderDeps(t)
 		proj, repo, err := ParseArgs([]string{"myproj", "alpha"}, true, deps)
 		if err != nil {
 			t.Fatalf("ParseArgs: %v", err)
@@ -61,6 +64,9 @@ func TestParseArgsNonInteractive(t *testing.T) {
 	})
 
 	t.Run("repo arg wins even without forced selection", func(t *testing.T) {
+		t.Parallel()
+
+		deps := finderDeps(t)
 		_, repo, err := ParseArgs([]string{"myproj", "bravo"}, true, deps)
 		if err != nil {
 			t.Fatalf("ParseArgs: %v", err)
@@ -71,6 +77,9 @@ func TestParseArgsNonInteractive(t *testing.T) {
 	})
 
 	t.Run("unknown repo errors", func(t *testing.T) {
+		t.Parallel()
+
+		deps := finderDeps(t)
 		_, _, err := ParseArgs([]string{"myproj", "nope"}, true, deps)
 		if err == nil {
 			t.Fatal("ParseArgs(unknown repo) = nil, want error")
@@ -78,6 +87,9 @@ func TestParseArgsNonInteractive(t *testing.T) {
 	})
 
 	t.Run("skip select without repo arg returns nil repo", func(t *testing.T) {
+		t.Parallel()
+
+		deps := finderDeps(t)
 		proj, repo, err := ParseArgs([]string{"myproj"}, true, deps)
 		if err != nil {
 			t.Fatalf("ParseArgs: %v", err)
@@ -88,6 +100,9 @@ func TestParseArgsNonInteractive(t *testing.T) {
 	})
 
 	t.Run("unknown project warns", func(t *testing.T) {
+		t.Parallel()
+
+		deps := finderDeps(t)
 		_, _, err := ParseArgs([]string{"ghost"}, true, deps)
 		var warn *types.Warning
 		if !errors.As(err, &warn) {

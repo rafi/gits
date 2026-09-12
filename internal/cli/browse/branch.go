@@ -1,3 +1,5 @@
+// Package browse implements `gits browse`, an interactive view over a
+// Repository's branches and tags.
 package browse
 
 import (
@@ -12,8 +14,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
 const (
@@ -40,8 +42,8 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 		return err
 	}
 	branch := ""
-	if len(args) > 2 {
-		branch = args[2]
+	if len(args) > branchArgIdx {
+		branch = args[branchArgIdx]
 	}
 	return renderBranchOverview(repo, args[1], branch, deps)
 }
@@ -73,13 +75,12 @@ func renderBranchOverview(
 
 	theme := deps.Theme
 
-	chartSidePadding := 2
-	panelWidth := width / 2
+	panelWidth := width / panelCount
 
 	branchCurrentStyle := theme.BranchCurrent.
 		Align(lipgloss.Left).
 		Width(panelWidth).
-		PaddingLeft(10)
+		PaddingLeft(branchNameIndent)
 
 	panelLeftStyle := theme.Normal.
 		// Border(lipgloss.NormalBorder()).
@@ -93,7 +94,7 @@ func renderBranchOverview(
 		Align(lipgloss.Left).
 		Width(panelWidth)
 
-	chartWidth := panelWidth - 2*chartSidePadding
+	chartWidth := panelWidth - chartSidePadding - chartSidePadding
 
 	panelLeft := renderBranchDiffList(repo.AbsPath, current, remotes, deps)
 	panelLeft = "\n" + branchCurrentStyle.Render(current) + "\n\n" + panelLeft
@@ -186,7 +187,7 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 		branchName := strings.TrimPrefix(fullName, remoteName+"/")
 
 		fmt.Fprintf(&doc, "%s %s/%s\n",
-			theme.Diff.Width(20).Align(lipgloss.Right).Render(state),
+			theme.Diff.Width(branchStateWidth).Align(lipgloss.Right).Render(state),
 			theme.RemoteName.Render(remoteName),
 			theme.BranchName.Render(branchName),
 		)
@@ -195,7 +196,7 @@ func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps
 }
 
 // renderBranchChart draws a chart of commits per day.
-func renderBranchChart(ctx context.Context, gitClient git.GitClient, repo domain.Repository, branch string, width int) (string, error) {
+func renderBranchChart(ctx context.Context, gitClient git.Client, repo domain.Repository, branch string, width int) (string, error) {
 	commits, err := gitClient.CommitDates(ctx, repo.AbsPath, branch, daysAgo)
 	if err != nil {
 		return "", fmt.Errorf("unable to get commit dates: %w", err)

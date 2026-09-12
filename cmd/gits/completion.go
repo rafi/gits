@@ -26,13 +26,19 @@ func completeProject(_ *cobra.Command, _ []string, toComplete string) ([]string,
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
+const (
+	// The positional argument counts past which a completion function has
+	// nothing left to offer: project, repo, branch.
+	argsProjectRepo       = 2
+	argsProjectRepoBranch = 3
+)
+
 // completeProjectRepo returns a list of repo names for shell completion.
 func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) < 1 {
 		return completeProject(cmd, args, toComplete)
 	}
-	// Max 2 args: project, repo.
-	if len(args) >= 2 {
+	if len(args) >= argsProjectRepo {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
@@ -58,11 +64,10 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 	if len(args) < 1 {
 		return completeProject(cmd, args, toComplete)
 	}
-	if len(args) < 2 {
+	if len(args) < argsProjectRepo {
 		return completeProjectRepo(cmd, args, toComplete)
 	}
-	// Max 3 args: project, repo, branch.
-	if len(args) >= 3 {
+	if len(args) >= argsProjectRepoBranch {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 

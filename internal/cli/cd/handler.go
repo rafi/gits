@@ -1,3 +1,5 @@
+// Package cd implements `gits cd`, which prints a Repository's path for a
+// shell to change into.
 package cd
 
 import (

@@ -3,7 +3,7 @@
 // tree.
 //
 // The types here are the wire contract, deliberately separate from the domain
-// structs they mirror. Marshalling `domain.Project` directly — as `list` used
+// structs they mirror. Marshaling `domain.Project` directly — as `list` used
 // to — made every field decision in the domain a wire decision by accident,
 // and left `status` nowhere to attach its nested working-tree object without
 // diverging from `list`. The separation also keeps `state` out of the cache
@@ -87,6 +87,12 @@ type Status struct {
 	// the distinction CONTEXT.md calls load-bearing.
 	Compared bool `json:"compared"`
 
+	// Upstream is the branch's Upstream, absent when none is configured — so
+	// the three states are structural: absent means none, present and tracked
+	// means healthy, present and untracked is a Gone Upstream. Orthogonal to
+	// Compared, which is about whether a comparison happened at all.
+	Upstream *Upstream `json:"upstream,omitempty"`
+
 	// Version is `git describe`, absent when the repository has no tag to
 	// describe against.
 	Version string `json:"version,omitempty"`
@@ -99,6 +105,16 @@ type Status struct {
 	// Error is the reason the probe failed. When it is set, nothing else was
 	// measured — see MarshalJSON.
 	Error string `json:"error,omitempty"`
+}
+
+// Upstream is the remote branch a local branch tracks.
+type Upstream struct {
+	// Name is the Upstream's short name ("origin/feat-b"). A branch tracking
+	// another local branch carries no remote prefix.
+	Name string `json:"name"`
+	// Tracked reports whether a ref still resolves behind that name. False is
+	// the Gone Upstream: configured, but merged and cleaned up on the Remote.
+	Tracked bool `json:"tracked"`
 }
 
 // Head is the uncommitted line diff against HEAD.

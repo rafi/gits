@@ -80,6 +80,24 @@ repos:
     dir: rafi.github
 ```
 
+### v1.0.0 — `pull` and `push` skip an unusable upstream instead of failing
+
+A branch whose upstream is gone — still configured, but with no remote branch
+behind it, the ordinary end of a branch that was merged and cleaned up — used
+to fail both commands, putting git's raw `ambiguous argument '@{upstream}'`
+fatal on the repository's line and a non-zero exit code on the run. `gits
+pull` also failed, more quietly, on a branch with no upstream at all, the case
+`gits push` already passed over. Both commands now report such a repository as
+skipped, naming the upstream that went away, and leave the exit code alone.
+
+Nothing that passes today starts failing; the change only ever turns a failure
+into a non-failure. What needs action is a script that asserts one of those
+failures — a `gits pull acme || …` guard, or a CI step relying on the non-zero
+exit to catch a branch whose upstream was deleted — which stops firing. Ask
+for the state directly instead: `gits status acme` marks a gone upstream with
+`⊘`, and `gits status -o json acme` reports it under the repository's
+`upstream` object as `"tracked": false`.
+
 ## Usage
 
 Usage: `gits [command] <project>`
@@ -126,8 +144,12 @@ To use `gits cd` — source [./contrib/cdgit.sh](./contrib/cdgit.sh) in your she
 ### Pushing
 
 `gits push` pushes each repository's current branch to its upstream, and skips
-any repository whose current branch has none — a skip, not a failure, so the
-run still exits zero.
+any repository it cannot push: one whose current branch has no upstream, and
+one whose upstream is gone — still configured, but with no remote branch
+behind it, the ordinary end of a branch that was merged and cleaned up.
+Pushing that second one would succeed and re-create the branch someone
+deliberately deleted, so it is passed over with the upstream named. Both are
+skips, not failures, so the run still exits zero.
 
 ```bash
 gits push acme          # push every repository in project 'acme'
@@ -188,6 +210,7 @@ its presence is what tells you the numbers were measured:
           "staged": 1, "unstaged": 0, "untracked": 2,
           "ahead": 3, "behind": 0,
           "compared": true,             // false: nothing to compare against
+          "upstream": { "name": "origin/main", "tracked": true },
           "version": "v1.2.3",          // git describe, when there is a tag
           "head": { "added": 27, "deleted": 8 },   // --stat only
           "commit": { "hash": "abc1234", "subject": "Add feature",

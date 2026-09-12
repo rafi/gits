@@ -16,8 +16,10 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	}
 	tmpName := tmpFile.Name()
 	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpName)
+		// Best-effort cleanup: the Close that matters is checked below, and
+		// a temp file that outlives a failure is not worth a second error.
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpName)
 	}()
 
 	if _, err := tmpFile.Write(data); err != nil {

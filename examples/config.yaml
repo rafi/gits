@@ -87,7 +87,8 @@ settings:
     ahead: "⇡"       # Commits ahead of upstream
     behind: "⇣"      # Commits behind upstream
     diverged: "⇅"    # Both ahead and behind
-    na: "–"          # Not available, e.g. no upstream
+    gone: "⊘"        # Upstream configured, but its remote branch is gone
+    na: "–"          # Not available, e.g. nothing to compare against
 
   # Colors and text styles. Each key takes an object with these fields:
   #

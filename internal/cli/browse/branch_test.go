@@ -8,13 +8,14 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/pkg/git"
+	"github.com/rafi/gits/internal/git"
 )
 
-// fakeBrowseGit stubs the GitClient methods the previews call; everything else
+// fakeBrowseGit stubs the git.Client methods the previews call; everything else
 // is inherited from clitest.FakeGit and panics if reached.
 type fakeBrowseGit struct {
 	clitest.FakeGit
+
 	remotes     []string
 	remoteRefs  []string
 	ahead       int
@@ -51,9 +52,11 @@ func (f fakeBrowseGit) Log(context.Context, string, string) (string, error) {
 }
 
 // compile-time check: fakeBrowseGit must satisfy the git client interface.
-var _ git.GitClient = fakeBrowseGit{}
+var _ git.Client = fakeBrowseGit{}
 
 func TestRenderDigits(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in   int
 		want string
@@ -70,6 +73,8 @@ func TestRenderDigits(t *testing.T) {
 }
 
 func TestRenderBranchDiffList(t *testing.T) {
+	t.Parallel()
+
 	onlyMain := []string{"origin/main"}
 
 	tests := []struct {
@@ -85,6 +90,8 @@ func TestRenderBranchDiffList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			g := fakeBrowseGit{remoteRefs: onlyMain, ahead: tt.ahead, behind: tt.behind}
 			out := renderBranchDiffList("/repo", "main", []string{"origin"}, clitest.New(t, g).RuntimeCLI)
 			for _, want := range tt.wantSubstrs {
@@ -96,6 +103,8 @@ func TestRenderBranchDiffList(t *testing.T) {
 	}
 
 	t.Run("branches listed in stable sorted order", func(t *testing.T) {
+		t.Parallel()
+
 		g := fakeBrowseGit{remoteRefs: []string{
 			"origin/main", "origin/master", "origin/dev", "origin/next",
 			"fork/main", "fork/master", "fork/dev", "fork/next",
@@ -114,6 +123,8 @@ func TestRenderBranchDiffList(t *testing.T) {
 	})
 
 	t.Run("diff error renders N/A row instead of blanking panel", func(t *testing.T) {
+		t.Parallel()
+
 		g := fakeBrowseGit{remoteRefs: onlyMain, diffErr: context.DeadlineExceeded}
 		deps := clitest.New(t, g)
 		out := renderBranchDiffList("/repo", "main", []string{"origin"}, deps.RuntimeCLI)
@@ -125,6 +136,7 @@ func TestRenderBranchDiffList(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest // freezes the package-level now clock; must stay serial.
 func TestRenderBranchChart(t *testing.T) {
 	// Freeze the day axis so commit dates map deterministically.
 	origNow := now

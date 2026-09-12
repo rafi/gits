@@ -1,3 +1,5 @@
+// Package list implements `gits list`, which renders a Project's Repositories
+// as a table, a tree, a name list, or a JSON document.
 package list
 
 import (

@@ -10,13 +10,14 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
 )
 
-// fakeGit stubs the GitClient methods computeState relies on.
+// fakeGit stubs the git.Client methods computeState relies on.
 type fakeGit struct {
-	git.GitClient
+	git.Client
+
 	isRepo    bool
 	remote    string
 	remoteErr error
@@ -31,6 +32,8 @@ func (f fakeGit) Remote(context.Context, string) (string, error) {
 }
 
 func TestIsPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in   string
 		want bool
@@ -47,6 +50,8 @@ func TestIsPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
+
 			if got := isPath(tt.in); got != tt.want {
 				t.Errorf("isPath(%q) = %v, want %v", tt.in, got, tt.want)
 			}
@@ -58,6 +63,8 @@ func TestIsPath(t *testing.T) {
 // arguments against the working directory: `gits status ./dir` must find the
 // repo at its absolute location instead of joining the relative path onto
 // itself (dir/dir) and reporting "not cloned".
+//
+//nolint:paralleltest // t.Chdir moves the process working directory, which is incompatible with t.Parallel.
 func TestGetProjectsRelativePath(t *testing.T) {
 	parent := t.TempDir()
 	repoDir := filepath.Join(parent, "myrepo")
@@ -141,6 +148,8 @@ func (c *recordingCache) Save(string, domain.Project) error {
 func (c *recordingCache) Flush(domain.Project) error { return nil }
 
 func TestGetSource(t *testing.T) {
+	t.Parallel()
+
 	deps := func(c *recordingCache) types.Runtime {
 		return types.Runtime{
 			Ctx:   context.Background(),
@@ -150,6 +159,8 @@ func TestGetSource(t *testing.T) {
 	}
 
 	t.Run("cache hit skips the provider entirely", func(t *testing.T) {
+		t.Parallel()
+
 		// A github source without any token only works when the cache
 		// serves the repos — proving no provider was constructed.
 		cache := &recordingCache{hit: true, project: domain.Project{
@@ -171,6 +182,8 @@ func TestGetSource(t *testing.T) {
 	})
 
 	t.Run("filesystem sources never touch the cache", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(dir, "repo1"), 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
@@ -192,6 +205,8 @@ func TestGetSource(t *testing.T) {
 	})
 
 	t.Run("zero repositories is an error", func(t *testing.T) {
+		t.Parallel()
+
 		cache := &recordingCache{}
 		p := domain.Project{
 			Name:   "p",
@@ -207,6 +222,8 @@ func TestGetSource(t *testing.T) {
 	// The token command reaching the provider is proven by a failing one:
 	// its error surfaces, and construction stops before any network call.
 	t.Run("provider token command is threaded from settings", func(t *testing.T) {
+		t.Parallel()
+
 		if runtime.GOOS == "windows" {
 			t.Skip("shell fixture assumes a POSIX shell")
 		}
@@ -228,6 +245,8 @@ func TestGetSource(t *testing.T) {
 	})
 
 	t.Run("invalid source config errors", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			Name:   "p",
 			Source: &domain.ProviderSource{Type: "svn"},
@@ -239,11 +258,15 @@ func TestGetSource(t *testing.T) {
 }
 
 func TestComputeStateMatrix(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	// A non-provider repo with no derivable local home is a configuration
 	// that never said where the repository lives, not a missing clone.
 	t.Run("no local dir on a non-provider repo is error", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{Repos: []domain.Repository{{Name: "a"}}}
 		computeState(ctx, &p, fakeGit{})
 		r := p.Repos[0]
@@ -256,6 +279,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("unresolvable path is Error", func(t *testing.T) {
+		t.Parallel()
+
 		// AbsPath set so the early no-local-home branch is skipped; Dir empty
 		// + Src without a slash makes GetRepoAbsPath fail.
 		p := domain.Project{Path: t.TempDir(), Repos: []domain.Repository{{Name: "a", Src: "noslash"}}}
@@ -266,6 +291,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("existing non-repo dir is Error", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		p := domain.Project{Path: dir, Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
 		computeState(ctx, &p, fakeGit{isRepo: false})
@@ -279,6 +306,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("existing repo dir is OK", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		p := domain.Project{Path: dir, Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
 		computeState(ctx, &p, fakeGit{isRepo: true})
@@ -288,6 +317,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("provider repo without local path is remote-only", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			Source: &domain.ProviderSource{Type: "github"},
 			Repos:  []domain.Repository{{Name: "a", Src: "git@github.com:acme/a.git"}},
@@ -302,6 +333,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	// would silently resolve against the process working directory, making
 	// the same config report differently depending on where gits was run.
 	t.Run("relative dir without project path is error", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{Repos: []domain.Repository{{Name: "a", Dir: "sub/a"}}}
 		computeState(ctx, &p, fakeGit{})
 		r := p.Repos[0]
@@ -314,6 +347,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("absolute dir without project path still resolves", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		p := domain.Project{Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
 		computeState(ctx, &p, fakeGit{isRepo: true})
@@ -327,6 +362,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("uncloned repo is not-cloned without stale error reason", func(t *testing.T) {
+		t.Parallel()
+
 		// The repo directory does not exist, so git.Remote must not run at
 		// all: an error from it must not linger as a Reason.
 		p := domain.Project{
@@ -344,6 +381,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("remote lookup failure on existing repo is Error", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		p := domain.Project{
 			Path:  dir,
@@ -360,6 +399,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("remote lookup failure is confined to the repo that needed it", func(t *testing.T) {
+		t.Parallel()
+
 		// With git missing from PATH every git.Remote call fails, so the
 		// blast radius has to be one repository — not the project. A repo
 		// that already carries a Src never shells out and stays ok.
@@ -397,6 +438,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("sub-projects get their own source copy", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			Source:      &domain.ProviderSource{Type: "github", Search: "acme"},
 			SubProjects: []domain.Project{{Name: "sub"}},
@@ -410,6 +453,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("repos and sub-projects sorted alphabetically", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			Repos: []domain.Repository{{Name: "zzz"}, {Name: "aaa"}},
 			SubProjects: []domain.Project{
@@ -428,6 +473,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	// A sub-project that declares no path sits at a directory named after it
 	// beneath its parent, and its repositories are classified against that.
 	t.Run("sub-project inherits parent path and classifies its repos", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		subPath := filepath.Join(root, "team")
 		if err := os.MkdirAll(filepath.Join(subPath, "api"), 0o750); err != nil {
@@ -460,6 +507,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	// must not fall back to a relative path resolved against the process
 	// working directory.
 	t.Run("path-less parent gives sub-project no local home", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			SubProjects: []domain.Project{{
 				Name:  "team",
@@ -485,6 +534,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("provider-backed sub-project without a home is remote-only", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			Source: &domain.ProviderSource{Type: "github", Search: "acme"},
 			SubProjects: []domain.Project{{
@@ -500,6 +551,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("absolute dir under a path-less parent still resolves", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		p := domain.Project{
 			SubProjects: []domain.Project{{
@@ -521,6 +574,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	// The one genuine cross-pass dependency: path expansion writes the
 	// inherited source, classification reads it back a pass later.
 	t.Run("inherited provider source reaches classification", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			Source: &domain.ProviderSource{Type: "github", Search: "acme"},
 			SubProjects: []domain.Project{{
@@ -544,6 +599,8 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 
 	t.Run("ordering applies at every depth", func(t *testing.T) {
+		t.Parallel()
+
 		p := domain.Project{
 			SubProjects: []domain.Project{{
 				Name:        "team",

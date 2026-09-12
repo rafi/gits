@@ -1,3 +1,5 @@
+// Package cli holds what every gits command shares: Project and Repository
+// selection, title rendering, path formatting, and the error epilogue.
 package cli
 
 import (
@@ -7,10 +9,14 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/fzf"
 )
+
+// branchLineFields is how many tab-separated fields a branch selection line
+// carries: the kind indicator and the ref name.
+const branchLineFields = 2
 
 // isCancelled reports whether an interactive selection ended without a
 // choice — the user pressed Esc/Ctrl-C or there was nothing to match.
@@ -44,8 +50,10 @@ func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
 func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 	domain.Project, error,
 ) {
-	var err error
-	projName := ""
+	var (
+		err      error
+		projName string
+	)
 	if len(args) > 0 {
 		projName = args[0]
 	} else {
@@ -222,7 +230,7 @@ func SelectBranch(
 		return "", err
 	}
 	parts := strings.SplitN(selected, delimiter, 3)
-	if len(parts) < 2 {
+	if len(parts) < branchLineFields {
 		return "", types.NewWarning("no branch selected")
 	}
 	return parts[1], nil

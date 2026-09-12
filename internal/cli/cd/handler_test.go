@@ -15,6 +15,8 @@ import (
 // one Repository path on Result Output and nothing else anywhere, so the shell
 // function that consumes it can cd to what it read.
 func TestExecCDWritesRepoPath(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, clitest.FakeGit{}).
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
@@ -36,6 +38,8 @@ func TestExecCDWritesRepoPath(t *testing.T) {
 // line starts on its own — and leaves Result Output empty, since a shell that
 // captured a message here would try to cd into it.
 func TestExecCDAbortsOnNonOKState(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		repoName string
@@ -47,6 +51,8 @@ func TestExecCDAbortsOnNonOKState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", tt.repo)
 
 			err := ExecCD([]string{"acme", tt.repoName}, deps.RuntimeCLI)

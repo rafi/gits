@@ -8,8 +8,10 @@ import (
 )
 
 // TestWarningUnwrap proves a Warning built around another error keeps the
-// chain intact for errors.Is/As instead of severing it at format time.
+// chain intact for [errors.Is]/[errors.As] instead of severing it at format time.
 func TestWarningUnwrap(t *testing.T) {
+	t.Parallel()
+
 	err := NewWarning("unable to load project: %s", io.EOF)
 	if !errors.Is(err, io.EOF) {
 		t.Errorf("errors.Is(NewWarning(..., io.EOF), io.EOF) = false, want true")
@@ -25,6 +27,8 @@ func TestWarningUnwrap(t *testing.T) {
 // WarningType values qualify — wrapped ones included — while plain errors
 // and ErrorType values do not.
 func TestIsWarning(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		err  error

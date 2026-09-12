@@ -1,3 +1,4 @@
+// Package version reports the build version stamped in at link time.
 package version
 
 import "strings"
@@ -9,11 +10,15 @@ var (
 	// Increment minor number for bug fixes and performance enhancements.
 	version = "v0.11.2"
 
-	// metadata is extra build time data
+	// metadata is extra build time data.
 	metadata = ""
 )
 
-// GetVersion returns the semver string of the version
+// majorMinorFields is how many dot-separated fields a version must have
+// before a major.minor prefix can be taken from it.
+const majorMinorFields = 2
+
+// GetVersion returns the semver string of the version.
 func GetVersion() string {
 	if metadata == "" {
 		return version
@@ -29,7 +34,7 @@ func GetMajorMinor() string {
 		beforeDash = parts[0]
 	}
 	parts = strings.Split(beforeDash, ".")
-	if len(parts) < 2 {
+	if len(parts) < majorMinorFields {
 		return version
 	}
 	return parts[0] + "." + parts[1]

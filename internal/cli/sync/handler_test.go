@@ -52,6 +52,8 @@ func syncDeps(t *testing.T) (*clitest.Deps, *recordCache) {
 // cache is flushed and reported on Result Output, and the project the argument
 // did not name is left alone.
 func TestExecSyncCleansNamedProject(t *testing.T) {
+	t.Parallel()
+
 	deps, cache := syncDeps(t)
 
 	if err := ExecSync([]string{"acme"}, deps.RuntimeCLI); err != nil {
@@ -73,6 +75,8 @@ func TestExecSyncCleansNamedProject(t *testing.T) {
 // arguments: every cacheable project is cleaned, and a project with no
 // Provider Source has no cache to clean and is passed over silently.
 func TestExecSyncPassesOverUncacheableProject(t *testing.T) {
+	t.Parallel()
+
 	deps, cache := syncDeps(t)
 
 	if err := ExecSync(nil, deps.RuntimeCLI); err != nil {
@@ -90,6 +94,8 @@ func TestExecSyncPassesOverUncacheableProject(t *testing.T) {
 // TestExecSyncUnknownProject proves syncing a non-existent project warns
 // instead of silently exiting zero.
 func TestExecSyncUnknownProject(t *testing.T) {
+	t.Parallel()
+
 	deps, cache := syncDeps(t)
 
 	err := ExecSync([]string{"bogus"}, deps.RuntimeCLI)

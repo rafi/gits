@@ -1,3 +1,6 @@
+// Package loader turns configured Projects into populated ones: it discovers
+// repositories from a Provider Source, expands paths, and classifies each
+// Repository's Repo State.
 package loader
 
 import (
@@ -13,9 +16,9 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/providers"
 	"github.com/rafi/gits/internal/types"
-	"github.com/rafi/gits/pkg/git"
-	"github.com/rafi/gits/pkg/providers"
 )
 
 // GetProjects returns a list of populated projects filtered by name or path.
@@ -166,42 +169,52 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 			return fmt.Errorf("failed to get cache: %w", err)
 		}
 	}
-	if !hasCache {
-		auth := deps.Settings.ProviderAuth(source.Type)
-		c, err := providers.NewGitProvider(deps.Ctx, source.Type, providers.Options{
-			Token:           auth.Token,
-			TokenCommand:    auth.Command(),
-			IncludeArchived: deps.Settings.IncludeArchived,
-			Timeout:         deps.Settings.ProviderTimeoutDuration(),
-			GitClient:       deps.Git,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create provider: %w", err)
-		}
+	if hasCache {
+		return nil
+	}
+	if err := loadFromProvider(project, deps); err != nil {
+		return err
+	}
+	if !shouldCache {
+		return nil
+	}
+	if err := deps.Cache.Save(cacheKey, *project); err != nil {
+		return fmt.Errorf("failed to save cache: %w", err)
+	}
+	return nil
+}
 
-		if providers.IsRemote(source.Type) {
-			log.Debugf("Fetching %s repos from %s…", source.Type, source.Search)
-		} else {
-			log.Debugf("Searching for repos at %s…", source.Search)
-		}
-		if err := c.LoadRepos(deps.Ctx, source.Search, project); err != nil {
-			return fmt.Errorf(
-				"failed to load repos for %q project (%s): %w",
-				project.Name,
-				source.Type,
-				err,
-			)
-		}
-		if len(project.Repos) == 0 {
-			return fmt.Errorf("no repositories found for project %q", project.Name)
-		}
+// loadFromProvider asks the project's Provider Source for its repositories,
+// the path taken whenever the cache did not answer.
+func loadFromProvider(project *domain.Project, deps types.Runtime) error {
+	source := project.Source
+	auth := deps.Settings.ProviderAuth(source.Type)
+	c, err := providers.NewGitProvider(deps.Ctx, source.Type, providers.Options{
+		Token:           auth.Token,
+		TokenCommand:    auth.Command(),
+		IncludeArchived: deps.Settings.IncludeArchived,
+		Timeout:         deps.Settings.ProviderTimeoutDuration(),
+		GitClient:       deps.Git,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create provider: %w", err)
+	}
 
-		if shouldCache {
-			err := deps.Cache.Save(cacheKey, *project)
-			if err != nil {
-				return fmt.Errorf("failed to save cache: %w", err)
-			}
-		}
+	if providers.IsRemote(source.Type) {
+		log.Debugf("Fetching %s repos from %s…", source.Type, source.Search)
+	} else {
+		log.Debugf("Searching for repos at %s…", source.Search)
+	}
+	if err := c.LoadRepos(deps.Ctx, source.Search, project); err != nil {
+		return fmt.Errorf(
+			"failed to load repos for %q project (%s): %w",
+			project.Name,
+			source.Type,
+			err,
+		)
+	}
+	if len(project.Repos) == 0 {
+		return fmt.Errorf("no repositories found for project %q", project.Name)
 	}
 	return nil
 }
@@ -209,7 +222,7 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 // computeState resolves every project path, classifies each repository, and
 // orders the tree. Each concern is its own pass: classification reads the
 // paths expansion produces, and ordering depends on neither.
-func computeState(ctx context.Context, project *domain.Project, git git.GitClient) {
+func computeState(ctx context.Context, project *domain.Project, git git.Client) {
 	expandPaths(project)
 	classifyRepos(ctx, project, git)
 	sortTree(project)
@@ -247,7 +260,7 @@ func expandPaths(project *domain.Project) {
 }
 
 // classifyRepos determines the state of every repository in the tree.
-func classifyRepos(ctx context.Context, project *domain.Project, git git.GitClient) {
+func classifyRepos(ctx context.Context, project *domain.Project, git git.Client) {
 	for idx := range project.SubProjects {
 		classifyRepos(ctx, &project.SubProjects[idx], git)
 	}
@@ -263,7 +276,7 @@ func classifyRepo(
 	ctx context.Context,
 	project *domain.Project,
 	r *domain.Repository,
-	git git.GitClient,
+	git git.Client,
 ) {
 	r.State = domain.RepoStateUnknown
 	if project.Source != nil {

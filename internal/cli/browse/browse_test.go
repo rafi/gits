@@ -31,6 +31,8 @@ func previewGit() fakeBrowseGit {
 // branch is what keeps the run out of the interactive branch selection, and
 // the overview it renders is Result Output.
 func TestExecBrowseWritesOverview(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Cloned("api"))
 
 	if err := ExecBrowse([]string{"acme", "api", "main"}, deps.RuntimeCLI); err != nil {
@@ -52,6 +54,8 @@ func TestExecBrowseWritesOverview(t *testing.T) {
 // is not `ok` has no work tree to browse, so the command aborts with the
 // Repository's own Reason on Diagnostic Output before any branch is selected.
 func TestExecBrowseAbortsOnNonOKState(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Broken("bad"))
 
 	err := ExecBrowse([]string{"acme", "bad"}, deps.RuntimeCLI)
@@ -69,6 +73,8 @@ func TestExecBrowseAbortsOnNonOKState(t *testing.T) {
 // TestExecBranchOverviewWritesOverview covers `gits branch-overview acme api
 // main`, the preview fzf runs beside the branch list.
 func TestExecBranchOverviewWritesOverview(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Cloned("api"))
 
 	if err := ExecBranchOverview([]string{"acme", "api", "main"}, deps.RuntimeCLI); err != nil {
@@ -89,6 +95,8 @@ func TestExecBranchOverviewWritesOverview(t *testing.T) {
 // TestExecBranchOverviewMissingArgs covers the two arguments the preview
 // cannot do without, both refused before anything is loaded.
 func TestExecBranchOverviewMissingArgs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args []string
@@ -99,6 +107,8 @@ func TestExecBranchOverviewMissingArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Cloned("api"))
 
 			err := ExecBranchOverview(tt.args, deps.RuntimeCLI)
@@ -116,6 +126,8 @@ func TestExecBranchOverviewMissingArgs(t *testing.T) {
 // README's path heads the preview and its rendered text follows, both on
 // Result Output.
 func TestExecRepoOverviewRendersReadme(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Cloned("api"))
 
 	readmePath := filepath.Join(deps.Projects["acme"].Path, "api", ReadMeFilename)
@@ -142,6 +154,8 @@ func TestExecRepoOverviewRendersReadme(t *testing.T) {
 // TestExecRepoOverviewWithoutReadme covers a repository with no README: the
 // preview says so rather than rendering an empty pane.
 func TestExecRepoOverviewWithoutReadme(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Cloned("api"))
 
 	err := ExecRepoOverview([]string{"acme", "api"}, deps.RuntimeCLI)
@@ -156,6 +170,8 @@ func TestExecRepoOverviewWithoutReadme(t *testing.T) {
 // TestExecRepoOverviewAbortsOnNonOKState covers the state guard: a Repository
 // that is not `ok` has no work tree to read a README from.
 func TestExecRepoOverviewAbortsOnNonOKState(t *testing.T) {
+	t.Parallel()
+
 	deps := clitest.New(t, previewGit()).WithProject("acme", clitest.Broken("bad"))
 
 	err := ExecRepoOverview([]string{"acme", "bad"}, deps.RuntimeCLI)
@@ -171,6 +187,8 @@ func TestExecRepoOverviewAbortsOnNonOKState(t *testing.T) {
 // name must survive every arg count, and an explicit branch is only taken
 // from a 3-arg invocation.
 func TestBrowseTarget(t *testing.T) {
+	t.Parallel()
+
 	project := domain.Project{Name: "selected"}
 	tests := []struct {
 		name       string
@@ -185,6 +203,8 @@ func TestBrowseTarget(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			gotProj, gotBranch := browseTarget(tt.args, project)
 			if gotProj != tt.wantProj {
 				t.Errorf("projName = %q, want %q", gotProj, tt.wantProj)
