@@ -17,19 +17,19 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-// renderGroups prints one compact table per project group to out and a
-// summary footer to errW, returning every result error in stable tree order.
-// The traversal (nil slots, error collection, titles, separators) is walk's;
-// this body filters rows — active filters (Dirty, Unsynced) drop non-matching
-// rows, error rows stay visible — and projects left with no rows disappear
-// entirely.
+// renderGroups prints one compact table per project group as Result Output and
+// a summary footer as Diagnostic Output, returning every result error in stable
+// tree order. The traversal (nil slots, error collection, titles, separators) is
+// walk's; this body filters rows — active filters (Dirty, Unsynced) drop
+// non-matching rows, error rows stay visible — and projects left with no rows
+// disappear entirely.
 func renderGroups(
-	out, errW io.Writer,
 	groups []walk.GroupResult,
 	withTitles bool,
 	opts Options,
 	deps types.RuntimeCLI,
 ) []error {
+	out := deps.Out
 	termWidth, _ := cli.TermWidth(out)
 	var (
 		all    []*repoStatus
@@ -37,21 +37,8 @@ func renderGroups(
 	)
 	errs := walk.RenderGroups(out, groups, deps, withTitles,
 		func(g walk.GroupResult) (string, bool) {
-			var sts []*repoStatus
-			for _, res := range g.Results {
-				if res == nil {
-					continue
-				}
-				st, ok := res.Payload.(*repoStatus)
-				if !ok {
-					continue
-				}
-				if opts.filtered() && !opts.keep(st) {
-					hidden++
-					continue
-				}
-				sts = append(sts, st)
-			}
+			sts, skipped := visibleStatuses(g, opts)
+			hidden += skipped
 			if opts.filtered() && len(sts) == 0 {
 				return "", false
 			}
@@ -61,7 +48,7 @@ func renderGroups(
 			all = append(all, sts...)
 			return renderTable(sts, termWidth, opts, deps), true
 		})
-	renderFooter(errW, all, hidden, deps.Theme)
+	renderFooter(deps.Err, all, hidden, deps.Theme)
 	return errs
 }
 
@@ -219,9 +206,9 @@ func gutter(st *repoStatus, icons domain.Icons, th config.Theme) string {
 			return th.Error.Render(icons.DiffError)
 		}
 		return "+"
-	case domain.RepoStateNoLocal:
+	case domain.RepoStateNotCloned:
 		return th.StatusDim.Render("/")
-	case domain.RepoStateRemote:
+	case domain.RepoStateRemoteOnly:
 		return th.StatusDim.Render(icons.DiffClean)
 	case domain.RepoStateError:
 		return th.Error.Render(icons.DiffError)
@@ -282,8 +269,8 @@ func statusSlots(st *repoStatus, icons domain.Icons, th config.Theme, widths slo
 	broken := st.repo.State != domain.RepoStateOK || st.err != nil
 	fourth := pad(" ", " ", widths.fourth)
 	switch {
-	case st.err != nil && st.repo.State != domain.RepoStateNoLocal &&
-		st.repo.State != domain.RepoStateRemote:
+	case st.err != nil && st.repo.State != domain.RepoStateNotCloned &&
+		st.repo.State != domain.RepoStateRemoteOnly:
 		fourth = pad(th.Error.Render(icons.DiffError), icons.DiffError, widths.fourth)
 	case st.repo.State != domain.RepoStateOK:
 		fourth = pad(th.StatusDim.Render(icons.NA), icons.NA, widths.fourth)
@@ -420,8 +407,8 @@ func shortAge(t, now time.Time) string {
 	}
 }
 
-// renderFooter prints the dim `○ Showing …` summary footer to stderr
-// after a blank separator.
+// renderFooter prints the dim `○ Showing …` summary footer as Diagnostic
+// Output, after a blank separator.
 func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th config.Theme) {
 	repos := len(sts)
 	changed, ahead, errCount := 0, 0, 0

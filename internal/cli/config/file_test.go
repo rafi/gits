@@ -88,6 +88,46 @@ func TestLoadConfigProviderSettings(t *testing.T) {
 	}
 }
 
+// TestLoadConfigProviderTokens proves per-provider credentials parse from
+// the settings block, in both spellings of the token command key.
+func TestLoadConfigProviderTokens(t *testing.T) {
+	path := writeTemp(t, "c.yaml", `
+p:
+  desc: x
+settings:
+  github:
+    token-cmd: pass tokens/github
+  gitlab:
+    tokenCommand: pass tokens/gitlab
+  bitbucket:
+    token: user:app-password
+`)
+	f := &File{}
+	if err := NewConfigFromFile(path, f); err != nil {
+		t.Fatalf("NewConfigFromFile: %v", err)
+	}
+	tests := []struct {
+		provider    string
+		wantToken   string
+		wantCommand string
+	}{
+		{"github", "", "pass tokens/github"},
+		{"gitlab", "", "pass tokens/gitlab"},
+		{"bitbucket", "user:app-password", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider, func(t *testing.T) {
+			auth := f.Settings.ProviderAuth(tt.provider)
+			if auth.Token != tt.wantToken {
+				t.Errorf("token = %q, want %q", auth.Token, tt.wantToken)
+			}
+			if got := auth.Command(); got != tt.wantCommand {
+				t.Errorf("Command() = %q, want %q", got, tt.wantCommand)
+			}
+		})
+	}
+}
+
 func TestLoadConfigUnsupportedExt(t *testing.T) {
 	path := writeTemp(t, "c.ini", "nope")
 	f := &File{}

@@ -10,14 +10,21 @@ import (
 	"testing"
 )
 
+// requireGit skips the test when the git executable is absent. NewGit no
+// longer probes PATH, so tests that genuinely need a real git say so here.
+func requireGit(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git executable not available: %v", err)
+	}
+}
+
 // setupRepo creates a throwaway git repo with one commit on branch "main", a
 // second branch "feature", a remote "origin", and a remote-tracking ref
 // origin/main. It returns the repo path. The test is skipped if git is absent.
 func setupRepo(t *testing.T) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
+	requireGit(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -48,7 +55,7 @@ func setupRepo(t *testing.T) string {
 }
 
 func TestIsRepo(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	if !g.IsRepo(ctx, dir) {
@@ -60,7 +67,7 @@ func TestIsRepo(t *testing.T) {
 }
 
 func TestBranches(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	dir := setupRepo(t)
 	got, err := g.Branches(context.Background(), dir)
 	if err != nil {
@@ -78,7 +85,7 @@ func TestBranches(t *testing.T) {
 }
 
 func TestRemotes(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	got, err := g.Remotes(context.Background(), setupRepo(t))
 	if err != nil {
 		t.Fatalf("Remotes: %v", err)
@@ -92,7 +99,7 @@ func TestRemotes(t *testing.T) {
 // names, and that a symbolic remote HEAD keeps its "origin/HEAD" name instead
 // of being abbreviated to "origin".
 func TestRemoteBranches(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	got, err := g.RemoteBranches(ctx, dir)
@@ -124,7 +131,7 @@ func TestRemoteBranches(t *testing.T) {
 }
 
 func TestHasRemoteBranch(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	if !g.HasRemoteBranch(ctx, dir, "origin", "main") {
@@ -136,7 +143,7 @@ func TestHasRemoteBranch(t *testing.T) {
 }
 
 func TestCheckout(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	if err := g.Checkout(ctx, dir, "feature"); err != nil {
@@ -156,7 +163,7 @@ func TestCheckout(t *testing.T) {
 // origin/HEAD dropped, and no duplicate for branches that exist both
 // locally and remotely.
 func TestAllBranches(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	run := func(args ...string) {
@@ -187,7 +194,7 @@ func TestAllBranches(t *testing.T) {
 // TestCheckoutRemoteOnlyBranch proves selecting a remote-only name works:
 // git's DWIM creates a local tracking branch at the remote revision.
 func TestCheckoutRemoteOnlyBranch(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	head, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
@@ -216,7 +223,7 @@ func TestCheckoutRemoteOnlyBranch(t *testing.T) {
 // to ErrNoUpstream, a configured upstream resolves, and unrelated failures
 // (context cancellation) must NOT masquerade as "no upstream".
 func TestUpstreamBranch(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	run := func(args ...string) {
@@ -265,7 +272,7 @@ func TestUpstreamBranch(t *testing.T) {
 // repo's actual remotes — preferring origin, falling back to any remote with
 // a matching branch — instead of hardcoding "origin".
 func TestFallbackRef(t *testing.T) {
-	g, _ := NewGit()
+	g := NewGit()
 	ctx := context.Background()
 	dir := setupRepo(t)
 	run := func(args ...string) {

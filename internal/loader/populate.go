@@ -167,7 +167,10 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 		}
 	}
 	if !hasCache {
-		c, err := providers.NewGitProvider(source.Type, providers.Options{
+		auth := deps.Settings.ProviderAuth(source.Type)
+		c, err := providers.NewGitProvider(deps.Ctx, source.Type, providers.Options{
+			Token:           auth.Token,
+			TokenCommand:    auth.Command(),
 			IncludeArchived: deps.Settings.IncludeArchived,
 			Timeout:         deps.Settings.ProviderTimeoutDuration(),
 			GitClient:       deps.Git,
@@ -203,18 +206,34 @@ func getSource(project *domain.Project, deps types.Runtime) error {
 	return nil
 }
 
-// computeState evaluates project's repos state.
+// computeState resolves every project path, classifies each repository, and
+// orders the tree. Each concern is its own pass: classification reads the
+// paths expansion produces, and ordering depends on neither.
 func computeState(ctx context.Context, project *domain.Project, git git.GitClient) {
-	var err error
+	expandPaths(project)
+	classifyRepos(ctx, project, git)
+	sortTree(project)
+}
+
+// expandPaths resolves each project's configured path to an absolute one, and
+// gives every sub-project the path and source it inherits from its parent.
+func expandPaths(project *domain.Project) {
 	if project.Path != "" {
+		var err error
 		project.AbsPath, err = homedir.Expand(project.Path)
 		if err != nil {
 			log.Warnf("unable to expand path: %s", err)
 		}
 	}
+
 	for idx := range project.SubProjects {
 		sub := &project.SubProjects[idx]
-		if sub.Path == "" {
+		// A sub-project without its own path sits beneath its parent, in a
+		// directory named after it — but only when the parent has a path to
+		// sit beneath. Deriving one regardless would yield the bare name,
+		// which resolves against the process working directory; leaving it
+		// empty lets classification see that there is no local home at all.
+		if sub.Path == "" && project.Path != "" {
 			sub.Path = filepath.Join(project.Path, sub.Name)
 		}
 		if sub.Source == nil && project.Source != nil {
@@ -223,61 +242,84 @@ func computeState(ctx context.Context, project *domain.Project, git git.GitClien
 			src := *project.Source
 			sub.Source = &src
 		}
-		computeState(ctx, sub, git)
+		expandPaths(sub)
+	}
+}
+
+// classifyRepos determines the state of every repository in the tree.
+func classifyRepos(ctx context.Context, project *domain.Project, git git.GitClient) {
+	for idx := range project.SubProjects {
+		classifyRepos(ctx, &project.SubProjects[idx], git)
+	}
+	for idx := range project.Repos {
+		classifyRepo(ctx, project, &project.Repos[idx], git)
+	}
+}
+
+// classifyRepo determines one repository's state, and the reason behind it
+// when that state carries one. An unusable repository is reported through its
+// state rather than by failing the project it belongs to.
+func classifyRepo(
+	ctx context.Context,
+	project *domain.Project,
+	r *domain.Repository,
+	git git.GitClient,
+) {
+	r.State = domain.RepoStateUnknown
+	if project.Source != nil {
+		r.Type = project.Source.Type
 	}
 
-	for repoIdx := range project.Repos {
-		r := &project.Repos[repoIdx]
-		r.State = domain.RepoStateUnknown
-
-		if project.Source != nil {
-			r.Type = project.Source.Type
+	if r.Dir == "" && project.AbsPath == "" {
+		// No local destination can be derived. A provider-backed repo
+		// legitimately has none; anything else is a configuration that
+		// never said where the repository lives.
+		if providers.IsRemote(r.Type) {
+			r.State = domain.RepoStateRemoteOnly
+			return
 		}
-		isRemote := providers.IsRemote(r.Type)
+		r.State = domain.RepoStateError
+		r.Reason = "no `path:` on the project and no `dir:` on the repository"
+		return
+	}
 
-		if r.Dir == "" && project.AbsPath == "" {
-			// No local destination can be derived: provider repos are
-			// remote-only, anything else has no local copy to show.
-			if isRemote {
-				r.State = domain.RepoStateRemote
-			} else {
-				r.State = domain.RepoStateNoLocal
-			}
-			continue
-		}
+	var err error
+	r.AbsPath, err = project.GetRepoAbsPath(*r)
+	if err != nil {
+		r.State = domain.RepoStateError
+		r.Reason = err.Error()
+		return
+	}
 
-		r.AbsPath, err = project.GetRepoAbsPath(*r)
+	// Check existence before running any git command, so a missing clone
+	// never carries a leftover error reason.
+	if _, err := os.Stat(r.AbsPath); os.IsNotExist(err) {
+		r.State = domain.RepoStateNotCloned
+		return
+	}
+	if !git.IsRepo(ctx, r.AbsPath) {
+		r.State = domain.RepoStateError
+		r.Reason = "Unable to load repo"
+		return
+	}
+
+	if r.Src == "" {
+		r.Src, err = git.Remote(ctx, r.AbsPath)
 		if err != nil {
 			r.State = domain.RepoStateError
 			r.Reason = err.Error()
-			continue
+			return
 		}
-
-		// Check existence before running any git command, so a missing
-		// clone never carries a leftover error reason.
-		if _, err := os.Stat(r.AbsPath); os.IsNotExist(err) {
-			r.State = domain.RepoStateNoLocal
-			continue
-		}
-		if !git.IsRepo(ctx, r.AbsPath) {
-			r.State = domain.RepoStateError
-			r.Reason = "Unable to load repo"
-			continue
-		}
-
-		if r.Src == "" {
-			r.Src, err = git.Remote(ctx, r.AbsPath)
-			if err != nil {
-				r.State = domain.RepoStateError
-				r.Reason = err.Error()
-				continue
-			}
-		}
-
-		r.State = domain.RepoStateOK
 	}
 
-	// Sort sub-projects and repositories alphabetically.
+	r.State = domain.RepoStateOK
+}
+
+// sortTree orders sub-projects and repositories alphabetically at every level.
+func sortTree(project *domain.Project) {
+	for idx := range project.SubProjects {
+		sortTree(&project.SubProjects[idx])
+	}
 	sort.SliceStable(project.SubProjects, func(i, j int) bool {
 		return project.SubProjects[i].Name < project.SubProjects[j].Name
 	})

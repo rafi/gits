@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -23,38 +24,63 @@ var (
 	ErrNotCloned     = fmt.Errorf("not cloned")
 )
 
-// repoStateError maps a non-OK repository state to its sentinel error.
-func repoStateError(repo domain.Repository) error {
+// stateError maps a non-OK repository state to its sentinel error.
+func stateError(repo domain.Repository) error {
 	switch repo.State {
 	case domain.RepoStateError:
+		// The error state carries the Reason it was classified for, and that
+		// reason is not always "this isn't a repository" — a readable clone
+		// whose git command failed lands here too. Report what actually went
+		// wrong; the sentinel is the fallback when nothing said.
+		if repo.Reason != "" {
+			return errors.New(repo.Reason)
+		}
 		return ErrNotRepository
-	case domain.RepoStateNoLocal:
+	case domain.RepoStateNotCloned:
 		return ErrNotCloned
 	default:
 		return errors.New(string(repo.State))
 	}
 }
 
-// AbortOnRepoState prints an error message and aborts if the repository is in
-// an error state. Used by single-repo/interactive callers; walk.RepoFunc
-// callers use RepoStateWarning to avoid writing to stdout.
-func AbortOnRepoState(repo domain.Repository, style lipgloss.Style) error {
-	err := repoStateError(repo)
-	lipgloss.Print(style.Render(err.Error()))
+// AbortOnRepoState writes an error message as Diagnostic Output and aborts if
+// the repository is in an error state. Used by single-repo/interactive
+// callers; walk.RepoFunc callers use RepoStateError to render no line at all.
+//
+// The message is terminated here, so a caller that writes a repository title
+// ahead of it shares that line and appends no newline of its own.
+func AbortOnRepoState(w io.Writer, repo domain.Repository, style lipgloss.Style) error {
+	err := stateError(repo)
+	lipgloss.Fprintln(w, style.Render(err.Error()))
 	return RepoError(err, repo)
 }
 
-// RepoStateWarning wraps a non-OK repository's state as a *types.Warning,
+// RepoStateError wraps a non-OK repository's state through RepoError,
 // rendering no line — for walk.RepoFunc callers that build their own result
-// line and only need the error.
-func RepoStateWarning(repo domain.Repository) error {
-	return RepoError(repoStateError(repo), repo)
+// line and only need the error. It counts toward the exit code: a repository
+// the caller expected to work on is not there.
+func RepoStateError(repo domain.Repository) error {
+	return RepoError(stateError(repo), repo)
 }
 
 // RepoError wraps a repo failure as a *types.Warning (ErrorType) so it counts
 // as a real error and matches uniformly via errors.As.
 func RepoError(err error, repo domain.Repository) error {
 	return &types.Warning{
+		Title:  repo.GetName(),
+		Reason: err.Error(),
+		Dir:    repo.AbsPath,
+		Cause:  err,
+	}
+}
+
+// RepoWarning is RepoError's downgraded counterpart (WarningType): the repo's
+// condition still renders on its line, but it does not count toward the exit
+// code. For conditions a command is documented to pass over — `push` skipping
+// a branch with no Upstream — where failing the run would contradict the skip.
+func RepoWarning(err error, repo domain.Repository) error {
+	return &types.Warning{
+		Type:   types.WarningType,
 		Title:  repo.GetName(),
 		Reason: err.Error(),
 		Dir:    repo.AbsPath,
@@ -84,7 +110,9 @@ func indentContinuation(s, prefix string) string {
 	return head + "\n" + strings.Join(lines, "\n")
 }
 
-func RenderErrors(errs []error, excludeWarnings bool) error {
+// RenderErrors writes the run's error epilogue as Diagnostic Output and
+// returns the error that decides the exit code — nil when nothing counted.
+func RenderErrors(w io.Writer, errs []error, excludeWarnings bool) error {
 	out := []string{}
 	count := 0
 	for _, err := range errs {
@@ -100,7 +128,7 @@ func RenderErrors(errs []error, excludeWarnings bool) error {
 	title := "error" + Plural(count)
 	out = append([]string{"", fmt.Sprintf("%d %s:", count, title), ""}, out...)
 	out = append(out, "")
-	fmt.Println(strings.Join(out, "\n"))
+	fmt.Fprintln(w, strings.Join(out, "\n"))
 	return errors.New("completed with errors")
 }
 

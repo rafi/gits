@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"io"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cache"
@@ -27,6 +28,19 @@ type Runtime struct {
 type RuntimeCLI struct {
 	Theme   config.Theme
 	HomeDir string
+
+	// Out is the Result Output destination: what the command was asked for —
+	// the status table, the JSON document, the list of names — and nothing
+	// else, so any command's output can be piped or redirected unfiltered.
+	Out io.Writer
+	// Err is the Diagnostic Output destination: everything a command emits
+	// about producing its Result Output — live per-repository progress, the
+	// summary footer, the error epilogue.
+	//
+	// The progress reporter is derived from this writer rather than injected:
+	// walk.NewReporter sniffs it for a terminal, so a test buffer yields the
+	// no-op reporter and no ANSI reaches the assertions.
+	Err io.Writer
 
 	Runtime
 }

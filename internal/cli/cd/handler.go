@@ -20,9 +20,9 @@ func ExecCD(args []string, deps types.RuntimeCLI) error {
 	}
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(*repo, deps.Theme.Error)
+		return cli.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
 	}
 
-	fmt.Println(repo.AbsPath)
+	fmt.Fprintln(deps.Out, repo.AbsPath)
 	return nil
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-func completionDeps() (types.Runtime, error) {
+func completionDeps() types.Runtime {
 	return newRuntime(context.Background())
 }
 
@@ -36,10 +36,7 @@ func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) (
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	deps, err := completionDeps()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
-	}
+	deps := completionDeps()
 
 	proj, err := loader.GetProject(args[0], deps)
 	if err != nil {
@@ -69,10 +66,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	deps, err := completionDeps()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
-	}
+	deps := completionDeps()
 
 	// Get project
 	proj, err := loader.GetProject(args[0], deps)

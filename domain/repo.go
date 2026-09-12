@@ -22,15 +22,27 @@ type Repository struct {
 	Reason  string    `json:"-"`
 }
 
-// RepoState represents the state of a repository.
+// RepoState represents what is known about a repository's local presence.
+//
+// These strings are wire vocabulary: they appear verbatim in JSON output and
+// are a public contract. Display layers map them to icons and labels, never
+// the reverse.
 type RepoState string
 
 const (
-	RepoStateUnknown RepoState = "Unknown"
-	RepoStateError   RepoState = "Error"
-	RepoStateRemote  RepoState = "Remote"
-	RepoStateNoLocal RepoState = "N/A"
-	RepoStateOK      RepoState = "OK"
+	// RepoStateUnknown means the repository has not been classified yet.
+	RepoStateUnknown RepoState = "unknown"
+	// RepoStateError means the repository's configuration is defective, or a
+	// path exists but is not a readable git repository. Carries a Reason.
+	RepoStateError RepoState = "error"
+	// RepoStateRemoteOnly means the repository is provider-backed and the
+	// configuration gives it no local home. There is nothing to clone into.
+	RepoStateRemoteOnly RepoState = "remote-only"
+	// RepoStateNotCloned means a local path is known and nothing is there.
+	// This is the state `gits clone` acts on.
+	RepoStateNotCloned RepoState = "not-cloned"
+	// RepoStateOK means a local clone exists and is readable.
+	RepoStateOK RepoState = "ok"
 )
 
 func (r Repository) GetName() string {

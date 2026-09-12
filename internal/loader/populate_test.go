@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/rafi/gits/domain"
@@ -202,6 +204,29 @@ func TestGetSource(t *testing.T) {
 		}
 	})
 
+	// The token command reaching the provider is proven by a failing one:
+	// its error surfaces, and construction stops before any network call.
+	t.Run("provider token command is threaded from settings", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("shell fixture assumes a POSIX shell")
+		}
+		d := deps(&recordingCache{})
+		d.Settings = domain.Settings{
+			GitHub: domain.ProviderSettings{TokenCmd: "exit 1"},
+		}
+		p := domain.Project{
+			Name:   "p",
+			Source: &domain.ProviderSource{Type: "github", Search: "acme"},
+		}
+		err := getSource(&p, d)
+		if err == nil {
+			t.Fatal("getSource = nil, want token command error")
+		}
+		if !strings.Contains(err.Error(), "token command failed") {
+			t.Errorf("error = %v, want the token command failure", err)
+		}
+	})
+
 	t.Run("invalid source config errors", func(t *testing.T) {
 		p := domain.Project{
 			Name:   "p",
@@ -216,17 +241,23 @@ func TestGetSource(t *testing.T) {
 func TestComputeStateMatrix(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("no local dir is N/A", func(t *testing.T) {
+	// A non-provider repo with no derivable local home is a configuration
+	// that never said where the repository lives, not a missing clone.
+	t.Run("no local dir on a non-provider repo is error", func(t *testing.T) {
 		p := domain.Project{Repos: []domain.Repository{{Name: "a"}}}
 		computeState(ctx, &p, fakeGit{})
-		if got := p.Repos[0].State; got != domain.RepoStateNoLocal {
-			t.Errorf("state = %q, want %q", got, domain.RepoStateNoLocal)
+		r := p.Repos[0]
+		if r.State != domain.RepoStateError {
+			t.Errorf("state = %q, want %q", r.State, domain.RepoStateError)
+		}
+		if r.Reason == "" {
+			t.Error("reason = empty, want an explanation naming path: and dir:")
 		}
 	})
 
 	t.Run("unresolvable path is Error", func(t *testing.T) {
-		// AbsPath set so the early N/A branch is skipped; Dir empty + Src
-		// without a slash makes GetRepoAbsPath fail.
+		// AbsPath set so the early no-local-home branch is skipped; Dir empty
+		// + Src without a slash makes GetRepoAbsPath fail.
 		p := domain.Project{Path: t.TempDir(), Repos: []domain.Repository{{Name: "a", Src: "noslash"}}}
 		computeState(ctx, &p, fakeGit{})
 		if got := p.Repos[0].State; got != domain.RepoStateError {
@@ -256,28 +287,56 @@ func TestComputeStateMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("provider repo without local path is Remote", func(t *testing.T) {
+	t.Run("provider repo without local path is remote-only", func(t *testing.T) {
 		p := domain.Project{
 			Source: &domain.ProviderSource{Type: "github"},
 			Repos:  []domain.Repository{{Name: "a", Src: "git@github.com:acme/a.git"}},
 		}
 		computeState(ctx, &p, fakeGit{})
-		if got := p.Repos[0].State; got != domain.RepoStateRemote {
-			t.Errorf("state = %q, want %q", got, domain.RepoStateRemote)
+		if got := p.Repos[0].State; got != domain.RepoStateRemoteOnly {
+			t.Errorf("state = %q, want %q", got, domain.RepoStateRemoteOnly)
 		}
 	})
 
-	t.Run("uncloned repo is N/A without stale error reason", func(t *testing.T) {
+	// A relative dir: is resolved against the project path. Without one it
+	// would silently resolve against the process working directory, making
+	// the same config report differently depending on where gits was run.
+	t.Run("relative dir without project path is error", func(t *testing.T) {
+		p := domain.Project{Repos: []domain.Repository{{Name: "a", Dir: "sub/a"}}}
+		computeState(ctx, &p, fakeGit{})
+		r := p.Repos[0]
+		if r.State != domain.RepoStateError {
+			t.Errorf("state = %q, want %q", r.State, domain.RepoStateError)
+		}
+		if r.Reason == "" {
+			t.Error("reason = empty, want an explanation naming path:")
+		}
+	})
+
+	t.Run("absolute dir without project path still resolves", func(t *testing.T) {
+		dir := t.TempDir()
+		p := domain.Project{Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
+		computeState(ctx, &p, fakeGit{isRepo: true})
+		r := p.Repos[0]
+		if r.State != domain.RepoStateOK {
+			t.Errorf("state = %q, want %q (reason %q)", r.State, domain.RepoStateOK, r.Reason)
+		}
+		if r.AbsPath != dir {
+			t.Errorf("abs path = %q, want %q", r.AbsPath, dir)
+		}
+	})
+
+	t.Run("uncloned repo is not-cloned without stale error reason", func(t *testing.T) {
 		// The repo directory does not exist, so git.Remote must not run at
-		// all: an error from it must not linger as Reason on an N/A repo.
+		// all: an error from it must not linger as a Reason.
 		p := domain.Project{
 			Path:  t.TempDir(),
 			Repos: []domain.Repository{{Name: "missing", Dir: "missing"}},
 		}
 		computeState(ctx, &p, fakeGit{remoteErr: fmt.Errorf("boom")})
 		r := p.Repos[0]
-		if r.State != domain.RepoStateNoLocal {
-			t.Errorf("state = %q, want %q", r.State, domain.RepoStateNoLocal)
+		if r.State != domain.RepoStateNotCloned {
+			t.Errorf("state = %q, want %q", r.State, domain.RepoStateNotCloned)
 		}
 		if r.Reason != "" {
 			t.Errorf("reason = %q, want empty (git must not run on missing dirs)", r.Reason)
@@ -297,6 +356,43 @@ func TestComputeStateMatrix(t *testing.T) {
 		}
 		if r.Reason != "boom" {
 			t.Errorf("reason = %q, want %q", r.Reason, "boom")
+		}
+	})
+
+	t.Run("remote lookup failure is confined to the repo that needed it", func(t *testing.T) {
+		// With git missing from PATH every git.Remote call fails, so the
+		// blast radius has to be one repository — not the project. A repo
+		// that already carries a Src never shells out and stays ok.
+		root := t.TempDir()
+		needsGit := filepath.Join(root, "needs-git")
+		hasSrc := filepath.Join(root, "has-src")
+		for _, d := range []string{needsGit, hasSrc} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		p := domain.Project{
+			Path: root,
+			Repos: []domain.Repository{
+				{Name: "needs-git", Dir: needsGit},
+				{Name: "has-src", Dir: hasSrc, Src: "git@x:a/has-src.git"},
+			},
+		}
+		computeState(ctx, &p, fakeGit{isRepo: true, remoteErr: fmt.Errorf("boom")})
+
+		byName := map[string]domain.Repository{}
+		for _, r := range p.Repos {
+			byName[r.Name] = r
+		}
+		if got := byName["needs-git"].State; got != domain.RepoStateError {
+			t.Errorf("needs-git state = %q, want %q", got, domain.RepoStateError)
+		}
+		if got := byName["has-src"].State; got != domain.RepoStateOK {
+			t.Errorf("has-src state = %q, want %q (reason %q)",
+				got, domain.RepoStateOK, byName["has-src"].Reason)
+		}
+		if got := byName["has-src"].Reason; got != "" {
+			t.Errorf("has-src reason = %q, want empty", got)
 		}
 	})
 
@@ -326,6 +422,144 @@ func TestComputeStateMatrix(t *testing.T) {
 		}
 		if p.SubProjects[0].Name != "a" || p.SubProjects[1].Name != "b" {
 			t.Errorf("sub-projects not sorted: %q, %q", p.SubProjects[0].Name, p.SubProjects[1].Name)
+		}
+	})
+
+	// A sub-project that declares no path sits at a directory named after it
+	// beneath its parent, and its repositories are classified against that.
+	t.Run("sub-project inherits parent path and classifies its repos", func(t *testing.T) {
+		root := t.TempDir()
+		subPath := filepath.Join(root, "team")
+		if err := os.MkdirAll(filepath.Join(subPath, "api"), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		p := domain.Project{
+			Path: root,
+			SubProjects: []domain.Project{{
+				Name:  "team",
+				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
+			}},
+		}
+		computeState(ctx, &p, fakeGit{isRepo: true})
+
+		sub := p.SubProjects[0]
+		if sub.AbsPath != subPath {
+			t.Errorf("sub-project abs path = %q, want %q", sub.AbsPath, subPath)
+		}
+		r := sub.Repos[0]
+		if r.State != domain.RepoStateOK {
+			t.Errorf("state = %q, want %q (reason %q)", r.State, domain.RepoStateOK, r.Reason)
+		}
+		if want := filepath.Join(subPath, "api"); r.AbsPath != want {
+			t.Errorf("repo abs path = %q, want %q", r.AbsPath, want)
+		}
+	})
+
+	// A sub-project sits beneath its parent only when the parent has a path
+	// to sit beneath. Without one there is no local home, and the sub-project
+	// must not fall back to a relative path resolved against the process
+	// working directory.
+	t.Run("path-less parent gives sub-project no local home", func(t *testing.T) {
+		p := domain.Project{
+			SubProjects: []domain.Project{{
+				Name:  "team",
+				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
+			}},
+		}
+		computeState(ctx, &p, fakeGit{})
+
+		sub := p.SubProjects[0]
+		if sub.AbsPath != "" {
+			t.Errorf("sub-project abs path = %q, want empty (parent declares no path:)", sub.AbsPath)
+		}
+		r := sub.Repos[0]
+		if r.State != domain.RepoStateError {
+			t.Errorf("state = %q, want %q", r.State, domain.RepoStateError)
+		}
+		if r.Reason == "" {
+			t.Error("reason = empty, want an explanation")
+		}
+		if r.AbsPath != "" {
+			t.Errorf("repo abs path = %q, want empty", r.AbsPath)
+		}
+	})
+
+	t.Run("provider-backed sub-project without a home is remote-only", func(t *testing.T) {
+		p := domain.Project{
+			Source: &domain.ProviderSource{Type: "github", Search: "acme"},
+			SubProjects: []domain.Project{{
+				Name:  "team",
+				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
+			}},
+		}
+		computeState(ctx, &p, fakeGit{})
+
+		if got := p.SubProjects[0].Repos[0].State; got != domain.RepoStateRemoteOnly {
+			t.Errorf("state = %q, want %q", got, domain.RepoStateRemoteOnly)
+		}
+	})
+
+	t.Run("absolute dir under a path-less parent still resolves", func(t *testing.T) {
+		dir := t.TempDir()
+		p := domain.Project{
+			SubProjects: []domain.Project{{
+				Name:  "team",
+				Repos: []domain.Repository{{Name: "api", Dir: dir, Src: "x"}},
+			}},
+		}
+		computeState(ctx, &p, fakeGit{isRepo: true})
+
+		r := p.SubProjects[0].Repos[0]
+		if r.State != domain.RepoStateOK {
+			t.Errorf("state = %q, want %q (reason %q)", r.State, domain.RepoStateOK, r.Reason)
+		}
+		if r.AbsPath != dir {
+			t.Errorf("repo abs path = %q, want %q", r.AbsPath, dir)
+		}
+	})
+
+	// The one genuine cross-pass dependency: path expansion writes the
+	// inherited source, classification reads it back a pass later.
+	t.Run("inherited provider source reaches classification", func(t *testing.T) {
+		p := domain.Project{
+			Source: &domain.ProviderSource{Type: "github", Search: "acme"},
+			SubProjects: []domain.Project{{
+				Name:  "team",
+				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
+			}},
+		}
+		computeState(ctx, &p, fakeGit{})
+
+		sub := p.SubProjects[0]
+		if sub.Source == nil {
+			t.Fatal("sub-project source = nil, want the parent's copied source")
+		}
+		if sub.Source.Type != "github" {
+			t.Errorf("sub-project source type = %q, want %q", sub.Source.Type, "github")
+		}
+		if got := sub.Repos[0].Type; got != "github" {
+			t.Errorf("repo type = %q, want %q (inherited source must reach classification)",
+				got, "github")
+		}
+	})
+
+	t.Run("ordering applies at every depth", func(t *testing.T) {
+		p := domain.Project{
+			SubProjects: []domain.Project{{
+				Name:        "team",
+				Repos:       []domain.Repository{{Name: "zzz"}, {Name: "aaa"}},
+				SubProjects: []domain.Project{{Name: "b"}, {Name: "a"}},
+			}},
+		}
+		computeState(ctx, &p, fakeGit{})
+
+		sub := p.SubProjects[0]
+		if sub.Repos[0].Name != "aaa" || sub.Repos[1].Name != "zzz" {
+			t.Errorf("nested repos not sorted: %q, %q", sub.Repos[0].Name, sub.Repos[1].Name)
+		}
+		if sub.SubProjects[0].Name != "a" || sub.SubProjects[1].Name != "b" {
+			t.Errorf("nested sub-projects not sorted: %q, %q",
+				sub.SubProjects[0].Name, sub.SubProjects[1].Name)
 		}
 	})
 }

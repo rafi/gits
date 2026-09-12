@@ -7,18 +7,18 @@ import (
 	"github.com/rafi/gits/internal/types"
 )
 
-func listNameProjects(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
+func listNameProjects(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	for _, name := range projects.SortedNames() {
-		fmt.Println(name)
+		fmt.Fprintln(deps.Out, name)
 	}
 	return nil
 }
 
-func listNameRepos(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
+func listNameRepos(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	for _, projName := range projects.SortedNames() {
 		proj := projects[projName]
 		for _, name := range proj.ListReposWithNamespace() {
-			fmt.Println(name)
+			fmt.Fprintln(deps.Out, name)
 		}
 	}
 	return nil

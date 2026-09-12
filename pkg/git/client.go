@@ -24,7 +24,17 @@ var ErrNoUpstream = errors.New("no upstream tracking branch found")
 var ErrTargetExists = errors.New(
 	"directory already exists — remove it if a previous clone was interrupted")
 
+// ErrGitNotFound is returned by any operation that needs the git executable
+// when it isn't on PATH. It is deliberately per-operation: work that needs no
+// git subprocess — reading config, listing provider-backed repositories —
+// must not be stopped by git's absence.
+var ErrGitNotFound = errors.New("git executable not found in PATH")
+
 const (
+	// gitBin is the executable name every invocation runs. It is resolved
+	// against PATH by exec.Cmd at call time rather than once at construction,
+	// so a missing git fails the operations that need it and nothing else.
+	gitBin = "git"
 	// defaultNetworkTimeout bounds network operations (clone/fetch/pull)
 	// unless overridden via SetNetworkTimeout (settings.gitTimeout).
 	defaultNetworkTimeout = 5 * time.Minute
@@ -44,6 +54,7 @@ type GitClient interface {
 	Remote(ctx context.Context, path string) (string, error)
 	Fetch(ctx context.Context, path string) (string, error)
 	Pull(ctx context.Context, path string) (string, error)
+	Push(ctx context.Context, path string, target PushTarget, opts PushOptions) (string, error)
 	Log(ctx context.Context, path, ref string) (string, error)
 	CommitDates(ctx context.Context, path, branch string, days int) ([]string, error)
 	Refs(ctx context.Context, path string) ([]string, error)
@@ -63,19 +74,13 @@ type GitClient interface {
 }
 
 type Git struct {
-	bin        string
 	netTimeout time.Duration
 }
 
-// NewGit returns a new Git client.
-func NewGit() (g Git, err error) {
-	g.netTimeout = defaultNetworkTimeout
-	// Find executable path.
-	g.bin, err = exec.LookPath("git")
-	if err != nil {
-		log.Warnf("unable to find git executable: %s", err)
-	}
-	return g, err
+// NewGit returns a new Git client. It never probes for the git executable:
+// see ErrGitNotFound.
+func NewGit() Git {
+	return Git{netTimeout: defaultNetworkTimeout}
 }
 
 // SetNetworkTimeout overrides the timeout applied to network operations
@@ -236,7 +241,7 @@ func (g *Git) Refs(ctx context.Context, path string) ([]string, error) {
 // SIGKILL which leaves junk behind.
 func (g *Git) command(ctx context.Context, path string, args []string) *exec.Cmd {
 	args = append([]string{"-C", path}, args...)
-	cmd := exec.CommandContext(ctx, g.bin, args...)
+	cmd := exec.CommandContext(ctx, gitBin, args...)
 	cmd.Cancel = func() error {
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 			return cmd.Process.Kill()
@@ -245,6 +250,19 @@ func (g *Git) command(ctx context.Context, path string, args []string) *exec.Cmd
 	}
 	cmd.WaitDelay = terminateGrace
 	return cmd
+}
+
+// gitNotFound returns ErrGitNotFound when err is exec failing to find the git
+// binary, and nil for anything else. Only the PATH lookup yields
+// exec.ErrNotFound — a git that ran and exited non-zero yields an
+// *exec.ExitError, which never matches — so this cannot mislabel a real git
+// failure. The exec error itself is dropped rather than chained: it restates
+// the same fact in Go's words, and these messages are read by users.
+func gitNotFound(err error) error {
+	if errors.Is(err, exec.ErrNotFound) {
+		return ErrGitNotFound
+	}
+	return nil
 }
 
 // Exec executes git command-line with provided arguments and returns stdout
@@ -259,6 +277,9 @@ func (g *Git) Exec(ctx context.Context, path string, args []string) ([]byte, err
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if notFound := gitNotFound(err); notFound != nil {
+			return stdout.Bytes(), notFound
+		}
 		msg := cleanOutput(stderr.Bytes())
 		if msg == "" {
 			msg = cleanOutput(stdout.Bytes())
@@ -280,6 +301,9 @@ func (g *Git) Exec(ctx context.Context, path string, args []string) ([]byte, err
 func (g *Git) ExecCombined(ctx context.Context, path string, args []string) ([]byte, error) {
 	cmdOut, err := g.command(ctx, path, args).CombinedOutput()
 	if err != nil {
+		if notFound := gitNotFound(err); notFound != nil {
+			return cmdOut, notFound
+		}
 		if msg := cleanOutput(cmdOut); msg != "" {
 			return cmdOut, fmt.Errorf("%s: %w", msg, err)
 		}

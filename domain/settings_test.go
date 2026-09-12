@@ -68,3 +68,50 @@ func TestSettingsGitTimeoutDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsProviderAuth(t *testing.T) {
+	s := Settings{
+		GitHub:    ProviderSettings{TokenCommand: "pass tokens/github"},
+		GitLab:    ProviderSettings{Token: "gl-token"},
+		Bitbucket: ProviderSettings{TokenCmd: "pass tokens/bitbucket"},
+	}
+	tests := []struct {
+		provider string
+		want     ProviderSettings
+	}{
+		{"github", s.GitHub},
+		{"gitlab", s.GitLab},
+		{"bitbucket", s.Bitbucket},
+		{"GitHub", s.GitHub},
+		{"filesystem", ProviderSettings{}},
+		{"", ProviderSettings{}},
+		{"svn", ProviderSettings{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider, func(t *testing.T) {
+			if got := s.ProviderAuth(tt.provider); got != tt.want {
+				t.Errorf("ProviderAuth(%q) = %+v, want %+v", tt.provider, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProviderSettingsCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings ProviderSettings
+		want     string
+	}{
+		{"none configured", ProviderSettings{}, ""},
+		{"tokenCommand", ProviderSettings{TokenCommand: "a"}, "a"},
+		{"token-cmd alias", ProviderSettings{TokenCmd: "b"}, "b"},
+		{"canonical key wins", ProviderSettings{TokenCommand: "a", TokenCmd: "b"}, "a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.settings.Command(); got != tt.want {
+				t.Errorf("Command() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

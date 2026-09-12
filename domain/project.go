@@ -122,12 +122,19 @@ func (p *Project) GetRepoAbsPath(repo Repository) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unable to expand path: %w", err)
 	}
-	if len(expanded) > 0 && expanded[0] == '/' {
-		path = filepath.Clean(expanded)
-	} else {
-		path = filepath.Join(path, expanded)
+	// An absolute (or ~-expanded) dir states exactly where the repository
+	// lives, with or without a project path.
+	if filepath.IsAbs(expanded) {
+		return filepath.Clean(expanded), nil
 	}
-	return path, nil
+	// A relative dir is resolved against the project path, and is meaningless
+	// without one: joining onto an empty AbsPath would silently resolve
+	// against the process working directory instead.
+	if p.AbsPath == "" {
+		return "", fmt.Errorf(
+			"relative `dir:` %q requires the project to set `path:`", repo.Dir)
+	}
+	return filepath.Join(path, expanded), nil
 }
 
 // Filter filters the project repositories by user include/exclude filters.
@@ -152,6 +159,10 @@ func (p *Project) Filter() {
 	}
 }
 
+// CalculateHash stores a SHA-256 digest of the project's marshalled form in
+// p.Hash. It is a cache checksum — it tells the loader whether a cached project
+// still matches the config it was built from — not a security boundary: nothing
+// authenticates the cache file, so the digest detects drift, not tampering.
 func (p *Project) CalculateHash() error {
 	data, err := json.Marshal(p)
 	if err != nil {

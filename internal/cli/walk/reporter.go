@@ -173,8 +173,9 @@ type liveReporter struct {
 	spin    int
 	drawn   int // lines drawn by the previous frame, for the in-place rewind
 
-	stop chan struct{}
-	done chan struct{}
+	stop     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once // Stop closes stop; a second call must not close it twice
 }
 
 func newLiveReporter(w io.Writer) *liveReporter {
@@ -223,22 +224,27 @@ func (r *liveReporter) Done() {
 	r.mu.Unlock()
 }
 
+// Stop is idempotent and safe to call on a reporter that was never started: the
+// nil check is outside the once so a pre-Start Stop does not spend the guard,
+// leaving a started reporter still stoppable.
 func (r *liveReporter) Stop() {
 	if r.stop == nil {
 		return
 	}
-	close(r.stop)
-	<-r.done // render goroutine has emitted its final frame and exited (AC-7)
+	r.stopOnce.Do(func() {
+		close(r.stop)
+		<-r.done // render goroutine has emitted its final frame and exited (AC-7)
 
-	// Erase the live block so the trackers are ephemeral; the caller prints the
-	// authoritative tree-ordered output where the block stood.
-	r.mu.Lock()
-	n := r.drawn
-	r.drawn = 0
-	r.mu.Unlock()
-	if n > 0 {
-		_, _ = io.WriteString(r.w, eraseLines(n))
-	}
+		// Erase the live block so the trackers are ephemeral; the caller prints
+		// the authoritative tree-ordered output where the block stood.
+		r.mu.Lock()
+		n := r.drawn
+		r.drawn = 0
+		r.mu.Unlock()
+		if n > 0 {
+			_, _ = io.WriteString(r.w, eraseLines(n))
+		}
+	})
 }
 
 // frame is an immutable snapshot of the reporter state for one render, taken

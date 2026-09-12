@@ -20,7 +20,7 @@ func TestNewGitProvider(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := NewGitProvider(tt.provider, Options{Token: tt.token})
+			p, err := NewGitProvider(t.Context(), tt.provider, Options{Token: tt.token})
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("NewGitProvider(%q) = nil error, want error", tt.provider)
@@ -86,7 +86,7 @@ func TestConstructorsReturnNilOnError(t *testing.T) {
 	}
 
 	for _, provider := range []string{"github", "gitlab", "bitbucket"} {
-		if p, err := NewGitProvider(provider, Options{}); err == nil || p != nil {
+		if p, err := NewGitProvider(t.Context(), provider, Options{}); err == nil || p != nil {
 			t.Errorf("NewGitProvider(%q, no token) = (%v, %v), want (nil, error)", provider, p, err)
 		}
 	}

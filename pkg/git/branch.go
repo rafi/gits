@@ -158,9 +158,9 @@ func (g *Git) FallbackRef(ctx context.Context, path, branch string) string {
 // cancels it (gracefully) on Ctrl-C.
 func (g *Git) Checkout(ctx context.Context, path, branch string) error {
 	args := []string{"checkout", "--end-of-options", branch}
-	output, err := g.Exec(ctx, path, args)
-	if err != nil {
-		return fmt.Errorf("unable to checkout %s: %s %w", branch, output, err)
+	// Exec already folds git's stderr into err, so the output is not repeated.
+	if _, err := g.Exec(ctx, path, args); err != nil {
+		return fmt.Errorf("unable to checkout %s: %w", branch, err)
 	}
 	return nil
 }

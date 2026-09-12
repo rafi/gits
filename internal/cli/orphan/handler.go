@@ -33,7 +33,7 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 	var repos []domain.Repository
 	if repo != nil {
 		if repo.State != domain.RepoStateOK {
-			return cli.AbortOnRepoState(*repo, deps.Theme.Error)
+			return cli.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
 		}
 		repos, err = findNestedRepos(deps.Ctx, repo.AbsPath, deps.Git)
 	} else {
@@ -46,10 +46,10 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 	errorStyle := deps.Theme.Error.
 		MarginLeft(cli.LeftMargin)
 
-	lipgloss.Println(cli.ProjectTitleWithBullet(project, deps.Theme))
+	lipgloss.Fprintln(deps.Out, cli.ProjectTitleWithBullet(project, deps.Theme))
 	for _, repo := range repos {
 		repoDir := cli.Path(repo.Dir, deps.HomeDir)
-		lipgloss.Printf("%s - %s\n", errorStyle.Render(repoDir), repo.Src)
+		lipgloss.Fprintf(deps.Out, "%s - %s\n", errorStyle.Render(repoDir), repo.Src)
 	}
 
 	return nil

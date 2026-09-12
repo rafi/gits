@@ -1,15 +1,15 @@
 // Package walk runs a bulk git operation across every repository in a project
 // tree using a single bounded worker pool. It keeps every worker busy until the
 // queue drains (no batch barrier), aggregates results into indexed slots (no
-// shared append), renders them in stable tree order under each project header,
-// shows live progress on stderr, and cancels cleanly via context.
+// shared append), renders them in stable tree order under each project header
+// as Result Output, shows live progress as Diagnostic Output, and cancels
+// cleanly via context. Both destinations come from the caller's dependencies.
 package walk
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 
@@ -66,8 +66,9 @@ type group struct {
 }
 
 // Walk runs fn over every repo in project (and its sub-projects), rendering
-// progress to stderr and ordered results to stdout. It returns every result's
-// error in stable tree order; callers pass them to cli.RenderErrors.
+// live progress as Diagnostic Output and ordered results as Result Output. It
+// returns every result's error in stable tree order; callers pass them to
+// cli.RenderErrors.
 func Walk(
 	ctx context.Context,
 	project domain.Project,
@@ -75,7 +76,7 @@ func Walk(
 	verb string,
 	fn RepoFunc,
 ) []error {
-	return walkTo(ctx, project, deps, verb, fn, os.Stdout, os.Stderr)
+	return walkReport(ctx, project, deps, verb, fn, NewReporter(deps.Err))
 }
 
 // Collect runs fn over every repo like Walk, but returns the buffered results
@@ -89,13 +90,13 @@ func Collect(
 	verb string,
 	fn RepoFunc,
 ) ([]GroupResult, error) {
-	return collectReport(ctx, project, deps, verb, fn, NewReporter(os.Stderr))
+	return collectReport(ctx, project, deps, verb, fn, NewReporter(deps.Err))
 }
 
-// Single runs fn for one repository and renders its result line to stdout
-// without a project header — the single-repo counterpart of Walk. The repo's
-// error is returned as-is so warnings still downgrade the exit code at the
-// root instead of being counted as failures.
+// Single runs fn for one repository and renders its result line as Result
+// Output without a project header — the single-repo counterpart of Walk. The
+// repo's error is returned as-is so warnings still downgrade the exit code at
+// the root instead of being counted as failures.
 func Single(
 	ctx context.Context,
 	project domain.Project,
@@ -103,20 +104,8 @@ func Single(
 	deps types.RuntimeCLI,
 	fn RepoFunc,
 ) error {
-	return singleTo(ctx, project, repo, deps, fn, os.Stdout)
-}
-
-// singleTo is Single with an injectable writer, for testing.
-func singleTo(
-	ctx context.Context,
-	project domain.Project,
-	repo domain.Repository,
-	deps types.RuntimeCLI,
-	fn RepoFunc,
-	w io.Writer,
-) error {
 	res := fn(ctx, project, repo, deps)
-	lipgloss.Fprintln(w, cli.IndentMultiline(res.Line))
+	lipgloss.Fprintln(deps.Out, cli.IndentMultiline(res.Line))
 	return res.Err
 }
 
@@ -137,20 +126,7 @@ func SingleCollect(
 	return groups, res.Err
 }
 
-// walkTo is Walk with injectable result/progress writers, for testing.
-func walkTo(
-	ctx context.Context,
-	project domain.Project,
-	deps types.RuntimeCLI,
-	verb string,
-	fn RepoFunc,
-	resultsW io.Writer,
-	progressW io.Writer,
-) []error {
-	return walkReport(ctx, project, deps, verb, fn, resultsW, NewReporter(progressW))
-}
-
-// walkReport is walkTo with an injectable reporter, for testing the per-repo
+// walkReport is Walk with an injectable reporter, for testing the per-repo
 // tracker lifecycle with a fake.
 func walkReport(
 	ctx context.Context,
@@ -158,11 +134,10 @@ func walkReport(
 	deps types.RuntimeCLI,
 	verb string,
 	fn RepoFunc,
-	resultsW io.Writer,
 	reporter Reporter,
 ) []error {
 	groups, interrupted := collectReport(ctx, project, deps, verb, fn, reporter)
-	return WithInterrupted(render(resultsW, groups, deps), interrupted)
+	return WithInterrupted(render(deps.Out, groups, deps), interrupted)
 }
 
 // WithInterrupted appends the run-interrupted error from Collect (if any) to
@@ -228,8 +203,8 @@ feed:
 	close(taskCh)
 	wg.Wait()
 
-	// Stop and drain the progress renderer before flushing results so stderr
-	// progress never races stdout output (AC-4a).
+	// Stop and drain the progress renderer before flushing results so
+	// Diagnostic Output never races Result Output (AC-4a).
 	reporter.Stop()
 
 	grouped := make([]GroupResult, len(groups))
@@ -258,6 +233,10 @@ feed:
 // flatten walks the project tree depth-first (a project's repos before its
 // sub-projects) into render groups and a parallel flat task list with stable
 // indices.
+//
+// This order is a contract, not an implementation detail: status's JSON
+// renderer inverts it positionally to rebuild the tree, consuming one subtree
+// per sub-project. Reordering the traversal here reparents that output.
 func flatten(root domain.Project) ([]group, []task) {
 	var (
 		groups []group

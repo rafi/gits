@@ -142,7 +142,7 @@ func TestParseReposMalformedNoPanic(t *testing.T) {
 			Owner: map[string]any{"uuid": "{owner-3}"},
 			Links: map[string]any{"clone": []any{
 				"not-a-map",
-				map[string]any{"name": "ssh"},                           // missing href
+				map[string]any{"name": "ssh"}, // missing href
 				map[string]any{"name": "https", "href": 123},            // href wrong type
 				map[string]any{"name": "ssh", "href": "git@x:repo.git"}, // good
 			}},

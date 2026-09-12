@@ -31,7 +31,7 @@ func ExecPull(args []string, deps types.RuntimeCLI) error {
 
 	// Pull all project repositories through the shared walker.
 	errs := walk.Walk(deps.Ctx, project, deps, "pulling", fn)
-	return cli.RenderErrors(errs, true)
+	return cli.RenderErrors(deps.Err, errs, true)
 }
 
 // pullRepo returns a walk.RepoFunc that pulls one repository into a rendered
@@ -50,7 +50,7 @@ func pullRepo(widths cli.TitleWidths) walk.RepoFunc {
 
 		// Abort if repository is not cloned or has errors.
 		if repo.State != domain.RepoStateOK {
-			return walk.LineResult(line, cli.RepoStateWarning(repo))
+			return walk.LineResult(line, cli.RepoStateError(repo))
 		}
 
 		currentBranch, err := deps.Git.CurrentBranch(ctx, repo.AbsPath)

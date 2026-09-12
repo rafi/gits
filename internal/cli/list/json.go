@@ -1,19 +1,13 @@
 package list
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/cli/jsonout"
 	"github.com/rafi/gits/internal/types"
 )
 
-// listJSON outputs projects as JSON.
-func listJSON(projects domain.ProjectListKeyed, _ types.RuntimeCLI) error {
-	raw, err := json.Marshal(projects)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(raw))
-	return nil
+// listJSON outputs projects as the shared JSON envelope, without the nested
+// working-tree data only `status` gathers.
+func listJSON(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
+	return jsonout.Write(deps.Out, jsonout.FromProjects(projects))
 }

@@ -15,10 +15,12 @@ import (
 	"github.com/rafi/gits/internal/cli/list"
 	"github.com/rafi/gits/internal/cli/orphan"
 	"github.com/rafi/gits/internal/cli/pull"
+	"github.com/rafi/gits/internal/cli/push"
 	"github.com/rafi/gits/internal/cli/status"
 	"github.com/rafi/gits/internal/cli/sync"
 	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/internal/version"
+	"github.com/rafi/gits/pkg/git"
 )
 
 const (
@@ -29,13 +31,23 @@ const (
 
 var listOutput = "table"
 
+var statusOutput = "table"
+
 var statusOpts status.Options
+
+// pushOpts is the vetted passthrough set from docs/adr/0002-push-safety-model.md.
+// Nothing here reaches --force, -u or --mirror, and nothing should be added
+// that does.
+var pushOpts git.PushOptions
 
 func init() {
 	listCmd.
 		PersistentFlags().
 		StringVarP(&listOutput, "output", "o", listOutput, "output style (json, name, table, tree, wide)")
 
+	statusCmd.
+		PersistentFlags().
+		StringVarP(&statusOutput, "output", "o", statusOutput, "output style (json, table)")
 	statusCmd.
 		PersistentFlags().
 		BoolVar(&statusOpts.Stat, "stat", false, "show HEAD± column with uncommitted line diffs")
@@ -45,6 +57,15 @@ func init() {
 	statusCmd.
 		PersistentFlags().
 		BoolVar(&statusOpts.Unsynced, "unsynced", false, "show only repos ahead or behind upstream")
+
+	pushFlags := pushCmd.PersistentFlags()
+	pushFlags.BoolVar(&pushOpts.All, "all", false, "push all branches")
+	pushFlags.BoolVar(&pushOpts.Branches, "branches", false, "push all branches (synonym of --all)")
+	pushFlags.BoolVar(&pushOpts.Tags, "tags", false, "push all tags instead of the current branch")
+	pushFlags.BoolVar(&pushOpts.FollowTags, "follow-tags", false, "also push reachable annotated tags")
+	pushFlags.BoolVar(&pushOpts.Atomic, "atomic", false, "push all refs in one remote transaction")
+	pushFlags.BoolVar(&pushOpts.Prune, "prune", false, "remove remote refs matching the pushed refspec")
+	pushFlags.BoolVarP(&pushOpts.DryRun, "dry-run", "n", false, "report what would be pushed, push nothing")
 
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(branchOverviewCmd)
@@ -56,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(orphanCmd)
 	rootCmd.AddCommand(pullCmd)
+	rootCmd.AddCommand(pushCmd)
 	rootCmd.AddCommand(repoOverviewCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(syncCmd)
@@ -147,6 +169,16 @@ var pullCmd = &cobra.Command{
 	RunE:              runWithDeps(pull.ExecPull),
 }
 
+var pushCmd = &cobra.Command{
+	Use:               "push [project] [repo]",
+	Short:             "Push current branch to its upstream",
+	Args:              cobra.MaximumNArgs(2),
+	ValidArgsFunction: completeProjectRepo,
+	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+		return push.ExecPush(pushOpts, args, deps)
+	}),
+}
+
 var repoOverviewCmd = &cobra.Command{
 	Use:               "repo-overview <project> <repo>",
 	Hidden:            true,
@@ -161,7 +193,7 @@ var statusCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
-		return status.ExecStatus(statusOpts, args, deps)
+		return status.ExecStatus(statusOutput, statusOpts, args, deps)
 	}),
 }
 

@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
@@ -60,10 +62,65 @@ func TestRenderErrorsExcludesWarnings(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RenderErrors(tt.errs, true); (got != nil) != tt.wantErr {
+			if got := RenderErrors(io.Discard, tt.errs, true); (got != nil) != tt.wantErr {
 				t.Fatalf("RenderErrors(%v) err=%v, wantErr=%v", tt.errs, got, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestRenderErrorsWritesDiagnosticOutput proves the epilogue goes where the
+// caller says — Diagnostic Output — and not to a process stream of its own
+// choosing, so a run's outcome is assertable and never pollutes Result Output.
+func TestRenderErrorsWritesDiagnosticOutput(t *testing.T) {
+	var diag bytes.Buffer
+	err := RenderErrors(&diag, []error{fmt.Errorf("boom"), types.NewWarning("meh")}, true)
+
+	if err == nil || err.Error() != "completed with errors" {
+		t.Fatalf("RenderErrors() = %v, want the unchanged exit-code error", err)
+	}
+	got := diag.String()
+	if !strings.Contains(got, "1 error:") || !strings.Contains(got, "boom") {
+		t.Errorf("epilogue %q missing the counted error", got)
+	}
+	if strings.Contains(got, "meh") {
+		t.Errorf("epilogue %q listed an excluded warning", got)
+	}
+
+	var empty bytes.Buffer
+	if err := RenderErrors(&empty, []error{types.NewWarning("meh")}, true); err != nil {
+		t.Errorf("RenderErrors(only warnings) = %v, want nil", err)
+	}
+	if empty.Len() != 0 {
+		t.Errorf("nothing counted, yet wrote %q", empty.String())
+	}
+}
+
+// TestAbortOnRepoStateTerminatesItsLine proves the abort message is written as
+// Diagnostic Output and terminated exactly once, which is what lets every
+// caller share the line with a title and append no newline of its own.
+func TestAbortOnRepoStateTerminatesItsLine(t *testing.T) {
+	repo := domain.Repository{
+		Name:   "acme",
+		State:  domain.RepoStateError,
+		Reason: "not a readable git repository",
+	}
+
+	var diag bytes.Buffer
+	err := AbortOnRepoState(&diag, repo, config.NewThemeDefault().Error)
+
+	if RenderErrors(io.Discard, []error{err}, true) == nil {
+		t.Error("an aborted repo should count toward the exit code")
+	}
+	got := diag.String()
+	if !strings.Contains(got, repo.Reason) {
+		t.Errorf("abort message %q lost the repository's Reason", got)
+	}
+	if !strings.HasSuffix(got, "\n") {
+		t.Errorf("abort message %q is not terminated", got)
+	}
+	if strings.HasSuffix(got, "\n\n") {
+		t.Errorf("abort message %q is terminated twice", got)
 	}
 }
 
@@ -74,7 +131,7 @@ func TestRepoErrorIsPointerWarning(t *testing.T) {
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme"}
 	err := RepoError(fmt.Errorf("fetch failed"), repo)
 
-	if RenderErrors([]error{err}, true) == nil {
+	if RenderErrors(io.Discard, []error{err}, true) == nil {
 		t.Fatal("RepoError should count as a real error, but was excluded")
 	}
 }
@@ -153,5 +210,44 @@ func TestTitleWidths(t *testing.T) {
 	}
 	if got := widths.For(root.SubProjects[1]); got != 0 {
 		t.Errorf("For(empty) = %d, want 0", got)
+	}
+}
+
+// TestRepoStateErrorSurfacesReason proves the Reason carried by an `error`
+// repository reaches the user instead of being flattened into "not a
+// repository". A repo whose git command failed — a missing git binary, say —
+// is still a repository, and saying otherwise sends the reader looking in the
+// wrong place.
+func TestRepoStateErrorSurfacesReason(t *testing.T) {
+	tests := []struct {
+		name string
+		repo domain.Repository
+		want string
+	}{
+		{
+			"reason is surfaced verbatim",
+			domain.Repository{
+				State:  domain.RepoStateError,
+				Reason: "unable to get remote URL: git executable not found in PATH",
+			},
+			"unable to get remote URL: git executable not found in PATH",
+		},
+		{
+			"error without a reason falls back to the sentinel",
+			domain.Repository{State: domain.RepoStateError},
+			ErrNotRepository.Error(),
+		},
+		{
+			"not-cloned is unchanged",
+			domain.Repository{State: domain.RepoStateNotCloned, Reason: "ignored"},
+			ErrNotCloned.Error(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stateError(tt.repo).Error(); got != tt.want {
+				t.Errorf("stateError() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

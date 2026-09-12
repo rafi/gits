@@ -26,7 +26,7 @@ func ExecBrowse(args []string, deps types.RuntimeCLI) error {
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(*repo, deps.Theme.Error)
+		return cli.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
 	}
 
 	// Use the project name if provided, and branch too.

@@ -7,20 +7,27 @@ import (
 	"time"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/config"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/pkg/git"
 )
 
-// fakeBrowseGit stubs the GitClient methods the branch preview calls.
+// fakeBrowseGit stubs the GitClient methods the previews call; everything else
+// is inherited from clitest.FakeGit and panics if reached.
 type fakeBrowseGit struct {
-	git.GitClient
+	clitest.FakeGit
+	remotes     []string
 	remoteRefs  []string
 	ahead       int
 	behind      int
 	diffErr     error
 	commitDates []string
 	commitErr   error
+	commitLog   string
+	current     string
+}
+
+func (f fakeBrowseGit) Remotes(context.Context, string) ([]string, error) {
+	return f.remotes, nil
 }
 
 func (f fakeBrowseGit) RemoteBranches(context.Context, string) ([]string, error) {
@@ -35,15 +42,16 @@ func (f fakeBrowseGit) CommitDates(context.Context, string, string, int) ([]stri
 	return f.commitDates, f.commitErr
 }
 
-func browseDeps(g git.GitClient) types.RuntimeCLI {
-	return types.RuntimeCLI{
-		Theme: config.NewThemeDefault(),
-		Runtime: types.Runtime{
-			Ctx: context.Background(),
-			Git: g,
-		},
-	}
+func (f fakeBrowseGit) CurrentBranch(context.Context, string) (string, error) {
+	return f.current, nil
 }
+
+func (f fakeBrowseGit) Log(context.Context, string, string) (string, error) {
+	return f.commitLog, nil
+}
+
+// compile-time check: fakeBrowseGit must satisfy the git client interface.
+var _ git.GitClient = fakeBrowseGit{}
 
 func TestRenderDigits(t *testing.T) {
 	tests := []struct {
@@ -78,7 +86,7 @@ func TestRenderBranchDiffList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := fakeBrowseGit{remoteRefs: onlyMain, ahead: tt.ahead, behind: tt.behind}
-			out := renderBranchDiffList("/repo", "main", []string{"origin"}, browseDeps(g))
+			out := renderBranchDiffList("/repo", "main", []string{"origin"}, clitest.New(t, g).RuntimeCLI)
 			for _, want := range tt.wantSubstrs {
 				if !strings.Contains(out, want) {
 					t.Errorf("output missing %q\ngot: %q", want, out)
@@ -92,13 +100,13 @@ func TestRenderBranchDiffList(t *testing.T) {
 			"origin/main", "origin/master", "origin/dev", "origin/next",
 			"fork/main", "fork/master", "fork/dev", "fork/next",
 		}}
-		first := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, browseDeps(g))
+		first := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, clitest.New(t, g).RuntimeCLI)
 		lines := strings.Split(strings.TrimSpace(first), "\n")
 		if len(lines) < 4 {
 			t.Fatalf("expected multiple branch lines, got %d:\n%s", len(lines), first)
 		}
 		for range 10 {
-			again := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, browseDeps(g))
+			again := renderBranchDiffList("/repo", "main", []string{"origin", "fork"}, clitest.New(t, g).RuntimeCLI)
 			if again != first {
 				t.Fatalf("output order not stable across renders:\n%q\nvs\n%q", first, again)
 			}
@@ -107,9 +115,8 @@ func TestRenderBranchDiffList(t *testing.T) {
 
 	t.Run("diff error renders N/A row instead of blanking panel", func(t *testing.T) {
 		g := fakeBrowseGit{remoteRefs: onlyMain, diffErr: context.DeadlineExceeded}
-		deps := browseDeps(g)
-		deps.Settings.Icons.ApplyDefaults()
-		out := renderBranchDiffList("/repo", "main", []string{"origin"}, deps)
+		deps := clitest.New(t, g)
+		out := renderBranchDiffList("/repo", "main", []string{"origin"}, deps.RuntimeCLI)
 		for _, want := range []string{deps.Settings.Icons.NA, "origin", "main"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output missing %q\ngot: %q", want, out)

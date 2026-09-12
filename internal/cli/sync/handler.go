@@ -25,7 +25,7 @@ func ExecSync(args []string, deps types.RuntimeCLI) error {
 		if err := deps.Cache.Flush(p); err != nil {
 			return fmt.Errorf("unable to remove cache: %w", err)
 		}
-		fmt.Printf("Cleaned %q project cache.\n", name)
+		fmt.Fprintf(deps.Out, "Cleaned %q project cache.\n", name)
 	}
 
 	projs, err := loader.GetProjects(args, deps.Runtime)

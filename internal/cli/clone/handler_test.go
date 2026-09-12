@@ -2,54 +2,221 @@ package clone
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/config"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/pkg/git"
 )
 
-// fakeGit embeds the interface; only Clone is exercised here. The network
-// success path is covered by manual demos (SPEC §5).
+// Every test here drives ExecClone — the command's real entry point — with
+// explicit arguments, so argument parsing, the choice between walking a whole
+// Project and acting on a single Repository, the error epilogue and the exit
+// code all run for real, and the interactive finder is never reached.
+
+// cloneCall records one clone: where it was cloned from and into.
+type cloneCall struct {
+	Src  string
+	Repo string
+}
+
+// fakeGit implements the one call cloneRepo makes. The network success path is
+// covered by manual demos (SPEC §5); what a test can check is which
+// repositories were reached and what was made of the answer.
 type fakeGit struct {
-	git.GitClient
+	clitest.FakeGit
 	out string
 	err error
+
+	mu     sync.Mutex
+	clones []cloneCall
 }
 
-func (f fakeGit) Clone(context.Context, string, string) (string, error) {
-	return f.out, f.err
+// Clone mirrors the real client's one refusal: a target that already exists is
+// never cloned into. That is what makes a fixture repository already in Repo
+// State `ok` behave here as it would in a real run.
+func (f *fakeGit) Clone(_ context.Context, src, path string) (string, error) {
+	f.mu.Lock()
+	f.clones = append(f.clones, cloneCall{src, filepath.Base(path)})
+	f.mu.Unlock()
+	if f.err != nil {
+		return "", f.err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return "", git.ErrTargetExists
+	}
+	return f.out, nil
 }
 
-func cloneDeps(g git.GitClient) types.RuntimeCLI {
-	return types.RuntimeCLI{
-		Theme: config.NewThemeDefault(),
-		Runtime: types.Runtime{
-			Ctx: context.Background(),
-			Git: g,
-		},
+// Clones returns every clone, in the order the walker reached them.
+func (f *fakeGit) Clones() []cloneCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.clones)
+}
+
+// TestExecCloneProject covers `gits clone acme` and the divergence that makes
+// this command different from the other three: a repository in Repo State
+// `not-cloned` is exactly what clone acts on, where the others pass over it. A
+// repository already cloned is reached too and reports itself as such, without
+// failing the run.
+//
+// Diagnostic Output being empty is the second assertion: a run with nothing but
+// a warning to report emits no epilogue, and the live progress reporter —
+// handed a buffer rather than a terminal — emits nothing at all, so no ANSI can
+// reach any assertion in this package.
+func TestExecCloneProject(t *testing.T) {
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
+
+	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil", err)
+	}
+
+	want := []cloneCall{
+		{clitest.RepoSrc("api"), "api"},
+		{clitest.RepoSrc("gone"), "gone"},
+	}
+	if !slices.Equal(g.Clones(), want) {
+		t.Errorf("clones = %+v, want %+v", g.Clones(), want)
+	}
+	got := deps.Result()
+	for _, want := range []string{"acme", "gone", "Cloning into", "already cloned"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Result Output = %q, want it to contain %q", got, want)
+		}
+	}
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want empty", got)
 	}
 }
 
-// TestCloneRepoStateError: a repo in error state is reported via the stdout-free
-// state-error path and counts as a failure.
-func TestCloneRepoStateError(t *testing.T) {
-	deps := cloneDeps(fakeGit{})
-	repo := domain.Repository{Name: "acme", AbsPath: "/nonexistent/acme", State: domain.RepoStateError}
-	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
+// TestExecCloneSingleRepo covers `gits clone acme gone`: the second argument
+// selects one repository, and only that one is cloned and rendered — without
+// the project title the whole-project path prints.
+func TestExecCloneSingleRepo(t *testing.T) {
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-	res := cloneRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, repo, deps)
-	if res.Err == nil {
-		t.Fatal("expected an error for a repo in error state")
+	if err := ExecClone([]string{"acme", "gone"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil", err)
 	}
-	if res.Line == "" {
-		t.Fatal("expected a rendered line for an error-state repo")
+
+	want := []cloneCall{{clitest.RepoSrc("gone"), "gone"}}
+	if !slices.Equal(g.Clones(), want) {
+		t.Errorf("clones = %+v, want %+v", g.Clones(), want)
 	}
-	if cli.RenderErrors([]error{res.Err}, true) == nil {
-		t.Fatal("error-state repo should count as a failure")
+	if got := deps.Result(); !strings.Contains(got, "Cloning into") {
+		t.Errorf("Result Output = %q, want the selected repository's result", got)
+	}
+}
+
+// TestExecCloneSkipsErrorState covers the one state clone does refuse: a
+// repository whose configuration is defective has no destination to clone
+// into, so it is passed over reporting the Reason it was classified with, and
+// counts toward the exit code.
+func TestExecCloneSkipsErrorState(t *testing.T) {
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"), clitest.Broken("bad"))
+
+	err := ExecClone([]string{"acme"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecClone error = nil, want the defective repository to fail the run")
+	}
+
+	if want := []cloneCall{{clitest.RepoSrc("gone"), "gone"}}; !slices.Equal(g.Clones(), want) {
+		t.Errorf("clones = %+v, want only the clonable repository %+v", g.Clones(), want)
+	}
+	if got := deps.Result(); !strings.Contains(got, clitest.BrokenReason) {
+		t.Errorf("Result Output = %q, want the repository's own Reason", got)
+	}
+	got := deps.Diagnostic()
+	if !strings.Contains(got, "1 error:") || !strings.Contains(got, clitest.BrokenReason) {
+		t.Errorf("Diagnostic Output = %q, want the error epilogue", got)
+	}
+}
+
+// TestExecCloneFailureReportsEpilogue covers a repository whose clone fails:
+// git's message reaches Result Output on the repository's line and Diagnostic
+// Output in the error epilogue, and the run reports failure.
+func TestExecCloneFailureReportsEpilogue(t *testing.T) {
+	g := &fakeGit{err: errors.New("repository not found")}
+	deps := clitest.New(t, g).WithProject("acme", clitest.NotCloned("gone"))
+
+	err := ExecClone([]string{"acme"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecClone error = nil, want the failed repository to fail the run")
+	}
+	if !strings.Contains(err.Error(), "completed with errors") {
+		t.Errorf("ExecClone error = %v, want the run reported as failed", err)
+	}
+	if got := deps.Result(); !strings.Contains(got, "repository not found") {
+		t.Errorf("Result Output = %q, want git's message on the repository line", got)
+	}
+	got := deps.Diagnostic()
+	if !strings.Contains(got, "1 error:") || !strings.Contains(got, "repository not found") {
+		t.Errorf("Diagnostic Output = %q, want the error epilogue", got)
+	}
+}
+
+// skipping returns dependencies whose "acme" project is configured not to be
+// cloned, which is the configuration both tests below turn on.
+func skipping(t *testing.T, g *fakeGit, repos ...clitest.Repo) *clitest.Deps {
+	t.Helper()
+	deps := clitest.New(t, g).WithProject("acme", repos...)
+	no := false
+	project := deps.Projects["acme"]
+	project.Clone = &no
+	deps.Projects["acme"] = project
+	return deps
+}
+
+// TestExecCloneSkippedProject covers `gits clone acme` on a project configured
+// not to clone: nothing is cloned, and the skip is reported as Diagnostic
+// Output rather than through a logger nothing else in a command reaches.
+func TestExecCloneSkippedProject(t *testing.T) {
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := skipping(t, g, clitest.NotCloned("gone"))
+
+	if err := ExecClone([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil", err)
+	}
+
+	if got := g.Clones(); len(got) != 0 {
+		t.Errorf("clones = %+v, want none under a project configured not to clone", got)
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "Skipping acme") {
+		t.Errorf("Diagnostic Output = %q, want the skipped project named", got)
+	}
+}
+
+// TestExecCloneSkippedProjectSingleRepo covers `gits clone acme gone` on the
+// same project: naming a repository explicitly must not override the
+// configuration that skips its project. Nothing is cloned, nothing reaches
+// Result Output, and the skip is reported exactly as it is for the whole
+// project.
+func TestExecCloneSkippedProjectSingleRepo(t *testing.T) {
+	g := &fakeGit{out: "Cloning into 'gone'…"}
+	deps := skipping(t, g, clitest.NotCloned("gone"))
+
+	if err := ExecClone([]string{"acme", "gone"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecClone error = %v, want nil", err)
+	}
+
+	if got := g.Clones(); len(got) != 0 {
+		t.Errorf("clones = %+v, want none: the configuration outranks the argument", got)
+	}
+	if got := deps.Result(); got != "" {
+		t.Errorf("Result Output = %q, want nothing rendered for a skipped repository", got)
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "Skipping acme") {
+		t.Errorf("Diagnostic Output = %q, want the skipped project named", got)
 	}
 }
 
@@ -87,25 +254,5 @@ func TestPruneSkipped(t *testing.T) {
 	// The original tree must be left untouched (prune returns a copy).
 	if len(root.SubProjects[0].Repos) != 1 {
 		t.Fatal("pruneSkipped mutated the original tree")
-	}
-}
-
-// TestCloneRepoAlreadyCloned: Git.Clone's ErrTargetExists sentinel maps to
-// the friendly "already cloned" warning (exit 0), with no duplicate stat
-// guard in the handler.
-func TestCloneRepoAlreadyCloned(t *testing.T) {
-	deps := cloneDeps(fakeGit{err: git.ErrTargetExists})
-	repo := domain.Repository{Name: "acme", AbsPath: "/nonexistent/acme", State: domain.RepoStateNoLocal}
-	project := domain.Project{Name: "p", Repos: []domain.Repository{repo}}
-
-	res := cloneRepo(cli.NewTitleWidths(project, deps.HomeDir))(context.Background(), project, repo, deps)
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "already cloned") {
-		t.Fatalf("want already-cloned warning, got %v", res.Err)
-	}
-	if !types.IsWarning(res.Err) {
-		t.Fatalf("already-cloned must be a warning, got %v", res.Err)
-	}
-	if cli.RenderErrors([]error{res.Err}, true) != nil {
-		t.Fatal("already-cloned should be a warning, not a counted error")
 	}
 }

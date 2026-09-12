@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/karrick/godirwalk"
@@ -76,12 +75,12 @@ func WalkRepos(ctx context.Context, root string, gitClient git.GitClient, fn fun
 			}
 			return filepath.SkipDir
 		},
+		// A directory that cannot be read is skipped, not fatal, and the
+		// report goes through the logger rather than the process stream: this
+		// is Diagnostic Output, and WalkRepos is handed no destination to
+		// write it to.
 		ErrorCallback: func(path string, err error) godirwalk.ErrorAction {
-			_, err = fmt.Fprintf(os.Stderr, "ERROR during directory %s scan: %s\n", path, err)
-			if err != nil {
-				log.Errorf("WalkRepos: %s", err)
-				return godirwalk.Halt
-			}
+			log.Errorf("error during directory %s scan: %s", path, err)
 			return godirwalk.SkipNode
 		},
 	})

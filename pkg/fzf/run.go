@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -22,6 +23,12 @@ var (
 
 type FZF struct {
 	Args []string
+
+	// diagnostics is where fzf draws its own interface. That is Diagnostic
+	// Output: the finder is chrome around a selection, and the selection
+	// itself is returned rather than printed, so nothing here belongs on
+	// Result Output.
+	diagnostics io.Writer
 }
 
 var (
@@ -47,8 +54,12 @@ var (
 	sizeEnvVarNames = []string{"FZF_PREVIEW_COLUMNS", "FZF_PREVIEW_LINES"}
 )
 
-func New(args ...string) *FZF {
-	return &FZF{Args: args}
+// New returns a finder that draws its interface on diagnostics. Passing the
+// process's own diagnostic stream hands fzf the terminal directly, which is
+// what it needs to render; any other writer hides the interface behind a
+// pipe while fzf still waits for a selection.
+func New(diagnostics io.Writer, args ...string) *FZF {
+	return &FZF{Args: args, diagnostics: diagnostics}
 }
 
 func (f *FZF) WithPreview(cmd, opts string) {
@@ -84,7 +95,7 @@ func (f *FZF) Run(ctx context.Context, stdin bytes.Buffer) (string, error) {
 	fzf := exec.CommandContext(ctx, fzfBin, args...)
 	fzf.Stdin = &stdin
 	fzf.Stdout = &cmdOut
-	fzf.Stderr = os.Stderr
+	fzf.Stderr = f.diagnostics
 	if err := fzf.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

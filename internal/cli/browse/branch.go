@@ -122,13 +122,13 @@ func renderBranchOverview(
 	doc.WriteString("Latest commits:")
 
 	docStyle := lipgloss.NewStyle().Padding(0)
-	lipgloss.Println(docStyle.Render(doc.String()))
+	lipgloss.Fprintln(deps.Out, docStyle.Render(doc.String()))
 
 	commitLog, err := deps.Git.Log(deps.Ctx, repo.AbsPath, current)
 	if err != nil {
 		return err
 	}
-	fmt.Println(commitLog)
+	fmt.Fprintln(deps.Out, commitLog)
 	return nil
 }
 

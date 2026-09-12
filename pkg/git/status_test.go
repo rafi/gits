@@ -11,9 +11,7 @@ import (
 // TestDiffCounts builds two divergent branches and asserts Diff tallies the
 // left (<, ahead) and right (>, behind) revisions from `rev-list --left-right`.
 func TestDiffCounts(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git executable not available: %v", err)
-	}
+	requireGit(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -46,10 +44,7 @@ func TestDiffCounts(t *testing.T) {
 	commit("f2")
 	commit("f3")
 
-	g, err := NewGit()
-	if err != nil {
-		t.Fatalf("NewGit: %v", err)
-	}
+	g := NewGit()
 
 	t.Run("divergent branches", func(t *testing.T) {
 		ahead, behind, err := g.Diff(ctx, dir, "feature", "main")

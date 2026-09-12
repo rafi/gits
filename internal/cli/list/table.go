@@ -8,7 +8,6 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -25,7 +24,7 @@ func listWide(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	headers = append(headers, listWideHeaders...)
 	rows := makeTableProjects(projects, single, true, deps.HomeDir)
 
-	return printTable(headers, rows, deps.Theme)
+	return printTable(headers, rows, deps)
 }
 
 // listTable lists projects in a table format.
@@ -34,10 +33,11 @@ func listTable(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	headers := makeTableHeader(projects)
 	rows := makeTableProjects(projects, single, false, deps.HomeDir)
 
-	return printTable(headers, rows, deps.Theme)
+	return printTable(headers, rows, deps)
 }
 
-func printTable(headers []string, rows [][]string, theme config.Theme) error {
+func printTable(headers []string, rows [][]string, deps types.RuntimeCLI) error {
+	theme := deps.Theme
 	t := table.New().
 		Border(theme.TableBorder).
 		BorderStyle(theme.TableBorderStyle).
@@ -50,7 +50,7 @@ func printTable(headers []string, rows [][]string, theme config.Theme) error {
 		Rows(rows...).
 		StyleFunc(theme.TableRowStyle)
 
-	lipgloss.Println(t)
+	lipgloss.Fprintln(deps.Out, t)
 	return nil
 }
 

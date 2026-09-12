@@ -35,10 +35,7 @@ func TestCompletionDepsSettings(t *testing.T) {
 	configFile.Settings.ProviderTimeout = "42s"
 	t.Cleanup(func() { configFile.Settings = orig })
 
-	deps, err := completionDeps()
-	if err != nil {
-		t.Fatalf("completionDeps: %v", err)
-	}
+	deps := completionDeps()
 	if !deps.Settings.IncludeArchived || deps.Settings.ProviderTimeout != "42s" {
 		t.Errorf("completionDeps Settings = %+v, want loaded settings", deps.Settings)
 	}

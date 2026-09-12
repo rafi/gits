@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func TestRunExitCodeMapping(t *testing.T) {
 
 	t.Run("exit 130 is ErrAborted", func(t *testing.T) {
 		stubFzf(t, "exit 130")
-		_, err := New().Run(ctx, bytes.Buffer{})
+		_, err := New(io.Discard).Run(ctx, bytes.Buffer{})
 		if !errors.Is(err, ErrAborted) {
 			t.Errorf("Run error = %v, want ErrAborted", err)
 		}
@@ -35,7 +36,7 @@ func TestRunExitCodeMapping(t *testing.T) {
 
 	t.Run("exit 1 is ErrNoMatch", func(t *testing.T) {
 		stubFzf(t, "exit 1")
-		_, err := New().Run(ctx, bytes.Buffer{})
+		_, err := New(io.Discard).Run(ctx, bytes.Buffer{})
 		if !errors.Is(err, ErrNoMatch) {
 			t.Errorf("Run error = %v, want ErrNoMatch", err)
 		}
@@ -43,7 +44,7 @@ func TestRunExitCodeMapping(t *testing.T) {
 
 	t.Run("exit 2 stays a plain error", func(t *testing.T) {
 		stubFzf(t, "exit 2")
-		_, err := New().Run(ctx, bytes.Buffer{})
+		_, err := New(io.Discard).Run(ctx, bytes.Buffer{})
 		if err == nil || errors.Is(err, ErrAborted) || errors.Is(err, ErrNoMatch) {
 			t.Errorf("Run error = %v, want plain exec error", err)
 		}
@@ -51,7 +52,7 @@ func TestRunExitCodeMapping(t *testing.T) {
 
 	t.Run("selection is trimmed and returned", func(t *testing.T) {
 		stubFzf(t, "echo ' picked '")
-		got, err := New().Run(ctx, bytes.Buffer{})
+		got, err := New(io.Discard).Run(ctx, bytes.Buffer{})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -61,12 +62,31 @@ func TestRunExitCodeMapping(t *testing.T) {
 	})
 }
 
+// TestRunDrawsOnDiagnostics proves the finder's own interface goes to the
+// destination it was constructed with rather than to the process stream, so
+// nothing fzf draws can land on Result Output.
+func TestRunDrawsOnDiagnostics(t *testing.T) {
+	stubFzf(t, "echo drawing >&2; echo picked")
+	diagnostics := bytes.Buffer{}
+
+	got, err := New(&diagnostics).Run(context.Background(), bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got != "picked" {
+		t.Errorf("Run = %q, want %q", got, "picked")
+	}
+	if diagnostics.String() != "drawing\n" {
+		t.Errorf("diagnostics = %q, want %q", diagnostics.String(), "drawing\n")
+	}
+}
+
 // TestRunCallerArgsWin proves caller args land after the defaults, so a
 // caller can override a default (fzf is last-flag-wins), and that Run does
 // not mutate the caller's Args slice.
 func TestRunCallerArgsWin(t *testing.T) {
 	stubFzf(t, `printf '%s\n' "$@"`)
-	f := New("--multi")
+	f := New(io.Discard, "--multi")
 	before := fmt.Sprintf("%v", f.Args)
 
 	got, err := f.Run(context.Background(), bytes.Buffer{})

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const readmeURL = "https://github.com/rafi/gits#config"
+const readmeURL = "https://github.com/rafi/gits#configuration"
 
 // ProviderSource represents a cloud-provider source of repositories.
 type ProviderSource struct {
