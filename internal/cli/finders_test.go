@@ -35,7 +35,7 @@ func (stubCache) Flush(domain.Project) error                { return nil }
 
 func finderDeps(t *testing.T) types.RuntimeCLI {
 	t.Helper()
-	return types.RuntimeCLI{Runtime: types.Runtime{
+	return types.RuntimeCLI{
 		Ctx:   context.Background(),
 		Git:   fakeGit{},
 		Cache: stubCache{},
@@ -46,8 +46,7 @@ func finderDeps(t *testing.T) types.RuntimeCLI {
 					{Dir: "~/code/bravo", Src: "git@x:acme/bravo.git"},
 				},
 			},
-		},
-	}}
+		}}
 }
 
 // TestParseArgsNonInteractive covers every ParseArgs path that does not need

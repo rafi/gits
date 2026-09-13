@@ -13,9 +13,9 @@ import (
 // styleType, in declaration order.
 func styleFields(structType, styleType reflect.Type) []string {
 	var names []string
-	for i := range structType.NumField() {
-		if structType.Field(i).Type == styleType {
-			names = append(names, structType.Field(i).Name)
+	for field := range structType.Fields() {
+		if field.Type == styleType {
+			names = append(names, field.Name)
 		}
 	}
 	return names
@@ -43,8 +43,7 @@ func TestThemeParity(t *testing.T) {
 	// bridge picks up but cannot assert panics just as loudly as one with no
 	// counterpart.
 	var domainNames []string
-	for i := range domainTheme.NumField() {
-		field := domainTheme.Field(i)
+	for field := range domainTheme.Fields() {
 		switch {
 		case field.Type.Name() != domainStyle.Name():
 		case field.Type != domainStyle:

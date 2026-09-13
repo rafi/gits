@@ -67,10 +67,8 @@ func TestStatusJSONNestsStatus(t *testing.T) {
 
 	when := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
 	st := row(okRepo("api"), repoStatus{
-		Snapshot: git.Snapshot{
-			Branch: "main", Ahead: 4, Behind: 5,
-			WorkTree: git.WorkTree{Staged: 1, Unstaged: 2, Untracked: 3},
-		},
+		Branch: "main", Ahead: 4, Behind: 5,
+		Staged: 1, Unstaged: 2, Untracked: 3,
 		compared: true,
 		version:  "v1.2.3",
 		head:     git.Head{Hash: "abc1234", Subject: "Add feature", Time: when},
@@ -115,7 +113,7 @@ func TestStatusJSONNestsStatus(t *testing.T) {
 func TestStatusJSONNoUpstream(t *testing.T) {
 	t.Parallel()
 
-	st := row(okRepo("api"), repoStatus{Snapshot: git.Snapshot{Branch: "main"}})
+	st := row(okRepo("api"), repoStatus{Branch: "main"})
 	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository}}
 
 	doc := renderDoc(t, results(proj, st), Options{})
@@ -234,8 +232,8 @@ func TestStatusJSONHead(t *testing.T) {
 func TestStatusJSONTree(t *testing.T) {
 	t.Parallel()
 
-	root := row(okRepo("api"), repoStatus{Snapshot: git.Snapshot{Branch: "main"}})
-	nested := row(okRepo("tools"), repoStatus{Snapshot: git.Snapshot{Branch: "main"}})
+	root := row(okRepo("api"), repoStatus{Branch: "main"})
+	nested := row(okRepo("tools"), repoStatus{Branch: "main"})
 	sub := domain.Project{Name: "team", Repos: []domain.Repository{nested.repo.Repository}}
 	proj := domain.Project{
 		Name:        "acme",
@@ -273,7 +271,7 @@ func TestStatusJSONTreeAtDepth(t *testing.T) {
 	//   │     └── infra ── ansible
 	//   └── vendor ── forks
 	leaf := func(name string) *repoStatus {
-		return row(okRepo(name), repoStatus{Snapshot: git.Snapshot{Branch: "main"}})
+		return row(okRepo(name), repoStatus{Branch: "main"})
 	}
 	api, tools, ansible, forks := leaf("api"), leaf("tools"), leaf("ansible"), leaf("forks")
 
@@ -341,7 +339,7 @@ func TestStatusJSONTreeAtDepth(t *testing.T) {
 func TestStatusJSONFilters(t *testing.T) {
 	t.Parallel()
 
-	dirty := row(okRepo("api"), repoStatus{Snapshot: git.Snapshot{WorkTree: git.WorkTree{Staged: 1}}})
+	dirty := row(okRepo("api"), repoStatus{Staged: 1})
 	clean := row(okRepo("web"), repoStatus{})
 	failed := row(okRepo("db"), repoStatus{err: errors.New("boom")})
 	tidy := row(okRepo("tidy"), repoStatus{})
@@ -379,7 +377,7 @@ func TestStatusJSONFilterKeepsBridgingParent(t *testing.T) {
 	t.Parallel()
 
 	clean := row(okRepo("web"), repoStatus{})
-	dirty := row(okRepo("tools"), repoStatus{Snapshot: git.Snapshot{WorkTree: git.WorkTree{Staged: 1}}})
+	dirty := row(okRepo("tools"), repoStatus{Staged: 1})
 	sub := domain.Project{Name: "team", Repos: []domain.Repository{dirty.repo.Repository}}
 	proj := domain.Project{
 		Name:        "acme",
@@ -425,7 +423,7 @@ func TestStatusJSONFilterEmptiesEverything(t *testing.T) {
 func TestStatusJSONSingleRepo(t *testing.T) {
 	t.Parallel()
 
-	st := row(okRepo("api"), repoStatus{Snapshot: git.Snapshot{Branch: "main"}})
+	st := row(okRepo("api"), repoStatus{Branch: "main"})
 	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository}}
 
 	doc := renderDoc(t, results(proj, st), Options{})

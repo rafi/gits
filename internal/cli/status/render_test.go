@@ -18,8 +18,8 @@ import (
 // fixture builds one row bound to a repository in the given state.
 func fixture(name string, state domain.RepoState, st repoStatus) *repoStatus {
 	st.repo = bulk.Repo{
-		Repository: domain.Repository{Name: name, AbsPath: "/code/acme/" + name, State: state},
-		Path:       name,
+		Name: name, AbsPath: "/code/acme/" + name, State: state,
+		Path: name,
 	}
 	return &st
 }
@@ -28,22 +28,18 @@ func fixtureStatuses() []*repoStatus {
 	now := time.Now()
 	return []*repoStatus{
 		fixture("api", domain.RepoStateOK, repoStatus{
-			Snapshot: git.Snapshot{
-				Branch: "main", Ahead: 2,
-				WorkTree: git.WorkTree{Staged: 1, Unstaged: 11},
-			},
+			Branch: "main", Ahead: 2,
+			Staged: 1, Unstaged: 11,
 			compared: true,
 			version:  "v2.1.0",
 			head:     git.Head{Hash: "f3a9c2d1", Subject: "Add rate limiter", Time: now.Add(-2 * time.Hour)},
 		}),
 		fixture("web", domain.RepoStateOK, repoStatus{
-			Snapshot: git.Snapshot{
-				Branch: "develop", Behind: 1,
-				WorkTree: git.WorkTree{Untracked: 4567},
-			},
-			compared: true,
-			version:  "v0.9.0",
-			head:     git.Head{Hash: "0e631add", Subject: "Initial commit", Time: now.Add(-26 * time.Hour)},
+			Branch: "develop", Behind: 1,
+			Untracked: 4567,
+			compared:  true,
+			version:   "v0.9.0",
+			head:      git.Head{Hash: "0e631add", Subject: "Initial commit", Time: now.Add(-26 * time.Hour)},
 		}),
 		fixture("infra", domain.RepoStateNotCloned, repoStatus{err: errFixture}),
 	}
@@ -189,7 +185,7 @@ func TestRenderTablesDirtyFilter(t *testing.T) {
 
 	sts := fixtureStatuses() // api dirty, web dirty (untracked), infra error
 	clean := fixture("tidy", domain.RepoStateOK, repoStatus{
-		Snapshot: git.Snapshot{Branch: "main"}, version: "v1.0.0",
+		Branch: "main", version: "v1.0.0",
 	})
 	pristine := project("pristine", clean)
 	root := project("acme", sts[0], clean, sts[2])
@@ -222,10 +218,10 @@ func TestRenderTablesUnsyncedFilter(t *testing.T) {
 	t.Parallel()
 
 	dirtyInSync := fixture("edited", domain.RepoStateOK, repoStatus{
-		Snapshot: git.Snapshot{WorkTree: git.WorkTree{Unstaged: 2}}, compared: true,
+		Unstaged: 2, compared: true,
 	})
 	cleanAhead := fixture("racer", domain.RepoStateOK, repoStatus{
-		Snapshot: git.Snapshot{Ahead: 3}, compared: true,
+		Ahead: 3, compared: true,
 	})
 	noUp := fixture("loner", domain.RepoStateOK, repoStatus{})
 	sts := []*repoStatus{dirtyInSync, cleanAhead, noUp}
@@ -387,10 +383,10 @@ func TestStatusSlotsWidthWithWideIcons(t *testing.T) {
 	sts := []*repoStatus{
 		fixture("a", domain.RepoStateOK, repoStatus{}),
 		fixture("b", domain.RepoStateOK, repoStatus{
-			Snapshot: git.Snapshot{WorkTree: git.WorkTree{Staged: 1}}, err: errFixture,
+			Staged: 1, err: errFixture,
 		}),
 		fixture("c", domain.RepoStateNotCloned, repoStatus{err: errFixture}),
-		fixture("d", domain.RepoStateOK, repoStatus{Snapshot: git.Snapshot{Ahead: 3}}),
+		fixture("d", domain.RepoStateOK, repoStatus{Ahead: 3}),
 	}
 	widths := newSlotWidths(icons)
 	want := lipgloss.Width(statusSlots(sts[0], icons, th, widths))

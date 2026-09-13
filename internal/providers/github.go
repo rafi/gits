@@ -146,7 +146,7 @@ func (c *gitHubProvider) fetchRepos(ctx context.Context, ownerName string) ([]do
 			ownerID = string(owner.ID)
 			return false, nil
 		}
-		vars["cursor"] = githubv4.NewString(owner.Repositories.PageInfo.EndCursor)
+		vars["cursor"] = new(owner.Repositories.PageInfo.EndCursor)
 		return true, nil
 	})
 	return repos, ownerID, err

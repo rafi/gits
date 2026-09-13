@@ -65,16 +65,14 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 		HomeDir: HomeDir,
 		Out:     &deps.out,
 		Err:     &deps.err,
-		Runtime: types.Runtime{
-			// Canceled when the test ends, so a command left walking does
-			// not outlive it.
-			Ctx:      t.Context(),
-			Git:      gitClient,
-			Settings: settings,
-			Projects: domain.ProjectListKeyed{},
-			Cache:    stubCache{},
-			Log:      logger,
-		},
+		// Canceled when the test ends, so a command left walking does
+		// not outlive it.
+		Ctx:      t.Context(),
+		Git:      gitClient,
+		Settings: settings,
+		Projects: domain.ProjectListKeyed{},
+		Cache:    stubCache{},
+		Log:      logger,
 	}
 	return deps
 }

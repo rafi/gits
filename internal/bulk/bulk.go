@@ -115,8 +115,7 @@ func (r Results[T]) Errors() []error {
 		if res.Err == nil {
 			continue
 		}
-		var wrapped *types.Warning
-		if errors.As(res.Err, &wrapped) {
+		if _, ok := errors.AsType[*types.Warning](res.Err); ok {
 			errs = append(errs, res.Err)
 			continue
 		}

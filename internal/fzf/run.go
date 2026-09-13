@@ -137,8 +137,7 @@ func (f *FZF) Run(ctx context.Context, stdin bytes.Buffer) (string, error) {
 	fzf.Stdout = &cmdOut
 	fzf.Stderr = f.diagnostics
 	if err := fzf.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			switch exitErr.ExitCode() {
 			case exitInterrupted:
 				return "", ErrAborted

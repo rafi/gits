@@ -102,8 +102,7 @@ func TestExecSyncUnknownProject(t *testing.T) {
 	if err == nil {
 		t.Fatal("ExecSync(bogus) = nil, want a warning")
 	}
-	var warn *types.Warning
-	if !errors.As(err, &warn) {
+	if _, ok := errors.AsType[*types.Warning](err); !ok {
 		t.Errorf("ExecSync(bogus) error = %T (%v), want *types.Warning", err, err)
 	}
 	if len(cache.flushed) > 0 {
