@@ -9,8 +9,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/providers"
+	"github.com/rafi/gits/internal/service/catalog"
 )
 
 // ExecSync cleans the cache for the given projects.
@@ -31,7 +31,7 @@ func ExecSync(args []string, deps app.RuntimeCLI) error {
 		fmt.Fprintf(deps.Out, "Cleaned %q project cache.\n", name)
 	}
 
-	projs, err := loader.GetProjects(args, deps.Runtime)
+	projs, err := catalog.Load(args, deps.Runtime)
 	if err != nil {
 		return fmt.Errorf("unable to list projects: %w", err)
 	}

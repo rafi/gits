@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/service"
+	"github.com/rafi/gits/internal/service/catalog"
 )
 
 // Args is what the command line said, already split. An empty Project or Repo
@@ -46,7 +46,7 @@ func Parse(args []string, requireRepo bool) Args {
 // when it is set. Naming something that does not exist is a real failure, not
 // a downgradeable warning: a script must be able to tell a typo from success.
 func Project(name, sub string, rt service.Runtime) (domain.Project, error) {
-	p, err := loader.GetProject(name, rt)
+	p, err := catalog.LoadOne(name, rt)
 	if err != nil {
 		return p, fmt.Errorf("unable to load project: %w", err)
 	}
@@ -104,7 +104,7 @@ func Resolve(a Args, s Selector, rt service.Runtime) (
 		// has a root distinct from itself.
 		root := ""
 		if a.Sub != "" {
-			root = loader.ProjectName(a.Project)
+			root = catalog.ProjectName(a.Project)
 		}
 		repoName, err = s.Repo(rt.Ctx, project, root)
 		if err != nil {

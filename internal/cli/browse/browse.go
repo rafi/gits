@@ -10,8 +10,8 @@ import (
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/fzf"
-	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/logging"
+	"github.com/rafi/gits/internal/service/catalog"
 )
 
 // ExecBrowse opens a fzf window to browse the entire catalog.
@@ -50,7 +50,7 @@ func resolveProjectRepo(args []string, deps app.RuntimeCLI) (domain.Repository, 
 	if len(args) < 1 {
 		return domain.Repository{}, fmt.Errorf("missing project name")
 	}
-	project, err := loader.GetProject(args[0], deps.Runtime)
+	project, err := catalog.LoadOne(args[0], deps.Runtime)
 	if err != nil {
 		return domain.Repository{}, fmt.Errorf("unable to load project %q: %w", args[0], err)
 	}
@@ -108,7 +108,7 @@ func previewHeader(style lipgloss.Style, width int) lipgloss.Style {
 func browseTarget(args []string, project domain.Project) (projName, branch string) {
 	projName = project.Name
 	if len(args) > 0 {
-		projName = loader.ProjectName(args[0])
+		projName = catalog.ProjectName(args[0])
 	}
 	if len(args) == branchArgIdx+1 {
 		branch = args[branchArgIdx]

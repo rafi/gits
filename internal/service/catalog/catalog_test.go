@@ -1,4 +1,4 @@
-package loader
+package catalog
 
 import (
 	"context"
@@ -13,10 +13,19 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/service"
 )
 
-// fakeGit stubs the git.Reader methods computeState relies on.
+// classification runs the three passes Load runs after discovery, so the
+// matrix below exercises exactly what a load classifies.
+func classification(ctx context.Context, project *domain.Project, gitClient git.Reader) {
+	expandPaths(ctx, logging.Or(nil), project)
+	classifyRepos(ctx, project, gitClient)
+	sortTree(project)
+}
+
+// fakeGit stubs the git.Reader methods classification relies on.
 type fakeGit struct {
 	git.Reader
 	clitest.FakeNoWrites
@@ -34,7 +43,7 @@ func (f fakeGit) Remote(context.Context, string) (string, error) {
 	return f.remote, f.remoteErr
 }
 
-// countingGit records how many times Remote is called, to prove ResolveSrc
+// countingGit records how many times Remote is called, to prove FillSources
 // consults it once per unresolved `ok` repository and never otherwise.
 type countingGit struct {
 	git.Reader
@@ -87,13 +96,13 @@ func TestIsPath(t *testing.T) {
 	}
 }
 
-// TestGetProjectsRelativePath proves path-based projects resolve relative
+// TestLoadRelativePath proves path-based projects resolve relative
 // arguments against the working directory: `gits status ./dir` must find the
 // repo at its absolute location instead of joining the relative path onto
 // itself (dir/dir) and reporting "not cloned".
 //
 //nolint:paralleltest // t.Chdir moves the process working directory, which is incompatible with t.Parallel.
-func TestGetProjectsRelativePath(t *testing.T) {
+func TestLoadRelativePath(t *testing.T) {
 	parent := t.TempDir()
 	repoDir := filepath.Join(parent, "myrepo")
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
@@ -114,9 +123,9 @@ func TestGetProjectsRelativePath(t *testing.T) {
 	}
 
 	t.Run("relative dir argument", func(t *testing.T) {
-		projs, err := GetProjects([]string{"./myrepo"}, deps)
+		projs, err := Load([]string{"./myrepo"}, deps)
 		if err != nil {
-			t.Fatalf("GetProjects: %v", err)
+			t.Fatalf("Load: %v", err)
 		}
 		if len(projs) != 1 {
 			t.Fatalf("len(projects) = %d, want 1", len(projs))
@@ -139,9 +148,9 @@ func TestGetProjectsRelativePath(t *testing.T) {
 		// The caller reads args[0] afterwards expecting what the user typed;
 		// the resolved name is the returned map's key and Project.Name.
 		args := []string{"./myrepo"}
-		projs, err := GetProjects(args, deps)
+		projs, err := Load(args, deps)
 		if err != nil {
-			t.Fatalf("GetProjects: %v", err)
+			t.Fatalf("Load: %v", err)
 		}
 		if args[0] != "./myrepo" {
 			t.Errorf("args[0] = %q, want it unmodified at %q", args[0], "./myrepo")
@@ -160,9 +169,9 @@ func TestGetProjectsRelativePath(t *testing.T) {
 
 	t.Run("dot argument names project after the directory", func(t *testing.T) {
 		t.Chdir(repoDir)
-		projs, err := GetProjects([]string{"."}, deps)
+		projs, err := Load([]string{"."}, deps)
 		if err != nil {
-			t.Fatalf("GetProjects: %v", err)
+			t.Fatalf("Load: %v", err)
 		}
 		if _, ok := projs["myrepo"]; !ok {
 			names := []string{}
@@ -198,7 +207,7 @@ func (c *recordingCache) Save(string, domain.Project) error {
 
 func (c *recordingCache) Flush(domain.Project) error { return nil }
 
-func TestGetSource(t *testing.T) {
+func TestDiscoverSource(t *testing.T) {
 	t.Parallel()
 
 	deps := func(c *recordingCache) service.Runtime {
@@ -355,7 +364,7 @@ func TestGetSource(t *testing.T) {
 	})
 }
 
-func TestComputeStateMatrix(t *testing.T) {
+func TestClassificationMatrix(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -366,7 +375,7 @@ func TestComputeStateMatrix(t *testing.T) {
 		t.Parallel()
 
 		p := domain.Project{Repos: []domain.Repository{{Name: "a"}}}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 		r := p.Repos[0]
 		if r.State != domain.RepoStateError {
 			t.Errorf("state = %q, want %q", r.State, domain.RepoStateError)
@@ -382,7 +391,7 @@ func TestComputeStateMatrix(t *testing.T) {
 		// AbsPath set so the early no-local-home branch is skipped; Dir empty
 		// + Src without a slash makes GetRepoAbsPath fail.
 		p := domain.Project{Path: t.TempDir(), Repos: []domain.Repository{{Name: "a", Src: "noslash"}}}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 		if got := p.Repos[0].State; got != domain.RepoStateError {
 			t.Errorf("state = %q, want %q", got, domain.RepoStateError)
 		}
@@ -393,7 +402,7 @@ func TestComputeStateMatrix(t *testing.T) {
 
 		dir := t.TempDir()
 		p := domain.Project{Path: dir, Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
-		computeState(ctx, nil, &p, fakeGit{isRepo: false})
+		classification(ctx, &p, fakeGit{isRepo: false})
 		r := p.Repos[0]
 		if r.State != domain.RepoStateError {
 			t.Errorf("state = %q, want %q", r.State, domain.RepoStateError)
@@ -408,7 +417,7 @@ func TestComputeStateMatrix(t *testing.T) {
 
 		dir := t.TempDir()
 		p := domain.Project{Path: dir, Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
-		computeState(ctx, nil, &p, fakeGit{isRepo: true})
+		classification(ctx, &p, fakeGit{isRepo: true})
 		if got := p.Repos[0].State; got != domain.RepoStateOK {
 			t.Errorf("state = %q, want %q", got, domain.RepoStateOK)
 		}
@@ -421,7 +430,7 @@ func TestComputeStateMatrix(t *testing.T) {
 			Source: &domain.ProviderSource{Type: "github"},
 			Repos:  []domain.Repository{{Name: "a", Src: "git@github.com:acme/a.git"}},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 		if got := p.Repos[0].State; got != domain.RepoStateRemoteOnly {
 			t.Errorf("state = %q, want %q", got, domain.RepoStateRemoteOnly)
 		}
@@ -434,7 +443,7 @@ func TestComputeStateMatrix(t *testing.T) {
 		t.Parallel()
 
 		p := domain.Project{Repos: []domain.Repository{{Name: "a", Dir: "sub/a"}}}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 		r := p.Repos[0]
 		if r.State != domain.RepoStateError {
 			t.Errorf("state = %q, want %q", r.State, domain.RepoStateError)
@@ -449,7 +458,7 @@ func TestComputeStateMatrix(t *testing.T) {
 
 		dir := t.TempDir()
 		p := domain.Project{Repos: []domain.Repository{{Name: "a", Dir: dir, Src: "x"}}}
-		computeState(ctx, nil, &p, fakeGit{isRepo: true})
+		classification(ctx, &p, fakeGit{isRepo: true})
 		r := p.Repos[0]
 		if r.State != domain.RepoStateOK {
 			t.Errorf("state = %q, want %q (reason %q)", r.State, domain.RepoStateOK, r.Reason)
@@ -468,7 +477,7 @@ func TestComputeStateMatrix(t *testing.T) {
 			Path:  t.TempDir(),
 			Repos: []domain.Repository{{Name: "missing", Dir: "missing"}},
 		}
-		computeState(ctx, nil, &p, fakeGit{remoteErr: fmt.Errorf("boom")})
+		classification(ctx, &p, fakeGit{remoteErr: fmt.Errorf("boom")})
 		r := p.Repos[0]
 		if r.State != domain.RepoStateNotCloned {
 			t.Errorf("state = %q, want %q", r.State, domain.RepoStateNotCloned)
@@ -480,7 +489,7 @@ func TestComputeStateMatrix(t *testing.T) {
 
 	// Classification no longer consults git.Remote: an existing, readable
 	// clone is `ok` whether or not its remote can be read. Repo Src is
-	// resolved lazily by ResolveSrc, only for the commands that display it.
+	// resolved lazily by FillSources, only for the commands that display it.
 	t.Run("existing repo with no src is ok, remote never consulted", func(t *testing.T) {
 		t.Parallel()
 
@@ -491,7 +500,7 @@ func TestComputeStateMatrix(t *testing.T) {
 		}
 		// A remote error here would once have failed the repo; it must not
 		// even be called now.
-		computeState(ctx, nil, &p, fakeGit{isRepo: true, remoteErr: fmt.Errorf("boom")})
+		classification(ctx, &p, fakeGit{isRepo: true, remoteErr: fmt.Errorf("boom")})
 		r := p.Repos[0]
 		if r.State != domain.RepoStateOK {
 			t.Errorf("state = %q, want %q", r.State, domain.RepoStateOK)
@@ -511,7 +520,7 @@ func TestComputeStateMatrix(t *testing.T) {
 			Source:      &domain.ProviderSource{Type: "github", Search: "acme"},
 			SubProjects: []domain.Project{{Name: "sub"}},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 		p.SubProjects[0].Source.Search = "mutated"
 		if p.Source.Search != "acme" {
 			t.Errorf("parent source search = %q, want %q (sub-project must not share the pointer)",
@@ -528,7 +537,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				{Name: "b"}, {Name: "a"},
 			},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 		if p.Repos[0].Name != "aaa" || p.Repos[1].Name != "zzz" {
 			t.Errorf("repos not sorted: %q, %q", p.Repos[0].Name, p.Repos[1].Name)
 		}
@@ -551,7 +560,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				{Name: "charlie"},
 			},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 
 		got := make([]string, len(p.Repos))
 		for i, r := range p.Repos {
@@ -582,7 +591,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
 			}},
 		}
-		computeState(ctx, nil, &p, fakeGit{isRepo: true})
+		classification(ctx, &p, fakeGit{isRepo: true})
 
 		sub := p.SubProjects[0]
 		if sub.AbsPath != subPath {
@@ -610,7 +619,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
 			}},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 
 		sub := p.SubProjects[0]
 		if sub.AbsPath != "" {
@@ -638,7 +647,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
 			}},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 
 		if got := p.SubProjects[0].Repos[0].State; got != domain.RepoStateRemoteOnly {
 			t.Errorf("state = %q, want %q", got, domain.RepoStateRemoteOnly)
@@ -655,7 +664,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				Repos: []domain.Repository{{Name: "api", Dir: dir, Src: "x"}},
 			}},
 		}
-		computeState(ctx, nil, &p, fakeGit{isRepo: true})
+		classification(ctx, &p, fakeGit{isRepo: true})
 
 		r := p.SubProjects[0].Repos[0]
 		if r.State != domain.RepoStateOK {
@@ -678,7 +687,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				Repos: []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
 			}},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 
 		sub := p.SubProjects[0]
 		if sub.Source == nil {
@@ -703,7 +712,7 @@ func TestComputeStateMatrix(t *testing.T) {
 				SubProjects: []domain.Project{{Name: "b"}, {Name: "a"}},
 			}},
 		}
-		computeState(ctx, nil, &p, fakeGit{})
+		classification(ctx, &p, fakeGit{})
 
 		sub := p.SubProjects[0]
 		if sub.Repos[0].Name != "aaa" || sub.Repos[1].Name != "zzz" {
@@ -716,11 +725,11 @@ func TestComputeStateMatrix(t *testing.T) {
 	})
 }
 
-// TestResolveSrc proves ResolveSrc is the lazy counterpart to classification:
+// TestFillSources proves FillSources is the lazy counterpart to classification:
 // it fills in the Repo Src of every `ok` repository that has none, consulting
 // git exactly once per such repository — across sub-projects too — and touches
 // no repository that already has a Src or is not `ok`.
-func TestResolveSrc(t *testing.T) {
+func TestFillSources(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -742,7 +751,7 @@ func TestResolveSrc(t *testing.T) {
 				},
 			}},
 		}
-		ResolveSrc(ctx, g, &p)
+		FillSources(ctx, g, &p)
 
 		if got := p.Repos[0].Src; got != "git@x:a/resolved.git" {
 			t.Errorf("needs src = %q, want resolved", got)
@@ -769,7 +778,7 @@ func TestResolveSrc(t *testing.T) {
 		p := domain.Project{
 			Repos: []domain.Repository{{Name: "a", State: domain.RepoStateOK, AbsPath: "/a"}},
 		}
-		ResolveSrc(ctx, g, &p)
+		FillSources(ctx, g, &p)
 
 		r := p.Repos[0]
 		if r.Src != "" {
@@ -783,7 +792,7 @@ func TestResolveSrc(t *testing.T) {
 		}
 	})
 
-	t.Run("ResolveProjectsSrc writes resolved repos back into the map", func(t *testing.T) {
+	t.Run("FillSourcesKeyed writes resolved repos back into the map", func(t *testing.T) {
 		t.Parallel()
 
 		g := &countingGit{remote: "git@x:a/resolved.git"}
@@ -792,7 +801,7 @@ func TestResolveSrc(t *testing.T) {
 				{Name: "a", State: domain.RepoStateOK, AbsPath: "/a"},
 			}},
 		}
-		ResolveProjectsSrc(ctx, g, projects)
+		FillSourcesKeyed(ctx, g, projects)
 
 		if got := projects["acme"].Repos[0].Src; got != "git@x:a/resolved.git" {
 			t.Errorf("src = %q, want the resolved value written back", got)
@@ -800,12 +809,12 @@ func TestResolveSrc(t *testing.T) {
 	})
 }
 
-// TestGetProjectsIssuesNoRemoteCalls pins the whole point of the lazy change:
+// TestLoadIssuesNoRemoteCalls pins the whole point of the lazy change:
 // populating a filesystem project — the path every command runs through —
 // spawns zero `git ls-remote` subprocesses. Before, classification resolved
 // each repository's Repo Src eagerly, one subprocess per repository, on every
 // command including ones like `list -o name` and `status` that never print it.
-func TestGetProjectsIssuesNoRemoteCalls(t *testing.T) {
+func TestLoadIssuesNoRemoteCalls(t *testing.T) {
 	t.Parallel()
 
 	// A filesystem project with several cloned repositories: the shape a
@@ -827,9 +836,9 @@ func TestGetProjectsIssuesNoRemoteCalls(t *testing.T) {
 		},
 	}
 
-	projs, err := GetProjects([]string{"acme"}, deps)
+	projs, err := Load([]string{"acme"}, deps)
 	if err != nil {
-		t.Fatalf("GetProjects: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	if got := len(projs["acme"].Repos); got != 3 {
 		t.Fatalf("repos = %d, want 3", got)

@@ -10,7 +10,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/service/catalog"
 )
 
 // lister renders the loaded projects in one output style.
@@ -59,7 +59,7 @@ func ExecList(format string, args []string, deps app.RuntimeCLI) error {
 			format, strings.Join(Formats(), ", "))
 	}
 
-	projects, err := loader.GetProjects(args, deps.Runtime)
+	projects, err := catalog.Load(args, deps.Runtime)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ Either your %q is empty, or you misspelled the project name.`,
 	// `name` and `tree` never print a source and so never pay the
 	// per-repository git subprocess resolution costs.
 	if st.showsSrc {
-		loader.ResolveProjectsSrc(deps.Ctx, deps.Git, projects)
+		catalog.FillSourcesKeyed(deps.Ctx, deps.Git, projects)
 	}
 	return st.lister(args)(projects, deps)
 }

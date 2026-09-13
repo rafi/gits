@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/service"
+	"github.com/rafi/gits/internal/service/catalog"
 )
 
 func completionDeps() service.Runtime {
@@ -66,7 +66,7 @@ func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) (
 	// Load cache-only: pressing Tab must never trigger a provider network
 	// fetch or a tokenCommand passphrase prompt. A remote project with a cold
 	// cache simply offers no repository candidates.
-	proj, err := loader.GetProject(args[0], deps, loader.CacheOnly())
+	proj, err := catalog.LoadOne(args[0], deps, catalog.CacheOnly())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -96,7 +96,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 	deps := completionDeps()
 
 	// Get project (cache-only, so Tab never fetches or prompts — see above).
-	proj, err := loader.GetProject(args[0], deps, loader.CacheOnly())
+	proj, err := catalog.LoadOne(args[0], deps, catalog.CacheOnly())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
