@@ -1,5 +1,6 @@
-// Package format renders values as text for any front end. Nothing here is
-// styled, so a non-terminal client shares the same output shapes.
+// Package format renders values as text for any layer. Nothing here is
+// styled and nothing here is a view: the engine derives a repository's
+// display path with it, and every front end shows the same one.
 package format
 
 import (

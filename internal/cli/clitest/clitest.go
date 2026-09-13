@@ -5,7 +5,7 @@
 // app.RuntimeCLI through it rather than each carrying its own copy of this
 // wiring, so a new dependency is added in one place.
 //
-// Buffers are not terminals, so the bulk module selects the no-op progress
+// Buffers are not terminals, so a command selects the no-op progress
 // reporter and no ANSI cursor control reaches the captured text. Result and
 // Diagnostic are additionally ANSI-stripped, since the theme still colors
 // what it renders.
@@ -61,14 +61,14 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 	deps := &Deps{t: t}
 	logger := logging.New(&deps.log, true)
 	deps.RuntimeCLI = app.RuntimeCLI{
-		Theme:   style.NewThemeDefault(),
-		HomeDir: HomeDir,
-		Out:     &deps.out,
-		Err:     &deps.err,
+		Theme: style.NewThemeDefault(),
+		Out:   &deps.out,
+		Err:   &deps.err,
 		// Canceled when the test ends, so a command left walking does
 		// not outlive it.
 		Ctx:      t.Context(),
 		Git:      gitClient,
+		HomeDir:  HomeDir,
 		Settings: settings,
 		Projects: domain.ProjectListKeyed{},
 		Cache:    stubCache{},
@@ -127,8 +127,8 @@ func (d *Deps) JSONRepos(project string) map[string]map[string]any {
 	return repos
 }
 
-// JSONCommand returns a repository's command object — what a line Bulk
-// Command made of it — and the name of the command that ran. Both come from
+// JSONCommand returns a repository's command object — what a line command
+// made of it — and the name of the command that ran. Both come from
 // the one `command` key every line command nests under, so a test asserts on
 // the outcome without restating which command produced it.
 //

@@ -230,8 +230,8 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 	return func(cmd *cobra.Command, args []string) error {
 		// Setup runtime dependencies.
 		runtime, settingWarnings := newRuntime(cmd.Context())
-		homeDir, err := homedir.Dir()
-		if err != nil {
+		var err error
+		if runtime.HomeDir, err = homedir.Dir(); err != nil {
 			return err
 		}
 
@@ -258,7 +258,6 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 		cmdErr := f(args, app.RuntimeCLI{
 			Runtime: runtime,
 			Theme:   theme,
-			HomeDir: homeDir,
 			Out:     os.Stdout,
 			Err:     os.Stderr,
 		})

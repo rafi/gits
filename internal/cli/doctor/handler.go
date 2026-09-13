@@ -28,7 +28,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/service/wire"
 )
@@ -83,10 +83,10 @@ func (r Report) HasErrors() bool {
 // misconfigured" is the question, so scoping the answer to a project the user
 // already suspects would defeat it.
 func ExecDoctor(format string, _ []string, deps app.RuntimeCLI) error {
-	// doctor is not a Bulk Command, but it renders the same two formats, so
-	// it shares the one validator rather than keeping a second copy of the
+	// doctor runs nothing across repositories, but it renders the same two
+	// formats, so it shares the one validator rather than keeping a second copy of the
 	// pair that could drift from the flag's completion and help text.
-	if err := bulk.ValidateFormat(format); err != nil {
+	if err := output.ValidateFormat(format); err != nil {
 		return err
 	}
 
@@ -359,7 +359,7 @@ func expandHome(path string) string {
 // this command — the thing to pipe into a grep or a ticket — so they go to
 // Out, not Err, even though every one of them is about something being wrong.
 func render(format string, report Report, deps app.RuntimeCLI) error {
-	if format == bulk.FormatJSON {
+	if format == output.FormatJSON {
 		return wire.WriteValue(deps.Out, report)
 	}
 

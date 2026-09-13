@@ -4,7 +4,7 @@ import (
 	"io"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/service/wire"
 )
 
@@ -12,7 +12,7 @@ import (
 // with each probed repository's working-tree data nested under it. The
 // document's tree is the one the run visited — a whole project, or one
 // repository under its project.
-func renderJSON(w io.Writer, res bulk.Results[*repoStatus], opts Options) error {
+func renderJSON(w io.Writer, res run.Results[*repoStatus], opts Options) error {
 	env := wire.Envelope{}
 	if res.Project.Name == "" {
 		// The named project was skipped: nothing ran, nothing to document.

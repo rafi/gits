@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/format"
 )
 
 // TestRepoTitleRendersRelPath: RepoTitle shows exactly the display path

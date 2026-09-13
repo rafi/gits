@@ -1,4 +1,4 @@
-package bulk
+package run
 
 import (
 	"context"
@@ -6,27 +6,27 @@ import (
 	"sync"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/service"
 )
 
 // collect runs the body over every repository in the tree with a single
 // bounded worker pool: every worker stays busy until the queue drains (no
 // batch barrier), results land in indexed slots (no shared append) and come
-// back in stable tree order. Live progress is Diagnostic Output. The
-// interruption error is set when the run was cut short, and names how many
-// repositories were never processed — so an interrupted run fails loudly
-// instead of reporting partial success.
+// back in stable tree order. Progress is reported through the command's
+// reporter, if it has one. The interruption error is set when the run was cut
+// short, and names how many repositories were never processed — so an
+// interrupted run fails loudly instead of reporting partial success.
 func (c Command[T]) collect(
 	ctx context.Context,
 	project domain.Project,
-	deps app.RuntimeCLI,
+	rt service.Runtime,
 ) Results[T] {
-	repos := flatten(project, deps.HomeDir)
+	repos := flatten(project, rt.HomeDir)
 	slots := make([]*Result[T], len(repos))
 
-	workers := max(deps.Settings.WorkerCount, 1) // a pool of none processes nothing
+	workers := max(rt.Settings.WorkerCount, 1) // a pool of none processes nothing
 
-	progress := newReporter(deps.Err)
+	progress := c.progress()
 	progress.Begin(c.Verb, len(repos))
 
 	var wg sync.WaitGroup
@@ -36,7 +36,7 @@ func (c Command[T]) collect(
 		wg.Go(func() {
 			for i := range taskCh {
 				finish := progress.Start(repos[i].GetName())
-				res := c.one(ctx, repos[i], deps)
+				res := c.one(ctx, repos[i], rt)
 				slots[i] = &res
 				finish(isFailure(res.Err))
 			}
@@ -56,8 +56,8 @@ feed:
 	close(taskCh)
 	wg.Wait()
 
-	// Stop and drain the progress renderer before the renderer flushes
-	// results, so Diagnostic Output never races Result Output.
+	// Stop and drain the reporter before the caller renders anything, so
+	// live progress never races Result Output.
 	progress.Stop()
 
 	res := Results[T]{Project: project, Results: make([]Result[T], 0, len(slots))}

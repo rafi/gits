@@ -15,7 +15,7 @@ import (
 // AbortOnRepoState writes an error message as Diagnostic Output and aborts if
 // the repository is in an error state. Used by single-repo/interactive
 // callers; a Bulk Command declares the states it accepts instead, and the
-// module renders the guard failure on the repository's own line.
+// line renderer shows the guard failure on the repository's own line.
 //
 // The message is terminated here, so a caller that writes a repository title
 // ahead of it shares that line and appends no newline of its own.
@@ -27,7 +27,7 @@ func AbortOnRepoState(w io.Writer, repo domain.Repository, style lipgloss.Style)
 
 // IndentContinuation keeps the first line of s untouched and prefixes every
 // continuation line with prefix. A single-line input is returned unchanged.
-// The error epilogue and the bulk module's result lines each pass their own
+// The error epilogue and a run's result lines each pass their own
 // prefix; the pass over the string is the same one.
 func IndentContinuation(s, prefix string) string {
 	head, rest, found := strings.Cut(s, "\n")

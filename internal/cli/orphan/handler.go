@@ -16,7 +16,7 @@ import (
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/format"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/providers"

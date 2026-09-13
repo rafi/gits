@@ -1,5 +1,3 @@
-// Package run holds the business half of executing an operation across many
-// repositories: what counts as a failure, and how one is reported.
 package run
 
 import (
@@ -18,7 +16,7 @@ var (
 
 // StateError maps a non-OK repository state to its error: the Reason the
 // state was classified for when it carries one, its sentinel otherwise. The
-// bulk module's state guard reports a turned-back repository through it.
+// state guard reports a turned-back repository through it.
 func StateError(repo domain.Repository) error {
 	switch repo.State {
 	case domain.RepoStateError:

@@ -1,4 +1,4 @@
-package bulk
+package progress
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // ansiRe strips SGR color sequences so a rendered cell can be compared as text.
@@ -33,26 +35,26 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// TestNewReporterNonTTYReturnsNop verifies AC-8: a non-TTY writer must yield a
+// TestNewNonTTYReturnsNop verifies AC-8: a non-TTY writer must yield the
 // no-op reporter so piped/CI output is not garbled by ANSI cursor controls.
-func TestNewReporterNonTTYReturnsNop(t *testing.T) {
+func TestNewNonTTYReturnsNop(t *testing.T) {
 	t.Parallel()
 
 	for _, w := range []io.Writer{io.Discard, &bytes.Buffer{}} {
-		if _, ok := newReporter(w).(*nopReporter); !ok {
-			t.Errorf("newReporter(%T) = %T, want *nopReporter", w, newReporter(w))
+		if _, ok := New(w).(run.Nop); !ok {
+			t.Errorf("New(%T) = %T, want run.Nop", w, New(w))
 		}
 	}
 }
 
-// TestNopReporterLifecycle exercises the full reporter call sequence against the
+// TestNopLifecycle exercises the full reporter call sequence against the
 // no-op implementation: it must accept Begin, a Start per repo with its finish
 // called either way, and a draining Stop without blocking or panicking.
-func TestNopReporterLifecycle(t *testing.T) {
+func TestNopLifecycle(t *testing.T) {
 	t.Parallel()
 
 	const total = 5
-	var r reporter = &nopReporter{}
+	var r run.Progress = run.Nop{}
 
 	r.Begin("fetching", total)
 	for i := range total {
@@ -153,8 +155,8 @@ func TestBarPercentStartsAtOne(t *testing.T) {
 func TestReporterSatisfiedByImpls(t *testing.T) {
 	t.Parallel()
 
-	var _ reporter = (*nopReporter)(nil)
-	var _ reporter = (*liveReporter)(nil)
+	var _ run.Progress = run.Nop{}
+	var _ run.Progress = (*liveReporter)(nil)
 }
 
 // TestLiveReporterConcurrent drives the real live reporter from several

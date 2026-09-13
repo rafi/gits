@@ -1,4 +1,6 @@
-package bulk
+// Package output renders a run's results for the terminal: the stock lines,
+// the JSON envelope, and the `-o` vocabulary that chooses between them.
+package output
 
 import (
 	"errors"
@@ -12,12 +14,13 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/format"
+	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/service/wire"
 )
 
-// The output formats a line Bulk Command renders: the stock lines, or the
-// JSON envelope.
+// The output formats a line command renders: the stock lines, or the JSON
+// envelope.
 const (
 	FormatTable = "table"
 	FormatJSON  = "json"
@@ -31,13 +34,14 @@ func Formats() []string {
 }
 
 // ValidateFormat rejects everything but table and json. `list`'s other styles
-// (name, tree, wide) are shapes a Bulk Command has no meaning for, and
-// quietly falling back to the table would answer a question the user did not
-// ask. A command calls it before loading anything, so a typo'd format never
-// costs a provider round-trip or an interactive prompt.
+// (name, tree, wide) are shapes a bulk run has no meaning for, and quietly
+// falling back to the table would answer a question the user did not ask. A
+// command calls it before loading anything, so a typo'd format never costs a
+// provider round-trip or an interactive prompt.
 //
-// `gits doctor` renders the same pair and shares this validator, though it is
-// not a Bulk Command: the vocabulary is the flag's, not the traversal's.
+// `gits doctor` renders the same pair and shares this validator, though it
+// runs nothing across repositories: the vocabulary is the flag's, not the
+// traversal's.
 func ValidateFormat(format string) error {
 	switch format {
 	case FormatTable, FormatJSON:
@@ -51,18 +55,28 @@ func ValidateFormat(format string) error {
 // Render writes the results in the given format — already validated — and
 // returns the error that decides the run's exit code, which differs by
 // format: see Lines and JSON.
-func Render(res Results[string], format string, deps app.RuntimeCLI) error {
+func Render(res run.Results[string], format string, deps app.RuntimeCLI) error {
 	if format == FormatJSON {
 		return JSON(res, deps)
 	}
 	return Lines(res, deps)
 }
 
+// Skips reports the projects the run's configuration dropped as Diagnostic
+// Output, so a project that vanished is distinguishable from an empty one.
+// Every format prints them: they are about the run, not part of its result.
+func Skips[T any](res run.Results[T], deps app.RuntimeCLI) {
+	for _, name := range res.Skipped {
+		fmt.Fprintf(deps.Err, "Skipping %s: excluded by configuration\n", name)
+	}
+}
+
 // Lines is the stock renderer: one line per repository — the padded display
 // path followed by the body's text, or by its bare error — as Result Output,
 // a blank line between projects, then the error epilogue as Diagnostic
-// Output. Every Bulk Command but status renders its table form through it.
-func Lines(res Results[string], deps app.RuntimeCLI) error {
+// Output. Every line command but status renders its table form through it.
+func Lines(res run.Results[string], deps app.RuntimeCLI) error {
+	Skips(res, deps)
 	width := 0
 	for i, r := range res.Results {
 		if i == 0 || r.Repo.ProjectKey != res.Results[i-1].Repo.ProjectKey {
@@ -93,7 +107,8 @@ func Lines(res Results[string], deps app.RuntimeCLI) error {
 // them fails the run and no error epilogue is printed. An interrupted run
 // still fails, because the document is incomplete and nothing inside it
 // says so.
-func JSON(res Results[string], deps app.RuntimeCLI) error {
+func JSON(res run.Results[string], deps app.RuntimeCLI) error {
+	Skips(res, deps)
 	if err := writeJSON(deps.Out, res); err != nil {
 		return err
 	}
@@ -101,13 +116,13 @@ func JSON(res Results[string], deps app.RuntimeCLI) error {
 }
 
 // writeJSON builds the document from the tree and the results and writes it.
-func writeJSON(w io.Writer, res Results[string]) error {
+func writeJSON(w io.Writer, res run.Results[string]) error {
 	env := wire.Envelope{}
 	if res.Project.Name == "" {
 		// The named project was skipped: nothing ran, nothing to document.
 		return wire.Write(w, env)
 	}
-	index := make(map[string]Result[string], len(res.Results))
+	index := make(map[string]run.Result[string], len(res.Results))
 	for _, r := range res.Results {
 		index[r.Repo.Key()] = r
 	}
@@ -121,7 +136,9 @@ func writeJSON(w io.Writer, res Results[string]) error {
 // dequeued) is present with its identity and state and no outcome, exactly
 // as a repository the guard turned back is: the command did not run for
 // either.
-func buildNode(p domain.Project, command string, index map[string]Result[string]) wire.Project {
+func buildNode(
+	p domain.Project, command string, index map[string]run.Result[string],
+) wire.Project {
 	node := wire.NewProject(p)
 	for _, repo := range p.Repos {
 		out := wire.NewRepository(repo)
@@ -141,7 +158,7 @@ func buildNode(p domain.Project, command string, index map[string]Result[string]
 // the text alone. A warning is the documented pass-over, reported as such
 // rather than as an error, so a consumer can tell "nothing to do here" from
 // "this failed".
-func outcome(command string, r Result[string]) *wire.Command {
+func outcome(command string, r run.Result[string]) *wire.Command {
 	switch {
 	case r.Err == nil:
 		return wire.OK(command, plain(r.Value))
@@ -161,8 +178,29 @@ func plain(s string) string {
 // Epilogue writes the error epilogue as Diagnostic Output and returns the
 // error that decides the run's exit code: nil when nothing counted, since
 // warnings are listed on their repositories' lines and not here.
-func Epilogue[T any](res Results[T], deps app.RuntimeCLI) error {
-	return style.RenderErrors(deps.Err, res.Errors(), true)
+func Epilogue[T any](res run.Results[T], deps app.RuntimeCLI) error {
+	return style.RenderErrors(deps.Err, Errors(res), true)
+}
+
+// Errors returns every result's error in tree order — a plain error wrapped
+// with its repository's name and path, a warning as it is — followed by the
+// interruption, if any. This is the list the error epilogue renders.
+func Errors[T any](res run.Results[T]) []error {
+	var errs []error
+	for _, r := range res.Results {
+		if r.Err == nil {
+			continue
+		}
+		if _, ok := errors.AsType[*domain.Warning](r.Err); ok {
+			errs = append(errs, r.Err)
+			continue
+		}
+		errs = append(errs, run.RepoError(r.Err, r.Repo.Repository))
+	}
+	if res.Interrupted != nil {
+		errs = append(errs, res.Interrupted)
+	}
+	return errs
 }
 
 // maxPathWidth returns the rendered width of the widest repository display

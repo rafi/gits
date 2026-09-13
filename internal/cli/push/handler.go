@@ -9,8 +9,12 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/app/cli/output"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/progress"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/service"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // ExecPush pushes project repositories, or a specific repo, to their
@@ -24,45 +28,50 @@ func ExecPush(format string, opts git.PushOptions, args []string, deps app.Runti
 	// Validate before anything is loaded or selected, so a rejected flag
 	// combination or a typo'd format costs neither a provider round-trip nor
 	// a single remote.
-	if err := bulk.ValidateFormat(format); err != nil {
+	if err := output.ValidateFormat(format); err != nil {
 		return err
 	}
 	if err := opts.Validate(); err != nil {
 		return err
 	}
 
-	res, err := bulk.Command[string]{
-		Name: "push",
-		Verb: "pushing",
-		Body: pushRepo(opts),
-	}.Run(args, deps)
+	// What the command runs on is settled — prompting included — before the
+	// engine is handed anything, so nothing it does can fail over an argument.
+	target, err := pick.Target(args, deps)
 	if err != nil {
 		return err
 	}
-	return bulk.Render(res, format, deps)
+
+	res := run.Command[string]{
+		Name:     "push",
+		Verb:     "pushing",
+		Do:       pushRepo(opts, deps),
+		Progress: progress.New(deps.Err),
+	}.Run(target, deps.Runtime)
+	return output.Render(res, format, deps)
 }
 
 // pushRepo returns a body that pushes one repository into its result lines.
-func pushRepo(opts git.PushOptions) func(
-	context.Context, bulk.Repo, app.RuntimeCLI,
+func pushRepo(opts git.PushOptions, deps app.RuntimeCLI) func(
+	context.Context, run.Repo, service.Runtime,
 ) (string, error) {
-	return func(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string, error) {
+	return func(ctx context.Context, repo run.Repo, rt service.Runtime) (string, error) {
 		// A ref-selecting flag already says which refs to push, so the
 		// Upstream lookup — and the skip hanging off it — is suspended and
 		// git resolves the destination itself.
 		if opts.SelectsRefs() {
-			output, err := deps.Git.Push(ctx, repo.AbsPath, git.PushTarget{}, opts)
+			out, err := rt.Git.Push(ctx, repo.AbsPath, git.PushTarget{}, opts)
 			if err != nil {
 				return "", err
 			}
-			return deps.Theme.GitOutput.Render(output), nil
+			return deps.Theme.GitOutput.Render(out), nil
 		}
 
 		// The branch and its Upstream arrive together, from git's own reading
 		// of whether that Upstream resolves — as they do for `pull`. `status`
 		// derives the same Gone Upstream state from its working-tree snapshot
 		// instead (Snapshot.GoneUpstream); a fix to one belongs in the other.
-		head, err := deps.Git.HeadUpstream(ctx, repo.AbsPath)
+		head, err := rt.Git.HeadUpstream(ctx, repo.AbsPath)
 		if err != nil {
 			return "", err
 		}
@@ -71,7 +80,7 @@ func pushRepo(opts git.PushOptions) func(
 		case head.Upstream == "":
 			// Pushing a branch with no Upstream is undefined, and this command
 			// is documented to pass over it — so it is wrapped here as a
-			// warning, which the module leaves alone: it shows on the line
+			// warning, which the engine leaves alone: it shows on the line
 			// without failing the run.
 			return "", domain.NewWarning("skipped: %s", git.ErrNoUpstream)
 		case head.Gone:
@@ -94,7 +103,7 @@ func pushRepo(opts git.PushOptions) func(
 			Remote:  remote,
 			Refspec: head.Branch + ":" + branch,
 		}
-		output, err := deps.Git.Push(ctx, repo.AbsPath, target, opts)
+		out, err := rt.Git.Push(ctx, repo.AbsPath, target, opts)
 		if err != nil {
 			return "", err
 		}
@@ -102,7 +111,7 @@ func pushRepo(opts git.PushOptions) func(
 			"[%s -> %s] %s",
 			head.Branch,
 			head.Upstream,
-			deps.Theme.GitOutput.Render(output),
+			deps.Theme.GitOutput.Render(out),
 		), nil
 	}
 }

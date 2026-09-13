@@ -115,7 +115,7 @@ type Writer interface {
 
 // Client is the whole set of git operations the application depends on. It is
 // satisfied by the concrete *Git client and lets callers (notably the runtime
-// and the bulk module) be tested with a fake implementation.
+// and the run engine) be tested with a fake implementation.
 type Client interface {
 	Reader
 	Writer

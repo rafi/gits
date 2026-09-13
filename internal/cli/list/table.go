@@ -8,7 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/format"
 )
 
 var (

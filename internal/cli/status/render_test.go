@@ -10,14 +10,14 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // fixture builds one row bound to a repository in the given state.
 func fixture(name string, state domain.RepoState, st repoStatus) *repoStatus {
-	st.repo = bulk.Repo{
+	st.repo = run.Repo{
 		Name: name, AbsPath: "/code/acme/" + name, State: state,
 		Path: name,
 	}
@@ -56,10 +56,10 @@ func project(name string, sts ...*repoStatus) domain.Project {
 }
 
 // resultsOf wraps rows as the run hands them to the renderer, under root.
-func resultsOf(root domain.Project, sts ...*repoStatus) bulk.Results[*repoStatus] {
-	res := bulk.Results[*repoStatus]{Project: root}
+func resultsOf(root domain.Project, sts ...*repoStatus) run.Results[*repoStatus] {
+	res := run.Results[*repoStatus]{Project: root}
 	for _, st := range sts {
-		res.Results = append(res.Results, bulk.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
+		res.Results = append(res.Results, run.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
 	}
 	return res
 }

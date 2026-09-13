@@ -14,6 +14,7 @@ import (
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/service/resolve"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // branchLineFields is how many tab-separated fields a branch selection line
@@ -163,4 +164,15 @@ func SelectBranch(
 		return "", domain.NewWarning("no branch selected")
 	}
 	return parts[1], nil
+}
+
+// Target parses the arguments and returns the project, and the repository
+// when one was named, as the engine's target — prompting for whatever they
+// left out. It is the step every bulk command takes before running.
+func Target(args []string, deps app.RuntimeCLI) (run.Target, error) {
+	project, repo, err := ParseArgs(args, true, deps)
+	if err != nil {
+		return run.Target{}, err
+	}
+	return run.Target{Project: project, Repo: repo}, nil
 }

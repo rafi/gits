@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // okRepo is a cloned repository the Traversal would have probed.
@@ -22,22 +23,22 @@ func okRepo(name string) domain.Repository {
 // row builds one repository's status as the probe would, bound to its
 // repository so the tree lookup finds it.
 func row(repo domain.Repository, st repoStatus) *repoStatus {
-	st.repo = bulk.Repo{Repository: repo, Path: repo.Name}
+	st.repo = run.Repo{Repository: repo, Path: repo.Name}
 	return &st
 }
 
 // results wraps statuses as the run hands them to the renderer, under the
 // tree the run visited.
-func results(project domain.Project, sts ...*repoStatus) bulk.Results[*repoStatus] {
-	res := bulk.Results[*repoStatus]{Project: project}
+func results(project domain.Project, sts ...*repoStatus) run.Results[*repoStatus] {
+	res := run.Results[*repoStatus]{Project: project}
 	for _, st := range sts {
-		res.Results = append(res.Results, bulk.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
+		res.Results = append(res.Results, run.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
 	}
 	return res
 }
 
 // renderDoc renders results to JSON and parses the document back.
-func renderDoc(t *testing.T, res bulk.Results[*repoStatus], opts Options) map[string]any {
+func renderDoc(t *testing.T, res run.Results[*repoStatus], opts Options) map[string]any {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := renderJSON(&buf, res, opts); err != nil {
@@ -453,18 +454,18 @@ func TestStatusJSONSkipsUnstartedRepos(t *testing.T) {
 
 // TestValidateFormat: AC-8. status takes table and json, and says so instead
 // of falling back when handed one of list's other styles. The validator is
-// the bulk module's, shared with the line Bulk Commands, and asserted here at
+// the output package's, shared with the line Bulk Commands, and asserted here at
 // the seam status reaches it through.
 func TestValidateFormat(t *testing.T) {
 	t.Parallel()
 
 	for _, format := range []string{"table", "json"} {
-		if err := bulk.ValidateFormat(format); err != nil {
+		if err := output.ValidateFormat(format); err != nil {
 			t.Errorf("ValidateFormat(%q) = %v, want nil", format, err)
 		}
 	}
 	for _, format := range []string{"name", "tree", "wide", "", "JSON"} {
-		err := bulk.ValidateFormat(format)
+		err := output.ValidateFormat(format)
 		if err == nil {
 			t.Errorf("ValidateFormat(%q) = nil, want an error", format)
 			continue

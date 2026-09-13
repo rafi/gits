@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/list"
 )
 
@@ -91,7 +91,7 @@ func TestCompletionDepsSettings(t *testing.T) {
 
 // TestFlagValueCompletion proves pressing Tab after `-o` or `-C` offers the
 // values that flag accepts, filtered by what has been typed. The candidates
-// come from the validators themselves — bulk.Formats, list.Formats,
+// come from the validators themselves — output.Formats, list.Formats,
 // style.ColorChoices — and the drift test below pins that they stay the
 // values the command accepts.
 //
@@ -108,13 +108,13 @@ func TestFlagValueCompletion(t *testing.T) {
 	}{
 		{"list -o offers every style", listCmd, "output", "", list.Formats()},
 		{"list -o filters by prefix", listCmd, "output", "t", []string{"table", "tree"}},
-		{"status -o is table and json", statusCmd, "output", "", bulk.Formats()},
-		{"clone -o is table and json", cloneCmd, "output", "", bulk.Formats()},
-		{"doctor -o is table and json", doctorCmd, "output", "", bulk.Formats()},
-		{"exec -o is table and json", execCmd, "output", "", bulk.Formats()},
-		{"fetch -o is table and json", fetchCmd, "output", "", bulk.Formats()},
-		{"pull -o is table and json", pullCmd, "output", "", bulk.Formats()},
-		{"push -o is table and json", pushCmd, "output", "", bulk.Formats()},
+		{"status -o is table and json", statusCmd, "output", "", output.Formats()},
+		{"clone -o is table and json", cloneCmd, "output", "", output.Formats()},
+		{"doctor -o is table and json", doctorCmd, "output", "", output.Formats()},
+		{"exec -o is table and json", execCmd, "output", "", output.Formats()},
+		{"fetch -o is table and json", fetchCmd, "output", "", output.Formats()},
+		{"pull -o is table and json", pullCmd, "output", "", output.Formats()},
+		{"push -o is table and json", pushCmd, "output", "", output.Formats()},
 		{"-C offers the three colors", rootCmd, "color", "", style.ColorChoices()},
 		{"-C filters by prefix", rootCmd, "color", "a", []string{"auto", "always"}},
 		{"an unmatched prefix offers nothing", listCmd, "output", "z", nil},
@@ -160,7 +160,7 @@ func TestFlagCompletionMatchesValidators(t *testing.T) {
 				t.Errorf("%s --output offers nothing", cmd.Name())
 			}
 			for _, v := range got {
-				if err := bulk.ValidateFormat(v); err != nil {
+				if err := output.ValidateFormat(v); err != nil {
 					t.Errorf("%s --output offers %q, which its validator rejects: %v",
 						cmd.Name(), v, err)
 				}

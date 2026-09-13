@@ -10,7 +10,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/pick"
-	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/format"
 )
 
 // ExecAdd adds the current repository to a project in the config file.

@@ -11,7 +11,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/format"
 )
 
 // ReadMeFilename is the file the repository overview previews.

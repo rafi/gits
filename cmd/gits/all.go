@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/cli/add"
 	"github.com/rafi/gits/internal/cli/browse"
 	"github.com/rafi/gits/internal/cli/cd"
@@ -72,7 +72,7 @@ func init() {
 
 	// Every -o is registered here, with the styles its own command accepts.
 	// `list` renders shapes a Bulk Command has no meaning for; the rest take
-	// the pair bulk.ValidateFormat accepts. The values are the validators'
+	// the pair output.ValidateFormat accepts. The values are the validators'
 	// own, so help text, completion and what the command accepts cannot
 	// disagree.
 	for _, f := range []struct {
@@ -81,13 +81,13 @@ func init() {
 		styles []string
 	}{
 		{listCmd, &listOutput, list.Formats()},
-		{cloneCmd, &cloneOutput, bulk.Formats()},
-		{doctorCmd, &doctorOutput, bulk.Formats()},
-		{execCmd, &execOutput, bulk.Formats()},
-		{fetchCmd, &fetchOutput, bulk.Formats()},
-		{pullCmd, &pullOutput, bulk.Formats()},
-		{pushCmd, &pushOutput, bulk.Formats()},
-		{statusCmd, &statusOutput, bulk.Formats()},
+		{cloneCmd, &cloneOutput, output.Formats()},
+		{doctorCmd, &doctorOutput, output.Formats()},
+		{execCmd, &execOutput, output.Formats()},
+		{fetchCmd, &fetchOutput, output.Formats()},
+		{pullCmd, &pullOutput, output.Formats()},
+		{pushCmd, &pushOutput, output.Formats()},
+		{statusCmd, &statusOutput, output.Formats()},
 	} {
 		registerOutputFlag(f.cmd, f.dst, f.styles)
 	}

@@ -25,7 +25,11 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/app/cli/output"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/progress"
+	"github.com/rafi/gits/internal/service"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // ErrNoCommand is returned when no command follows the `--` separator.
@@ -44,24 +48,29 @@ var ErrNoCommand = errors.New("no command to run: gits exec [project] [repo] -- 
 func Exec(format string, command []string, args []string, deps app.RuntimeCLI) error {
 	// Both checks precede the load, so neither mistake costs a provider
 	// round-trip or an interactive prompt.
-	if err := bulk.ValidateFormat(format); err != nil {
+	if err := output.ValidateFormat(format); err != nil {
 		return err
 	}
 	if len(command) == 0 {
 		return ErrNoCommand
 	}
 
-	res, err := bulk.Command[string]{
-		Name: "exec",
-		Verb: "running",
-		Body: func(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string, error) {
-			return runRepo(ctx, command, repo, deps)
-		},
-	}.Run(args, deps)
+	// What the command runs on is settled — prompting included — before the
+	// engine is handed anything, so nothing it does can fail over an argument.
+	target, err := pick.Target(args, deps)
 	if err != nil {
 		return err
 	}
-	return bulk.Render(res, format, deps)
+
+	res := run.Command[string]{
+		Name: "exec",
+		Verb: "running",
+		Do: func(ctx context.Context, repo run.Repo, _ service.Runtime) (string, error) {
+			return runRepo(ctx, command, repo, deps)
+		},
+		Progress: progress.New(deps.Err),
+	}.Run(target, deps.Runtime)
+	return output.Render(res, format, deps)
 }
 
 // runRepo runs the command in one repository and returns its result line's
@@ -72,7 +81,7 @@ func Exec(format string, command []string, args []string, deps app.RuntimeCLI) e
 func runRepo(
 	ctx context.Context,
 	command []string,
-	repo bulk.Repo,
+	repo run.Repo,
 	deps app.RuntimeCLI,
 ) (string, error) {
 	// gosec G204: the argv is the user's own command, typed on their own

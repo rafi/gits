@@ -20,7 +20,7 @@ func completionDeps() service.Runtime {
 
 // completeValues offers a fixed set of flag values, filtered by what the user
 // has typed. The set is always passed in from wherever the value is
-// validated — bulk.Formats, list.Formats, config.ColorChoices — so a value
+// validated — output.Formats, list.Formats, config.ColorChoices — so a value
 // can never be offered that the command would then reject.
 func completeValues(values []string) func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 	return func(_ *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {

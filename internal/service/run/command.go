@@ -1,43 +1,30 @@
-// Package bulk runs a Bulk Command: one operation applied to every repository
-// in a project tree, reporting the outcome per repository.
+// Package run executes one operation across many repositories: it takes a
+// resolved target, applies the command's own pruning and state guard, and
+// works through the tree with a bounded worker pool, handing back one result
+// per repository in stable tree order.
 //
-// A command declares four things — a verb, the Repo States it acts on, an
-// optional project skip and a per-repository body — and Run owns everything
-// else: argument resolution and interactive selection, pruning, dispatch
-// between the whole tree and a single repository, the Repo State guard, the
-// bounded worker pool with live progress, stable tree ordering and
-// interruption accounting. Run hands back the collected results; Lines is the
-// stock renderer for them, JSON the machine-readable one, and Render picks
-// between the two by the -o flag; a command with its own output shape renders
-// them itself and closes with Epilogue.
-//
-// Result Output and Diagnostic Output are read from the caller's dependencies;
-// nothing here names a process stream.
-package bulk
+// Nothing here renders. Progress is an interface a caller may implement, and
+// the results are data a view turns into lines, a table or a document.
+package run
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io"
 	"slices"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/app/cli/pick"
-	"github.com/rafi/gits/internal/app/format"
-	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/format"
+	"github.com/rafi/gits/internal/service"
 )
 
-// Command is one Bulk Command. T is whatever its body produces for each
-// repository: the rendered body text for the commands using Lines, a
-// structured value for one rendering its own output.
+// Command is one operation applied across repositories. T is whatever its
+// body produces for each of them: the body text for the commands rendering
+// lines, a structured value for one rendering its own output.
 type Command[T any] struct {
 	// Name is the command's own name ("pull"): the key its per-repository
 	// outcome nests under in the JSON envelope. A command that never renders
 	// JSON may leave it empty.
 	Name string
-	// Verb labels the run in the live progress reporter ("pulling").
+	// Verb labels the run in the progress reporter ("pulling").
 	Verb string
 	// Accepts are the Repo States the body is willing to receive. A nil set
 	// means the ok state: the permissive default's failure mode is a body
@@ -50,13 +37,23 @@ type Command[T any] struct {
 	// and absent from the progress reporter's total. A nil Skip visits
 	// everything.
 	Skip func(domain.Project) bool
-	// Body does one repository's work. It must be safe to call concurrently
+	// Do does one repository's work. It must be safe to call concurrently
 	// and must write to no destination itself. The error it returns is kept
 	// as it is: shown bare on the repository's own line, and wrapped with
 	// the repository's name and path only in the error epilogue. A warning
 	// built with domain.NewWarning is a documented pass-over — it shows on
 	// the line and does not fail the run.
-	Body func(context.Context, Repo, app.RuntimeCLI) (T, error)
+	Do func(context.Context, Repo, service.Runtime) (T, error)
+	// Progress receives the live lifecycle of the run. A nil Progress is the
+	// no-op: the engine reports nothing anywhere by itself.
+	Progress Progress
+}
+
+// Target is what a run was pointed at: a project tree, or one repository
+// within it when Repo is set.
+type Target struct {
+	Project domain.Project
+	Repo    *domain.Repository
 }
 
 // Repo is the bundled per-repository argument a body receives: the repository,
@@ -73,7 +70,8 @@ type Repo struct {
 	// freely as the tree is walked.
 	ProjectKey string
 	// Path is the repository's display path, relative to its project with ~
-	// for the home directory. Lines pads it to the widest in the project.
+	// for the home directory. A line renderer pads it to the widest in the
+	// project.
 	Path string
 }
 
@@ -103,58 +101,38 @@ type Results[T any] struct {
 	// Project is the pruned tree the run visited. For a single named
 	// repository it holds that repository alone, with no sub-projects. It is
 	// the zero value when the named project was skipped.
-	Project     domain.Project
-	Results     []Result[T]
+	Project domain.Project
+	Results []Result[T]
+	// Skipped names the projects the command's own Skip dropped, in the
+	// order they were met. A view reports them so a project that vanished is
+	// distinguishable from an empty one.
+	Skipped     []string
 	Interrupted error
 }
 
-// Errors returns every result's error in tree order — a plain error wrapped
-// with its repository's name and path, a warning as it is — followed by the
-// interruption, if any. This is the list the error epilogue renders.
-func (r Results[T]) Errors() []error {
-	var errs []error
-	for _, res := range r.Results {
-		if res.Err == nil {
-			continue
-		}
-		if _, ok := errors.AsType[*domain.Warning](res.Err); ok {
-			errs = append(errs, res.Err)
-			continue
-		}
-		errs = append(errs, run.RepoError(res.Err, res.Repo.Repository))
-	}
-	if r.Interrupted != nil {
-		errs = append(errs, r.Interrupted)
-	}
-	return errs
-}
-
-// Run resolves the arguments — prompting for a project or repository when they
-// are missing — and executes the command over what they named. The error is
-// argument resolution's; a repository's failure is in its result.
-func (c Command[T]) Run(args []string, deps app.RuntimeCLI) (Results[T], error) {
-	project, repo, err := pick.ParseArgs(args, true, deps)
-	if err != nil {
-		return Results[T]{}, err
-	}
-
+// Run executes the command over the target. Everything that could fail before
+// any repository is touched — naming a project, choosing a repository — has
+// already happened, so a failure here belongs to a repository and travels in
+// its result.
+func (c Command[T]) Run(target Target, rt service.Runtime) Results[T] {
 	// Pruning precedes the dispatch so a skipped project is skipped on both
 	// paths: how the command was invoked must not override its configuration.
-	project, kept := c.prune(project, deps.Err)
+	var skipped []string
+	project, kept := c.prune(target.Project, &skipped)
 	if !kept {
-		// The named project is skipped, so there is nothing to run. prune has
-		// already said so as Diagnostic Output.
-		return Results[T]{Command: c.Name}, nil
+		// The named project is skipped, so there is nothing to run.
+		return Results[T]{Command: c.Name, Skipped: skipped}
 	}
 
 	var res Results[T]
-	if repo != nil {
-		res = c.single(deps.Ctx, project, *repo, deps)
+	if target.Repo != nil {
+		res = c.single(rt.Ctx, project, *target.Repo, rt)
 	} else {
-		res = c.collect(deps.Ctx, project, deps)
+		res = c.collect(rt.Ctx, project, rt)
 	}
 	res.Command = c.Name
-	return res, nil
+	res.Skipped = skipped
+	return res
 }
 
 // single runs the body for one named repository. The tree it reports is the
@@ -165,7 +143,7 @@ func (c Command[T]) single(
 	ctx context.Context,
 	project domain.Project,
 	repo domain.Repository,
-	deps app.RuntimeCLI,
+	rt service.Runtime,
 ) Results[T] {
 	// Argument resolution found this repository in the tree, and pruning
 	// shares every surviving project's Repos array — so the only way it is
@@ -176,7 +154,7 @@ func (c Command[T]) single(
 	}
 	project.Repos = []domain.Repository{repo}
 	project.SubProjects = nil
-	res := c.one(ctx, newRepo(repo, project, "0", deps.HomeDir), deps)
+	res := c.one(ctx, newRepo(repo, project, "0", rt.HomeDir), rt)
 	return Results[T]{Project: project, Results: []Result[T]{res}}
 }
 
@@ -198,14 +176,14 @@ func newRepo(
 
 // one applies the state guard and, when it passes, the body — the whole of
 // what happens to a single repository, on either dispatch path.
-func (c Command[T]) one(ctx context.Context, repo Repo, deps app.RuntimeCLI) Result[T] {
+func (c Command[T]) one(ctx context.Context, repo Repo, rt service.Runtime) Result[T] {
 	res := Result[T]{Repo: repo}
 	if !c.accepts(repo.State) {
-		res.Err = run.StateError(repo.Repository)
+		res.Err = StateError(repo.Repository)
 		res.Guarded = true
 		return res
 	}
-	res.Value, res.Err = c.Body(ctx, repo, deps)
+	res.Value, res.Err = c.Do(ctx, repo, rt)
 	return res
 }
 
@@ -218,24 +196,23 @@ func (c Command[T]) accepts(state domain.RepoState) bool {
 	return slices.Contains(c.Accepts, state)
 }
 
-// prune returns the tree the run visits and whether p itself survived, naming
-// every skipped project as Diagnostic Output so a project that vanishes is
-// distinguishable from an empty one. A skipped project is dropped whole — its
-// repositories, its sub-projects and its own title — which is what makes it
-// vanish rather than appear as an empty block. The original tree is left
-// unmodified.
-func (c Command[T]) prune(p domain.Project, w io.Writer) (domain.Project, bool) {
+// prune returns the tree the run visits and whether p itself survived,
+// appending every skipped project's name to skipped. A skipped project is
+// dropped whole — its repositories, its sub-projects and its own title —
+// which is what makes it vanish rather than appear as an empty block. The
+// original tree is left unmodified.
+func (c Command[T]) prune(p domain.Project, skipped *[]string) (domain.Project, bool) {
 	if c.Skip == nil {
 		return p, true
 	}
 	if c.Skip(p) {
-		// Saying so once is the message: the whole subtree goes with it.
-		fmt.Fprintf(w, "Skipping %s: excluded by configuration\n", p.Name)
+		// Naming it once is enough: the whole subtree goes with it.
+		*skipped = append(*skipped, p.Name)
 		return p, false
 	}
 	subs := make([]domain.Project, 0, len(p.SubProjects))
 	for _, sub := range p.SubProjects {
-		if kept, ok := c.prune(sub, w); ok {
+		if kept, ok := c.prune(sub, skipped); ok {
 			subs = append(subs, kept)
 		}
 	}
@@ -260,8 +237,7 @@ func inTree(p domain.Project, repo domain.Repository) bool {
 }
 
 // isFailure reports whether err counts as a real failure rather than a
-// warning, for the live progress error count — mirroring
-// style.RenderErrors(_, true).
+// warning, for the progress error count.
 func isFailure(err error) bool {
 	return err != nil && !domain.IsWarning(err)
 }

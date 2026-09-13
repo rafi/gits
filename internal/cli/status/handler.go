@@ -7,8 +7,12 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/bulk"
+	"github.com/rafi/gits/internal/app/cli/output"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/progress"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/service"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // repoStatus is one repository's row: the probe's answers, populated
@@ -18,7 +22,7 @@ type repoStatus struct {
 	// counts and work-tree counts.
 	git.Snapshot
 
-	repo bulk.Repo
+	repo run.Repo
 	// stat is the uncommitted line diff vs HEAD; nil unless --stat asked for
 	// it and the probe answered.
 	stat *git.DiffStat
@@ -76,7 +80,7 @@ type rows map[string]*repoStatus
 
 // newRows builds the index from the run's results. A repository the state
 // guard turned back has no probe value; its row is built from the result.
-func newRows(res bulk.Results[*repoStatus]) rows {
+func newRows(res run.Results[*repoStatus]) rows {
 	index := make(rows, len(res.Results))
 	for _, r := range res.Results {
 		st := r.Value
@@ -116,20 +120,26 @@ func (r rows) visible(p domain.Project, opts Options) (sts []*repoStatus, hidden
 func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
 	// costs a provider round-trip or an interactive prompt. The accepted
-	// formats are the ones every Bulk Command takes.
-	if err := bulk.ValidateFormat(format); err != nil {
+	// formats are the ones every bulk command takes.
+	if err := output.ValidateFormat(format); err != nil {
 		return err
 	}
 
-	res, err := bulk.Command[*repoStatus]{
-		Verb: "checking status",
-		Body: statusRepo(opts),
-	}.Run(args, deps)
+	// What the command runs on is settled — prompting included — before the
+	// engine is handed anything, so nothing it does can fail over an argument.
+	target, err := pick.Target(args, deps)
 	if err != nil {
 		return err
 	}
 
-	if format == bulk.FormatJSON {
+	res := run.Command[*repoStatus]{
+		Verb:     "checking status",
+		Do:       statusRepo(opts),
+		Progress: progress.New(deps.Err),
+	}.Run(target, deps.Runtime)
+	output.Skips(res, deps)
+
+	if format == output.FormatJSON {
 		// The json form prints no error epilogue and exits zero for
 		// per-repository conditions: a repository's condition is data in the
 		// document rather than the command's outcome. An interrupted run
@@ -141,18 +151,18 @@ func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI)
 		return res.Interrupted
 	}
 	renderTables(res, opts, deps)
-	return bulk.Epilogue(res, deps)
+	return output.Epilogue(res, deps)
 }
 
 // statusRepo returns a body that probes one repository into a structured
 // status: safe to call concurrently and writes no output itself.
 func statusRepo(opts Options) func(
-	context.Context, bulk.Repo, app.RuntimeCLI,
+	context.Context, run.Repo, service.Runtime,
 ) (*repoStatus, error) {
 	return func(
 		ctx context.Context,
-		repo bulk.Repo,
-		deps app.RuntimeCLI,
+		repo run.Repo,
+		rt service.Runtime,
 	) (*repoStatus, error) {
 		st := &repoStatus{repo: repo}
 
@@ -161,7 +171,7 @@ func statusRepo(opts Options) func(
 		// paying for a second query; `pull` and `push` take no snapshot and
 		// read the same state from a ref walk instead — see
 		// git.HeadUpstream; a fix to one belongs in the other.
-		snap, err := deps.Git.Snapshot(ctx, repo.AbsPath)
+		snap, err := rt.Git.Snapshot(ctx, repo.AbsPath)
 		if err != nil {
 			st.err = err
 			return st, err
@@ -170,7 +180,7 @@ func statusRepo(opts Options) func(
 
 		if opts.Stat {
 			// Tolerated like HeadInfo: an unborn HEAD leaves the column blank.
-			if ds, err := deps.Git.WorkingDiff(ctx, repo.AbsPath); err == nil {
+			if ds, err := rt.Git.WorkingDiff(ctx, repo.AbsPath); err == nil {
 				st.stat = &ds
 			}
 		}
@@ -183,16 +193,16 @@ func statusRepo(opts Options) func(
 			// a Gone one: compare against the matching branch on one of the
 			// repository's own Remotes, so a usable comparison is not
 			// discarded.
-			ref := deps.Git.FallbackRef(ctx, repo.AbsPath, snap.Branch)
+			ref := rt.Git.FallbackRef(ctx, repo.AbsPath, snap.Branch)
 			if ref == "" {
 				break
 			}
-			if ahead, behind, err := deps.Git.Diff(ctx, repo.AbsPath, snap.Branch, ref); err == nil {
+			if ahead, behind, err := rt.Git.Diff(ctx, repo.AbsPath, snap.Branch, ref); err == nil {
 				st.Ahead, st.Behind, st.compared = ahead, behind, true
 			}
 		}
 
-		if head, err := deps.Git.HeadInfo(ctx, repo.AbsPath); err == nil {
+		if head, err := rt.Git.HeadInfo(ctx, repo.AbsPath); err == nil {
 			st.head = head
 			st.version = head.Describe
 		}

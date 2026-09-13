@@ -1,4 +1,7 @@
-package bulk
+// Package progress paints a run's live progress on a terminal: one in-place
+// row per active repository plus an overall bar, erased when the run ends so
+// the results print where the block stood.
+package progress
 
 import (
 	"fmt"
@@ -11,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // spinnerFrames are huh's "Meter" spinner animation frames, reused so each
@@ -82,36 +86,15 @@ func layoutFor(width int) (nameW int, showStats bool) {
 	}
 }
 
-// reporter renders live progress for a run: one in-place row per active repo
-// plus an overall total pinned at the bottom. Implementations must tolerate the
-// lifecycle being driven concurrently from worker goroutines: Begin once,
-// Start per repo — its row spins until the returned finish is called on that
-// worker, which also folds a failure into the failed count — and a final Stop
-// that erases the live block and blocks until the render goroutine has
-// drained (AC-7) so results can be flushed as Result Output without
-// interleaving.
-type reporter interface {
-	Begin(verb string, total int)         // begin; record the totals
-	Start(label string) func(failed bool) // add a live row; finish it with the result
-	Stop()                                // erase the block, drain the render goroutine
-}
-
-// newReporter selects a progress reporter based on whether w is a terminal.
-// Non-TTY writers (pipes, CI logs) get a no-op reporter so ANSI cursor controls
-// never garble captured output (AC-8).
-func newReporter(w io.Writer) reporter {
+// New selects a reporter for w: the live block when it is a terminal, the
+// engine's no-op otherwise, so ANSI cursor controls never garble a pipe, a CI
+// log or a test buffer (AC-8).
+func New(w io.Writer) run.Progress {
 	if _, isTTY := style.TermWidth(w); isTTY {
 		return newLiveReporter(w)
 	}
-	return &nopReporter{}
+	return run.Nop{}
 }
-
-// nopReporter is the no-op reporter used for non-TTY writers and tests.
-type nopReporter struct{}
-
-func (*nopReporter) Begin(string, int)              {}
-func (*nopReporter) Start(string) func(failed bool) { return func(bool) {} }
-func (*nopReporter) Stop()                          {}
 
 // styles holds the lipgloss styles for one render. Colors are emitted as-is and
 // downsampled to the terminal's profile at the write site (see render).

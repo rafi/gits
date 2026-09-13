@@ -1,4 +1,4 @@
-package bulk
+package output
 
 import (
 	"encoding/json"
@@ -23,10 +23,10 @@ func TestLinesRendersBodyOrBareError(t *testing.T) {
 		{Name: "api", Dir: "api", AbsPath: "/code/acme/api"},
 		{Name: "web", Dir: "web", AbsPath: "/code/acme/web"},
 	}}
-	res := Results[string]{Project: proj, Results: []Result[string]{
-		{Repo: Repo{Repository: proj.Repos[0], Project: proj, Path: "api"},
+	res := run.Results[string]{Project: proj, Results: []run.Result[string]{
+		{Repo: run.Repo{Repository: proj.Repos[0], Project: proj, Path: "api"},
 			Value: "[main <- origin/main] ok"},
-		{Repo: Repo{Repository: proj.Repos[1], Project: proj, Path: "web"},
+		{Repo: run.Repo{Repository: proj.Repos[1], Project: proj, Path: "web"},
 			Value: "never shown", Err: errors.New("not cloned")},
 	}}
 
@@ -63,15 +63,15 @@ func TestLinesSeparatesProjects(t *testing.T) {
 		{Name: "a", Dir: "a"}, {Name: "much-longer", Dir: "much-longer"},
 	}}
 	sub := domain.Project{Name: "sub", Repos: []domain.Repository{{Name: "s", Dir: "s"}}}
-	line := func(p domain.Project, key string, i int) Result[string] {
-		return Result[string]{
-			Repo: Repo{
+	line := func(p domain.Project, key string, i int) run.Result[string] {
+		return run.Result[string]{
+			Repo: run.Repo{
 				Repository: p.Repos[i], Project: p, ProjectKey: key, Path: p.Repos[i].Dir,
 			},
 			Value: "BODY",
 		}
 	}
-	res := Results[string]{Project: root, Results: []Result[string]{
+	res := run.Results[string]{Project: root, Results: []run.Result[string]{
 		line(root, "0", 0), line(root, "0", 1), line(sub, "0/0", 0),
 	}}
 
@@ -99,16 +99,16 @@ func TestErrorsWrapsForTheEpilogue(t *testing.T) {
 
 	repo := domain.Repository{Name: "api", AbsPath: "/code/api"}
 	warning := domain.NewWarning("skipped")
-	res := Results[string]{
-		Results: []Result[string]{
-			{Repo: Repo{Repository: repo}, Err: errors.New("boom")},
-			{Repo: Repo{Repository: repo}},
-			{Repo: Repo{Repository: repo}, Err: warning},
+	res := run.Results[string]{
+		Results: []run.Result[string]{
+			{Repo: run.Repo{Repository: repo}, Err: errors.New("boom")},
+			{Repo: run.Repo{Repository: repo}},
+			{Repo: run.Repo{Repository: repo}, Err: warning},
 		},
 		Interrupted: errors.New("interrupted: 1 of 4 repositories not processed"),
 	}
 
-	errs := res.Errors()
+	errs := Errors(res)
 	if len(errs) != 3 {
 		t.Fatalf("Errors() = %v, want the failure, the warning and the interruption", errs)
 	}
@@ -181,12 +181,12 @@ func TestLinesGroupsProjectsCopiedThroughAppend(t *testing.T) {
 	grown := root
 	grown.Repos = append(slices.Clone(root.Repos), domain.Repository{Name: "b", Dir: "b"})
 
-	res := Results[string]{Project: root, Results: []Result[string]{
-		{Repo: Repo{Repository: root.Repos[0], Project: root, ProjectKey: "0", Path: "a"},
+	res := run.Results[string]{Project: root, Results: []run.Result[string]{
+		{Repo: run.Repo{Repository: root.Repos[0], Project: root, ProjectKey: "0", Path: "a"},
 			Value: "BODY"},
-		{Repo: Repo{Repository: grown.Repos[1], Project: grown, ProjectKey: "0", Path: "b"},
+		{Repo: run.Repo{Repository: grown.Repos[1], Project: grown, ProjectKey: "0", Path: "b"},
 			Value: "BODY"},
-		{Repo: Repo{Repository: sub.Repos[0], Project: sub, ProjectKey: "0/0", Path: "s"},
+		{Repo: run.Repo{Repository: sub.Repos[0], Project: sub, ProjectKey: "0/0", Path: "s"},
 			Value: "BODY"},
 	}}
 
@@ -227,7 +227,7 @@ func TestValidateFormat(t *testing.T) {
 // condition a renderer distinguishes: a success, a documented pass-over, a
 // failure, and one the state guard turned back. Its output carries terminal
 // styling, as a body's does.
-func jsonFixture(t *testing.T) (Results[string], *clitest.Deps) {
+func jsonFixture(t *testing.T) (run.Results[string], *clitest.Deps) {
 	t.Helper()
 
 	deps := clitest.New(t, nil)
@@ -237,10 +237,10 @@ func jsonFixture(t *testing.T) (Results[string], *clitest.Deps) {
 		{Name: "docs", Dir: "docs", AbsPath: "/code/acme/docs", State: domain.RepoStateOK},
 		{Name: "gone", Dir: "gone", AbsPath: "/code/acme/gone", State: domain.RepoStateNotCloned},
 	}}
-	repo := func(i int) Repo {
-		return Repo{Repository: proj.Repos[i], Project: proj, ProjectKey: "0", Path: proj.Repos[i].Dir}
+	repo := func(i int) run.Repo {
+		return run.Repo{Repository: proj.Repos[i], Project: proj, ProjectKey: "0", Path: proj.Repos[i].Dir}
 	}
-	res := Results[string]{Command: "pull", Project: proj, Results: []Result[string]{
+	res := run.Results[string]{Command: "pull", Project: proj, Results: []run.Result[string]{
 		{Repo: repo(0), Value: deps.Theme.GitOutput.Render("Already up to date.")},
 		{Repo: repo(1), Err: domain.NewWarning("skipped: no upstream")},
 		{Repo: repo(2), Value: "partial", Err: errors.New("boom")},
@@ -331,7 +331,7 @@ func TestJSONSkippedProject(t *testing.T) {
 	t.Parallel()
 
 	deps := clitest.New(t, nil)
-	if err := JSON(Results[string]{Command: "clone"}, deps.RuntimeCLI); err != nil {
+	if err := JSON(run.Results[string]{Command: "clone"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("JSON error = %v, want nil", err)
 	}
 	if got := deps.Result(); got != "{}\n" {
@@ -350,10 +350,10 @@ func TestJSONTree(t *testing.T) {
 	root := domain.Project{Name: "acme", SubProjects: []domain.Project{sub}, Repos: []domain.Repository{
 		{Name: "api", AbsPath: "/code/acme/api", State: domain.RepoStateOK},
 	}}
-	res := Results[string]{Command: "fetch", Project: root, Results: []Result[string]{
+	res := run.Results[string]{Command: "fetch", Project: root, Results: []run.Result[string]{
 		// Reversed from traversal order on purpose.
-		{Repo: Repo{Repository: sub.Repos[0], Project: sub, ProjectKey: "0/0"}, Value: "sub"},
-		{Repo: Repo{Repository: root.Repos[0], Project: root, ProjectKey: "0"}, Value: "root"},
+		{Repo: run.Repo{Repository: sub.Repos[0], Project: sub, ProjectKey: "0/0"}, Value: "sub"},
+		{Repo: run.Repo{Repository: root.Repos[0], Project: root, ProjectKey: "0"}, Value: "root"},
 	}}
 
 	deps := clitest.New(t, nil)

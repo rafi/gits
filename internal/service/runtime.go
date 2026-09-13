@@ -24,6 +24,11 @@ type Runtime struct {
 	Git        git.Client
 	Settings   domain.Settings
 
+	// HomeDir is the user's home directory, used to shorten displayed paths
+	// to ~. It is an environment fact rather than a view choice, so every
+	// client renders the same path for the same repository.
+	HomeDir string
+
 	// ConfigWarnings are the non-fatal notices gathered while loading the
 	// config file — an unknown key, a deprecated one, a setting that fell
 	// back to its default. Every command already shows them once on

@@ -21,13 +21,12 @@ type Presenter struct {
 	// about producing its Result Output — live per-repository progress, the
 	// summary footer, the error epilogue.
 	//
-	// The progress reporter is derived from this writer rather than injected:
-	// the bulk module sniffs it for a terminal, so a test buffer yields the
-	// no-op reporter and no ANSI reaches the assertions.
+	// The live progress reporter is built from this writer: progress.New
+	// sniffs it for a terminal, so a test buffer yields the engine's no-op
+	// and no ANSI reaches the assertions.
 	Err io.Writer
 
-	Theme   style.Theme
-	HomeDir string
+	Theme style.Theme
 }
 
 // RuntimeCLI is the full set of dependencies a CLI command runs with: the

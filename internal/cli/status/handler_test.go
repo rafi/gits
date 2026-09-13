@@ -14,10 +14,10 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/app/format"
-	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/format"
 	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/service/run"
 )
 
 // The TestExecStatus tests drive ExecStatus — the command's real entry point —
@@ -754,7 +754,7 @@ func statusDeps(t *testing.T, g git.Client) app.RuntimeCLI {
 }
 
 // probe drives statusRepo for one repository, assembling the bundled argument
-// the module hands a body: the repository, its owning project and its display
+// the engine hands a body: the repository, its owning project and its display
 // path.
 func probe(
 	t *testing.T,
@@ -764,11 +764,11 @@ func probe(
 	repo domain.Repository,
 ) (*repoStatus, error) {
 	t.Helper()
-	return statusRepo(opts)(t.Context(), bulk.Repo{
+	return statusRepo(opts)(t.Context(), run.Repo{
 		Repository: repo,
 		Project:    project,
 		Path:       format.RepoRelPath(project, repo, deps.HomeDir),
-	}, deps)
+	}, deps.Runtime)
 }
 
 // TestStatusRepoProbeError: a failure reading the work tree surfaces as a
