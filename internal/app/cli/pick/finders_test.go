@@ -1,4 +1,4 @@
-package cli
+package pick
 
 import (
 	"context"
@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
@@ -33,9 +35,9 @@ func (stubCache) Get(string, *domain.Project) (bool, error) { return false, nil 
 func (stubCache) Save(string, domain.Project) error         { return nil }
 func (stubCache) Flush(domain.Project) error                { return nil }
 
-func finderDeps(t *testing.T) types.RuntimeCLI {
+func finderDeps(t *testing.T) app.RuntimeCLI {
 	t.Helper()
-	return types.RuntimeCLI{
+	return app.RuntimeCLI{
 		Ctx:   context.Background(),
 		Git:   fakeGit{},
 		Cache: stubCache{},
@@ -135,7 +137,7 @@ func stubFinder(t *testing.T, script string) {
 
 // selectDeps is finderDeps with the output destinations and theme a finder
 // needs, plus a named project so titles render.
-func selectDeps(t *testing.T) types.RuntimeCLI {
+func selectDeps(t *testing.T) app.RuntimeCLI {
 	t.Helper()
 	deps := finderDeps(t)
 	deps.Theme = style.NewThemeDefault()
@@ -301,3 +303,11 @@ type refsGit struct {
 func (g refsGit) Refs(context.Context, string) ([]string, error) {
 	return g.refs, g.err
 }
+
+// stripANSI removes SGR escape sequences, so an assertion can be made on the
+// text a user sees rather than on the styling lipgloss wraps it in.
+func stripANSI(s string) string {
+	return ansiPattern.ReplaceAllString(s, "")
+}
+
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)

@@ -12,7 +12,10 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -24,8 +27,8 @@ const branchPageSize = 10
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecCheckout(args []string, deps types.RuntimeCLI) error {
-	project, repo, err := cli.ParseArgs(args, true, deps)
+func ExecCheckout(args []string, deps app.RuntimeCLI) error {
+	project, repo, err := pick.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
@@ -42,7 +45,7 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 	// Checkout all project's repositories.
 	errs, _ := checkoutProjectRepos(project, deps)
 	if len(errs) > 0 {
-		return cli.RenderErrors(deps.Err, errs, true)
+		return style.RenderErrors(deps.Err, errs, true)
 	}
 	return nil
 }
@@ -50,8 +53,8 @@ func ExecCheckout(args []string, deps types.RuntimeCLI) error {
 // checkoutProjectRepos walks the project tree prompting per repo. Aborting a
 // prompt (Ctrl-C) stops the whole traversal instead of forcing the user to
 // dismiss every remaining repository one by one.
-func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) ([]error, bool) {
-	lipgloss.Fprintln(deps.Out, cli.ProjectTitleWithBullet(project, deps.Theme))
+func checkoutProjectRepos(project domain.Project, deps app.RuntimeCLI) ([]error, bool) {
+	lipgloss.Fprintln(deps.Out, style.ProjectTitleWithBullet(project, deps.Theme))
 
 	errList := make([]error, 0)
 	for _, repo := range project.Repos {
@@ -76,8 +79,8 @@ func checkoutProjectRepos(project domain.Project, deps types.RuntimeCLI) ([]erro
 	return errList, false
 }
 
-func checkoutRepo(project domain.Project, repo domain.Repository, deps types.RuntimeCLI) error {
-	repoTitle := cli.RepoTitle(repo, project, deps.HomeDir, deps.Theme).
+func checkoutRepo(project domain.Project, repo domain.Repository, deps app.RuntimeCLI) error {
+	repoTitle := style.RepoTitle(repo, project, deps.HomeDir, deps.Theme).
 		Render()
 
 	// Abort if repository is not cloned or has errors. The title names the
@@ -85,7 +88,7 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 	// Output; AbortOnRepoState terminates the line they share.
 	if repo.State != domain.RepoStateOK {
 		lipgloss.Fprint(deps.Err, repoTitle)
-		return cli.AbortOnRepoState(deps.Err, repo, deps.Theme.Error)
+		return style.AbortOnRepoState(deps.Err, repo, deps.Theme.Error)
 	}
 
 	want, current, err := promptRepo(repoTitle, repo.AbsPath, deps)
@@ -93,7 +96,7 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 		// Name the repository, as the checkout failure below does: in a
 		// project traversal these land in a summary that is otherwise anonymous.
 		// The wrap keeps huh.ErrUserAborted matchable by both abort sites.
-		return cli.RepoError(err, repo)
+		return run.RepoError(err, repo)
 	}
 	if want == current {
 		lipgloss.Fprintf(deps.Out, "%s %s\n", repoTitle, current)
@@ -105,7 +108,7 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 		// Titled and terminated like the two lines above: this used to trail
 		// the prompt's own final line, which no longer exists.
 		lipgloss.Fprintf(deps.Out, "%s %s\n", repoTitle, deps.Theme.Error.Render(err.Error()))
-		return cli.RepoError(err, repo)
+		return run.RepoError(err, repo)
 	}
 	lipgloss.Fprintf(deps.Out, "%s %s\n", repoTitle, deps.Theme.GitOutput.Render(
 		fmt.Sprintf("Switched to branch %q", want),
@@ -117,7 +120,7 @@ func checkoutRepo(project domain.Project, repo domain.Repository, deps types.Run
 // selected branch alongside the one already checked out; the two are equal
 // when the selection changes nothing. The prompt itself leaves no trace on
 // screen — the caller reports the outcome, once it knows what it is.
-func promptRepo(repoTitle, repoPath string, deps types.RuntimeCLI) (string, string, error) {
+func promptRepo(repoTitle, repoPath string, deps app.RuntimeCLI) (string, string, error) {
 	current, err := deps.Git.CurrentBranch(deps.Ctx, repoPath)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to get branch: %w", err)

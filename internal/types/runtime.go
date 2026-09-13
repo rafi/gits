@@ -5,7 +5,6 @@ import (
 	"log/slog"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/git"
 )
@@ -36,10 +35,4 @@ type Runtime struct {
 	// Output on Err, as prose. Constructed once in cmd/gits and passed here
 	// so no package reaches for a global logger.
 	Log *slog.Logger
-}
-
-// RuntimeCLI is the runtime dependencies for the CLI client.
-type RuntimeCLI struct {
-	Runtime
-	app.Presenter
 }

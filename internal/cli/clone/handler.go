@@ -7,8 +7,9 @@ import (
 	"errors"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
 )
@@ -19,7 +20,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecClone(format string, args []string, deps types.RuntimeCLI) error {
+func ExecClone(format string, args []string, deps app.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
 	// costs a provider round-trip or an interactive prompt.
 	if err := bulk.ValidateFormat(format); err != nil {
@@ -54,7 +55,7 @@ func skipped(p domain.Project) bool {
 }
 
 // cloneRepo clones one repository and returns its result line's body.
-func cloneRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
+func cloneRepo(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string, error) {
 	// A remote-only repository is provider-backed with no local home, so there
 	// is nothing to clone into. Pass over it with a warning that names the
 	// config keys that would give it one, rather than handing git an empty
@@ -67,7 +68,7 @@ func cloneRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (stri
 	output, err := deps.Git.Clone(ctx, repo.Src, repo.AbsPath)
 	if errors.Is(err, git.ErrTargetExists) {
 		// Repo is already cloned, skip with a warning.
-		repoPath := cli.Path(repo.AbsPath, deps.HomeDir)
+		repoPath := format.Path(repo.AbsPath, deps.HomeDir)
 		return "", types.NewWarning("already cloned at %s", repoPath)
 	}
 	if err != nil {

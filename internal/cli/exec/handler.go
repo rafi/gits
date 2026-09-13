@@ -24,8 +24,8 @@ import (
 	osexec "os/exec"
 	"strings"
 
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ErrNoCommand is returned when no command follows the `--` separator.
@@ -41,7 +41,7 @@ var ErrNoCommand = errors.New("no command to run: gits exec [project] [repo] -- 
 //   - repo or sub-project name
 //
 // command is the argv to run, already split from args at the `--` separator.
-func Exec(format string, command []string, args []string, deps types.RuntimeCLI) error {
+func Exec(format string, command []string, args []string, deps app.RuntimeCLI) error {
 	// Both checks precede the load, so neither mistake costs a provider
 	// round-trip or an interactive prompt.
 	if err := bulk.ValidateFormat(format); err != nil {
@@ -54,7 +54,7 @@ func Exec(format string, command []string, args []string, deps types.RuntimeCLI)
 	res, err := bulk.Command[string]{
 		Name: "exec",
 		Verb: "running",
-		Body: func(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
+		Body: func(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string, error) {
 			return runRepo(ctx, command, repo, deps)
 		},
 	}.Run(args, deps)
@@ -73,7 +73,7 @@ func runRepo(
 	ctx context.Context,
 	command []string,
 	repo bulk.Repo,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 ) (string, error) {
 	// gosec G204: the argv is the user's own command, typed on their own
 	// command line. Running it is the entire feature, and it is run as argv

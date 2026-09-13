@@ -9,8 +9,9 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/format"
 )
 
 // ReadMeFilename is the file the repository overview previews.
@@ -20,7 +21,7 @@ const ReadMeFilename = "README.md"
 // Args:
 //   - project name
 //   - repo name
-func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
+func ExecRepoOverview(args []string, deps app.RuntimeCLI) error {
 	repo, err := resolveProjectRepo(args, deps)
 	if err != nil {
 		return err
@@ -28,7 +29,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(deps.Err, repo, deps.Theme.Error)
+		return style.AbortOnRepoState(deps.Err, repo, deps.Theme.Error)
 	}
 
 	// Attempt to read README file.
@@ -45,7 +46,7 @@ func ExecRepoOverview(args []string, deps types.RuntimeCLI) error {
 }
 
 // renderReadme renders a file as markdown.
-func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
+func renderReadme(readmePath string, deps app.RuntimeCLI) (string, error) {
 	readmeBytes, err := os.ReadFile(readmePath)
 	if os.IsNotExist(err) {
 		return "", fmt.Errorf("repository does not have a %q file", ReadMeFilename)
@@ -77,7 +78,7 @@ func renderReadme(readmePath string, deps types.RuntimeCLI) (string, error) {
 		headerStyle = previewHeader(headerStyle, width)
 	}
 
-	nicePath := cli.Path(readmePath, deps.HomeDir)
+	nicePath := format.Path(readmePath, deps.HomeDir)
 	lipgloss.Fprintln(deps.Out, headerStyle.Render(nicePath))
 
 	return mkd.Render(string(readmeBytes))

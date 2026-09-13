@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -245,7 +245,7 @@ func jsonFixture(t *testing.T) (Results[string], *clitest.Deps) {
 		{Repo: repo(0), Value: deps.Theme.GitOutput.Render("Already up to date.")},
 		{Repo: repo(1), Err: types.NewWarning("skipped: no upstream")},
 		{Repo: repo(2), Value: "partial", Err: errors.New("boom")},
-		{Repo: repo(3), Err: cli.StateError(proj.Repos[3]), Guarded: true},
+		{Repo: repo(3), Err: run.StateError(proj.Repos[3]), Guarded: true},
 	}}
 	return res, deps
 }

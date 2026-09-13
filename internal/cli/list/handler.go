@@ -9,16 +9,17 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
 )
 
 // lister renders the loaded projects in one output style.
-type lister func(domain.ProjectListKeyed, types.RuntimeCLI) error
+type lister func(domain.ProjectListKeyed, app.RuntimeCLI) error
 
-// style is what one `-o` value selects: the renderer to run, and whether that
-// renderer displays each repository's Repo Src.
-type style struct {
+// outputStyle is what one `-o` value selects: the renderer to run, and
+// whether that renderer displays each repository's Repo Src.
+type outputStyle struct {
 	// lister is chosen from the arguments, since `name` answers a different
 	// question when a project is named than when none is.
 	lister func(args []string) lister
@@ -32,7 +33,7 @@ type style struct {
 // it, a rejected value is reported against its keys, and the flag's help text
 // and shell completion are built from them — so a style cannot be added in
 // one place and missed in another.
-var styles = map[string]style{
+var styles = map[string]outputStyle{
 	"json":  {lister: fixed(listJSON), showsSrc: true},
 	"name":  {lister: nameLister},
 	"table": {lister: fixed(listTable), showsSrc: true},
@@ -50,7 +51,7 @@ func Formats() []string {
 //
 // Args: (optional)
 //   - project names
-func ExecList(format string, args []string, deps types.RuntimeCLI) error {
+func ExecList(format string, args []string, deps app.RuntimeCLI) error {
 	// Validated before anything is loaded, so a typo'd format never costs a
 	// provider round-trip or an interactive prompt.
 	st, ok := styles[format]

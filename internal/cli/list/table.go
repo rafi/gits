@@ -7,8 +7,8 @@ import (
 	"charm.land/lipgloss/v2/table"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/format"
 )
 
 var (
@@ -18,7 +18,7 @@ var (
 )
 
 // listWide lists projects in a wide table format.
-func listWide(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
+func listWide(projects domain.ProjectListKeyed, deps app.RuntimeCLI) error {
 	single := len(projects) == 1
 	headers := makeTableHeader(projects)
 	headers = append(headers, listWideHeaders...)
@@ -28,7 +28,7 @@ func listWide(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 }
 
 // listTable lists projects in a table format.
-func listTable(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
+func listTable(projects domain.ProjectListKeyed, deps app.RuntimeCLI) error {
 	single := len(projects) == 1
 	headers := makeTableHeader(projects)
 	rows := makeTableProjects(projects, single, false, deps.HomeDir)
@@ -36,7 +36,7 @@ func listTable(projects domain.ProjectListKeyed, deps types.RuntimeCLI) error {
 	return printTable(headers, rows, deps)
 }
 
-func printTable(headers []string, rows [][]string, deps types.RuntimeCLI) error {
+func printTable(headers []string, rows [][]string, deps app.RuntimeCLI) error {
 	theme := deps.Theme
 	t := table.New().
 		Border(theme.TableBorder).
@@ -90,7 +90,7 @@ func makeTableRow(proj domain.Project, repo domain.Repository, single, wide bool
 	}
 	row = append(row, repo.GetName(), string(repo.State), repo.GetSource())
 	if wide {
-		row = append(row, cli.Path(repo.AbsPath, homeDir))
+		row = append(row, format.Path(repo.AbsPath, homeDir))
 	}
 	return row
 }

@@ -8,15 +8,16 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/format"
 )
 
 // ExecAdd adds the current repository to a project in the config file.
 //
 // Args: (optional)
 //   - project name
-func ExecAdd(args []string, deps types.RuntimeCLI) error {
+func ExecAdd(args []string, deps app.RuntimeCLI) error {
 	// Load the config file.
 	rootNode, err := load(deps.ConfigPath)
 	if err != nil {
@@ -53,7 +54,7 @@ func ExecAdd(args []string, deps types.RuntimeCLI) error {
 		}
 	}
 
-	nicePath := cli.Path(cwd, deps.HomeDir)
+	nicePath := format.Path(cwd, deps.HomeDir)
 	appendRepo(nicePath, remoteURL, reposNode)
 
 	if err := save(deps.ConfigPath, rootNode); err != nil {
@@ -66,7 +67,7 @@ func ExecAdd(args []string, deps types.RuntimeCLI) error {
 
 // ensureRepository returns the current repository path, and clones it if it
 // doesn't exist.
-func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
+func ensureRepository(args []string, deps app.RuntimeCLI) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("unable to get current directory: %w", err)
@@ -94,7 +95,7 @@ func ensureRepository(args []string, deps types.RuntimeCLI) (string, error) {
 
 // ensureProject returns project by name, and creates it if it doesn't exist.
 // If no project name is provided, user will be prompted to select one.
-func ensureProject(args []string, node *yaml.Node, deps types.RuntimeCLI) (domain.Project, error) {
+func ensureProject(args []string, node *yaml.Node, deps app.RuntimeCLI) (domain.Project, error) {
 	if len(args) > 0 {
 		if _, foundProject := deps.Projects[args[0]]; !foundProject {
 			// Create the project if it doesn't exist.
@@ -110,7 +111,7 @@ func ensureProject(args []string, node *yaml.Node, deps types.RuntimeCLI) (domai
 	}
 
 	// Get the project we'll be adding to.
-	project, _, err := cli.ParseArgs(args, true, deps)
+	project, _, err := pick.ParseArgs(args, true, deps)
 	if err != nil {
 		return project, err
 	}

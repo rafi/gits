@@ -10,7 +10,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/service/wire"
 	"github.com/rafi/gits/internal/types"
 )
@@ -50,7 +52,7 @@ func ValidateFormat(format string) error {
 // Render writes the results in the given format — already validated — and
 // returns the error that decides the run's exit code, which differs by
 // format: see Lines and JSON.
-func Render(res Results[string], format string, deps types.RuntimeCLI) error {
+func Render(res Results[string], format string, deps app.RuntimeCLI) error {
 	if format == FormatJSON {
 		return JSON(res, deps)
 	}
@@ -61,7 +63,7 @@ func Render(res Results[string], format string, deps types.RuntimeCLI) error {
 // path followed by the body's text, or by its bare error — as Result Output,
 // a blank line between projects, then the error epilogue as Diagnostic
 // Output. Every Bulk Command but status renders its table form through it.
-func Lines(res Results[string], deps types.RuntimeCLI) error {
+func Lines(res Results[string], deps app.RuntimeCLI) error {
 	width := 0
 	for i, r := range res.Results {
 		if i == 0 || r.Repo.ProjectKey != res.Results[i-1].Repo.ProjectKey {
@@ -70,7 +72,7 @@ func Lines(res Results[string], deps types.RuntimeCLI) error {
 			}
 			width = maxPathWidth(r.Repo.Project, deps.HomeDir)
 		}
-		title := cli.RepoTitle(r.Repo.Repository, r.Repo.Project, deps.HomeDir, deps.Theme).
+		title := style.RepoTitle(r.Repo.Repository, r.Repo.Project, deps.HomeDir, deps.Theme).
 			Width(width)
 		body := r.Value
 		if r.Err != nil {
@@ -92,7 +94,7 @@ func Lines(res Results[string], deps types.RuntimeCLI) error {
 // them fails the run and no error epilogue is printed. An interrupted run
 // still fails, because the document is incomplete and nothing inside it
 // says so.
-func JSON(res Results[string], deps types.RuntimeCLI) error {
+func JSON(res Results[string], deps app.RuntimeCLI) error {
 	if err := writeJSON(deps.Out, res); err != nil {
 		return err
 	}
@@ -160,8 +162,8 @@ func plain(s string) string {
 // Epilogue writes the error epilogue as Diagnostic Output and returns the
 // error that decides the run's exit code: nil when nothing counted, since
 // warnings are listed on their repositories' lines and not here.
-func Epilogue[T any](res Results[T], deps types.RuntimeCLI) error {
-	return cli.RenderErrors(deps.Err, res.Errors(), true)
+func Epilogue[T any](res Results[T], deps app.RuntimeCLI) error {
+	return style.RenderErrors(deps.Err, res.Errors(), true)
 }
 
 // maxPathWidth returns the rendered width of the widest repository display
@@ -169,7 +171,7 @@ func Epilogue[T any](res Results[T], deps types.RuntimeCLI) error {
 func maxPathWidth(project domain.Project, homeDir string) int {
 	width := 0
 	for _, repo := range project.Repos {
-		width = max(width, lipgloss.Width(cli.RepoRelPath(project, repo, homeDir)))
+		width = max(width, lipgloss.Width(format.RepoRelPath(project, repo, homeDir)))
 	}
 	return width
 }
@@ -179,5 +181,5 @@ func maxPathWidth(project domain.Project, homeDir string) int {
 // multi-line git output and errors visually attached to their row instead of
 // bleeding out to the left margin. A single-line input is returned unchanged.
 func indentMultiline(line string) string {
-	return cli.IndentContinuation(line, "    > ")
+	return style.IndentContinuation(line, "    > ")
 }

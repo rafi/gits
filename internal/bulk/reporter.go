@@ -10,7 +10,7 @@ import (
 	"charm.land/huh/v2/spinner"
 	"charm.land/lipgloss/v2"
 
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/app/cli/style"
 )
 
 // spinnerFrames are huh's "Meter" spinner animation frames, reused so each
@@ -100,7 +100,7 @@ type reporter interface {
 // Non-TTY writers (pipes, CI logs) get a no-op reporter so ANSI cursor controls
 // never garble captured output (AC-8).
 func newReporter(w io.Writer) reporter {
-	if _, isTTY := cli.TermWidth(w); isTTY {
+	if _, isTTY := style.TermWidth(w); isTTY {
 		return newLiveReporter(w)
 	}
 	return &nopReporter{}
@@ -173,7 +173,7 @@ type liveReporter struct {
 }
 
 func newLiveReporter(w io.Writer) *liveReporter {
-	width, _ := cli.TermWidth(w)
+	width, _ := style.TermWidth(w)
 	return &liveReporter{w: w, st: newStyles(), width: width}
 }
 

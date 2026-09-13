@@ -6,8 +6,9 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/style"
 )
 
 // ExecCD returns the a repository path.
@@ -15,14 +16,14 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecCD(args []string, deps types.RuntimeCLI) error {
-	_, repo, err := cli.ParseArgs(args, false, deps)
+func ExecCD(args []string, deps app.RuntimeCLI) error {
+	_, repo, err := pick.ParseArgs(args, false, deps)
 	if err != nil {
 		return err
 	}
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
+		return style.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
 	}
 
 	fmt.Fprintln(deps.Out, repo.AbsPath)

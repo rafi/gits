@@ -2,7 +2,7 @@
 // entry point: the shared runtime dependencies — both output destinations
 // captured in buffers, the default theme, and the caller's fake git client —
 // and a fixture project for the command to work on. Command packages construct
-// types.RuntimeCLI through it rather than each carrying its own copy of this
+// app.RuntimeCLI through it rather than each carrying its own copy of this
 // wiring, so a new dependency is added in one place.
 //
 // Buffers are not terminals, so the bulk module selects the no-op progress
@@ -23,10 +23,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
-	"github.com/rafi/gits/internal/types"
 )
 
 // HomeDir is the home directory tests render paths against. It never exists on
@@ -34,12 +34,12 @@ import (
 // NewProject), so nothing here renders relative to this one.
 const HomeDir = "/home/nobody"
 
-// Deps is a types.RuntimeCLI wired for a test, holding the buffers its two
+// Deps is a app.RuntimeCLI wired for a test, holding the buffers its two
 // output destinations write to. The embedded struct is what a command entry
 // point takes, and its fields stay settable — a test that needs a different
 // project list, cache or worker count assigns one after New.
 type Deps struct {
-	types.RuntimeCLI
+	app.RuntimeCLI
 
 	t   *testing.T
 	out bytes.Buffer
@@ -60,7 +60,7 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 
 	deps := &Deps{t: t}
 	logger := logging.New(&deps.log, true)
-	deps.RuntimeCLI = types.RuntimeCLI{
+	deps.RuntimeCLI = app.RuntimeCLI{
 		Theme:   style.NewThemeDefault(),
 		HomeDir: HomeDir,
 		Out:     &deps.out,

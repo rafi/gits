@@ -13,11 +13,13 @@ import (
 	"github.com/karrick/godirwalk"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/providers"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ExecOrphan discovers orphaned repositories, ones that are not known to the
@@ -27,8 +29,8 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecOrphan(args []string, deps types.RuntimeCLI) error {
-	project, repo, err := cli.ParseArgs(args, true, deps)
+func ExecOrphan(args []string, deps app.RuntimeCLI) error {
+	project, repo, err := pick.ParseArgs(args, true, deps)
 	if err != nil {
 		return err
 	}
@@ -36,7 +38,7 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 	var repos []domain.Repository
 	if repo != nil {
 		if repo.State != domain.RepoStateOK {
-			return cli.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
+			return style.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
 		}
 		repos, err = findNestedRepos(deps.Ctx, deps.Log, repo.AbsPath, deps.Git)
 	} else {
@@ -47,11 +49,11 @@ func ExecOrphan(args []string, deps types.RuntimeCLI) error {
 	}
 
 	errorStyle := deps.Theme.Error.
-		MarginLeft(cli.LeftMargin)
+		MarginLeft(style.LeftMargin)
 
-	lipgloss.Fprintln(deps.Out, cli.ProjectTitleWithBullet(project, deps.Theme))
+	lipgloss.Fprintln(deps.Out, style.ProjectTitleWithBullet(project, deps.Theme))
 	for _, repo := range repos {
-		repoDir := cli.Path(repo.Dir, deps.HomeDir)
+		repoDir := format.Path(repo.Dir, deps.HomeDir)
 		lipgloss.Fprintf(deps.Out, "%s - %s\n", errorStyle.Render(repoDir), repo.Src)
 	}
 

@@ -6,11 +6,12 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/logging"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ExecBrowse opens a fzf window to browse the entire catalog.
@@ -18,15 +19,15 @@ import (
 //   - project name
 //   - repo or sub-project name
 //   - branch name
-func ExecBrowse(args []string, deps types.RuntimeCLI) error {
-	project, repo, err := cli.ParseArgs(args, false, deps)
+func ExecBrowse(args []string, deps app.RuntimeCLI) error {
+	project, repo, err := pick.ParseArgs(args, false, deps)
 	if err != nil {
 		return err
 	}
 
 	// Abort if repository is not cloned or has errors.
 	if repo.State != domain.RepoStateOK {
-		return cli.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
+		return style.AbortOnRepoState(deps.Err, *repo, deps.Theme.Error)
 	}
 
 	// Use the project name if provided, and branch too.
@@ -35,7 +36,7 @@ func ExecBrowse(args []string, deps types.RuntimeCLI) error {
 
 	if branch == "" {
 		// Interactively select a branch.
-		branch, err = cli.SelectBranch(projName, *repo, deps)
+		branch, err = pick.SelectBranch(projName, *repo, deps)
 		if err != nil {
 			return err
 		}
@@ -45,7 +46,7 @@ func ExecBrowse(args []string, deps types.RuntimeCLI) error {
 
 // resolveProjectRepo loads the project and repository named by the first two
 // arguments of a preview sub-command.
-func resolveProjectRepo(args []string, deps types.RuntimeCLI) (domain.Repository, error) {
+func resolveProjectRepo(args []string, deps app.RuntimeCLI) (domain.Repository, error) {
 	if len(args) < 1 {
 		return domain.Repository{}, fmt.Errorf("missing project name")
 	}
@@ -85,7 +86,7 @@ const (
 // Fzf sets environment variables to detect width/height, see man fzf. An
 // unparseable value is traced, not shown: the fallback width is not something
 // the user has to act on.
-func previewWidth(deps types.RuntimeCLI) int {
+func previewWidth(deps app.RuntimeCLI) int {
 	width, _, err := fzf.GetPreviewSize()
 	if err != nil {
 		logging.Or(deps.Log).DebugContext(deps.Ctx,

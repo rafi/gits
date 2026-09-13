@@ -11,10 +11,9 @@ import (
 	"charm.land/lipgloss/v2/table"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/types"
 )
 
 // renderTables prints one compact table per project as Result Output and a
@@ -22,9 +21,9 @@ import (
 // depth-first, a project's own repositories before its sub-projects — and
 // looks each repository's row up; a project left with no rows prints
 // nothing, and consecutive tables are separated by a blank line.
-func renderTables(res bulk.Results[*repoStatus], opts Options, deps types.RuntimeCLI) {
+func renderTables(res bulk.Results[*repoStatus], opts Options, deps app.RuntimeCLI) {
 	out := deps.Out
-	termWidth, _ := cli.TermWidth(out)
+	termWidth, _ := style.TermWidth(out)
 	index := newRows(res)
 	var (
 		all     []*repoStatus
@@ -84,7 +83,7 @@ type tableColumn struct {
 // renderTable renders one project's repositories as a borderless aligned
 // table: bold header, gutter glyph, fixed status slots, right-aligned counts
 // and dim metadata.
-func renderTable(sts []*repoStatus, termWidth int, opts Options, deps types.RuntimeCLI) string {
+func renderTable(sts []*repoStatus, termWidth int, opts Options, deps app.RuntimeCLI) string {
 	th, icons := deps.Theme, deps.Settings.Icons
 	now := time.Now()
 	widths := newSlotWidths(icons)
@@ -470,7 +469,7 @@ func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th style.Theme) {
 		}
 	}
 
-	parts := []string{fmt.Sprintf("%d repo%s", repos, cli.Plural(repos))}
+	parts := []string{fmt.Sprintf("%d repo%s", repos, style.Plural(repos))}
 	if changed > 0 {
 		parts = append(parts, fmt.Sprintf("%d with changes", changed))
 	}
@@ -478,7 +477,7 @@ func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th style.Theme) {
 		parts = append(parts, fmt.Sprintf("%d ahead", ahead))
 	}
 	if errCount > 0 {
-		parts = append(parts, fmt.Sprintf("%d error%s", errCount, cli.Plural(errCount)))
+		parts = append(parts, fmt.Sprintf("%d error%s", errCount, style.Plural(errCount)))
 	}
 	if hidden > 0 {
 		parts = append(parts, fmt.Sprintf("%d hidden", hidden))

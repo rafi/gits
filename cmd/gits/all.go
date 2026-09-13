@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/add"
 	"github.com/rafi/gits/internal/cli/browse"
@@ -26,7 +27,6 @@ import (
 	"github.com/rafi/gits/internal/cli/status"
 	"github.com/rafi/gits/internal/cli/sync"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -185,7 +185,7 @@ var cloneCmd = &cobra.Command{
 	Short:             "Clone all repositories",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return clone.ExecClone(cloneOutput, args, deps)
 	}),
 }
@@ -205,7 +205,7 @@ for a token passphrase.`,
 	Args: cobra.NoArgs,
 	// The load-time warnings are among doctor's own findings, so the wrapper
 	// must not also print them on Diagnostic Output.
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return doctor.ExecDoctor(doctorOutput, args, deps)
 	}, reportsConfigWarnings()),
 }
@@ -233,7 +233,7 @@ working directory and with GITS_PROJECT, GITS_REPO and GITS_REPO_PATH set.`,
 			return exec.ErrNoCommand
 		}
 		gitsArgs, command := args[:dash], args[dash:]
-		return runWithDeps(func(_ []string, deps types.RuntimeCLI) error {
+		return runWithDeps(func(_ []string, deps app.RuntimeCLI) error {
 			return exec.Exec(execOutput, command, gitsArgs, deps)
 		})(cmd, gitsArgs)
 	},
@@ -244,7 +244,7 @@ var fetchCmd = &cobra.Command{
 	Short:             "Fetch and prune from all remotes",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return fetch.ExecFetch(fetchOutput, args, deps)
 	}),
 }
@@ -255,7 +255,7 @@ var listCmd = &cobra.Command{
 	Aliases:           []string{"ls"},
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeProject,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		// Run with output style.
 		return list.ExecList(listOutput, args, deps)
 	}),
@@ -274,7 +274,7 @@ var pullCmd = &cobra.Command{
 	Short:             "Pull repository",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return pull.ExecPull(pullOutput, args, deps)
 	}),
 }
@@ -284,7 +284,7 @@ var pushCmd = &cobra.Command{
 	Short:             "Push current branch to its upstream",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return push.ExecPush(pushOutput, pushOpts, args, deps)
 	}),
 }
@@ -302,7 +302,7 @@ var statusCmd = &cobra.Command{
 	Short:             "Show Git repositories short status",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE: runWithDeps(func(args []string, deps types.RuntimeCLI) error {
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return status.ExecStatus(statusOutput, statusOpts, args, deps)
 	}),
 }

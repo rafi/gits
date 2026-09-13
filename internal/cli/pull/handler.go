@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
@@ -17,7 +18,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo
-func ExecPull(format string, args []string, deps types.RuntimeCLI) error {
+func ExecPull(format string, args []string, deps app.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
 	// costs a provider round-trip or an interactive prompt.
 	if err := bulk.ValidateFormat(format); err != nil {
@@ -36,7 +37,7 @@ func ExecPull(format string, args []string, deps types.RuntimeCLI) error {
 }
 
 // pullRepo pulls one repository and returns its result line's body.
-func pullRepo(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
+func pullRepo(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string, error) {
 	head, err := deps.Git.HeadUpstream(ctx, repo.AbsPath)
 	if err != nil {
 		return "", err

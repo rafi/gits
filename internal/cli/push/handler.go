@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
@@ -19,7 +20,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo
-func ExecPush(format string, opts git.PushOptions, args []string, deps types.RuntimeCLI) error {
+func ExecPush(format string, opts git.PushOptions, args []string, deps app.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a rejected flag
 	// combination or a typo'd format costs neither a provider round-trip nor
 	// a single remote.
@@ -43,9 +44,9 @@ func ExecPush(format string, opts git.PushOptions, args []string, deps types.Run
 
 // pushRepo returns a body that pushes one repository into its result lines.
 func pushRepo(opts git.PushOptions) func(
-	context.Context, bulk.Repo, types.RuntimeCLI,
+	context.Context, bulk.Repo, app.RuntimeCLI,
 ) (string, error) {
-	return func(ctx context.Context, repo bulk.Repo, deps types.RuntimeCLI) (string, error) {
+	return func(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string, error) {
 		// A ref-selecting flag already says which refs to push, so the
 		// Upstream lookup — and the skip hanging off it — is suspended and
 		// git resolves the destination itself.

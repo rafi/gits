@@ -6,9 +6,9 @@ import (
 	"context"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // repoStatus is one repository's row: the probe's answers, populated
@@ -113,7 +113,7 @@ func (r rows) visible(p domain.Project, opts Options) (sts []*repoStatus, hidden
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecStatus(format string, opts Options, args []string, deps types.RuntimeCLI) error {
+func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
 	// costs a provider round-trip or an interactive prompt. The accepted
 	// formats are the ones every Bulk Command takes.
@@ -147,12 +147,12 @@ func ExecStatus(format string, opts Options, args []string, deps types.RuntimeCL
 // statusRepo returns a body that probes one repository into a structured
 // status: safe to call concurrently and writes no output itself.
 func statusRepo(opts Options) func(
-	context.Context, bulk.Repo, types.RuntimeCLI,
+	context.Context, bulk.Repo, app.RuntimeCLI,
 ) (*repoStatus, error) {
 	return func(
 		ctx context.Context,
 		repo bulk.Repo,
-		deps types.RuntimeCLI,
+		deps app.RuntimeCLI,
 	) (*repoStatus, error) {
 		st := &repoStatus{repo: repo}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/config"
@@ -220,7 +221,7 @@ func reportsConfigWarnings() runOption {
 }
 
 // runWithDeps execute a command with dependencies.
-func runWithDeps(f func([]string, types.RuntimeCLI) error, opts ...runOption) cobra.PositionalArgs {
+func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobra.PositionalArgs {
 	var o runOptions
 	for _, opt := range opts {
 		opt(&o)
@@ -253,7 +254,7 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error, opts ...runOption) co
 		}
 
 		// Run command with dependencies.
-		cmdErr := f(args, types.RuntimeCLI{
+		cmdErr := f(args, app.RuntimeCLI{
 			Runtime: runtime,
 			Theme:   theme,
 			HomeDir: homeDir,

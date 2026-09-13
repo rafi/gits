@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/types"
@@ -747,7 +749,7 @@ func (f fakeGit) HeadInfo(context.Context, string) (git.Head, error) {
 // statusDeps builds the shared runtime dependencies for the tests that call
 // statusRepo or renderTable directly — neither writes to a destination, so only
 // the theme, the icons and the git client matter here.
-func statusDeps(t *testing.T, g git.Client) types.RuntimeCLI {
+func statusDeps(t *testing.T, g git.Client) app.RuntimeCLI {
 	t.Helper()
 	return clitest.New(t, g).RuntimeCLI
 }
@@ -757,7 +759,7 @@ func statusDeps(t *testing.T, g git.Client) types.RuntimeCLI {
 // path.
 func probe(
 	t *testing.T,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 	opts Options,
 	project domain.Project,
 	repo domain.Repository,
@@ -766,7 +768,7 @@ func probe(
 	return statusRepo(opts)(t.Context(), bulk.Repo{
 		Repository: repo,
 		Project:    project,
-		Path:       cli.RepoRelPath(project, repo, deps.HomeDir),
+		Path:       format.RepoRelPath(project, repo, deps.HomeDir),
 	}, deps)
 }
 
@@ -786,7 +788,7 @@ func TestStatusRepoProbeError(t *testing.T) {
 	if st.err == nil || st.err.Error() != "boom" {
 		t.Errorf("err = %v, want %q", st.err, "boom")
 	}
-	if cli.RenderErrors(io.Discard, []error{err}, true) == nil {
+	if style.RenderErrors(io.Discard, []error{err}, true) == nil {
 		t.Fatal("work-tree failure should count as a real error")
 	}
 }

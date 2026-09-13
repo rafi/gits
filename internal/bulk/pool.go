@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/app"
 )
 
 // collect runs the body over every repository in the tree with a single
@@ -19,7 +19,7 @@ import (
 func (c Command[T]) collect(
 	ctx context.Context,
 	project domain.Project,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 ) Results[T] {
 	repos := flatten(project, deps.HomeDir)
 	slots := make([]*Result[T], len(repos))

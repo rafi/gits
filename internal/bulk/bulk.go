@@ -23,7 +23,10 @@ import (
 	"slices"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/pick"
+	"github.com/rafi/gits/internal/app/format"
+	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -54,7 +57,7 @@ type Command[T any] struct {
 	// the repository's name and path only in the error epilogue. A warning
 	// built with types.NewWarning is a documented pass-over — it shows on
 	// the line and does not fail the run.
-	Body func(context.Context, Repo, types.RuntimeCLI) (T, error)
+	Body func(context.Context, Repo, app.RuntimeCLI) (T, error)
 }
 
 // Repo is the bundled per-repository argument a body receives: the repository,
@@ -119,7 +122,7 @@ func (r Results[T]) Errors() []error {
 			errs = append(errs, res.Err)
 			continue
 		}
-		errs = append(errs, cli.RepoError(res.Err, res.Repo.Repository))
+		errs = append(errs, run.RepoError(res.Err, res.Repo.Repository))
 	}
 	if r.Interrupted != nil {
 		errs = append(errs, r.Interrupted)
@@ -130,8 +133,8 @@ func (r Results[T]) Errors() []error {
 // Run resolves the arguments — prompting for a project or repository when they
 // are missing — and executes the command over what they named. The error is
 // argument resolution's; a repository's failure is in its result.
-func (c Command[T]) Run(args []string, deps types.RuntimeCLI) (Results[T], error) {
-	project, repo, err := cli.ParseArgs(args, true, deps)
+func (c Command[T]) Run(args []string, deps app.RuntimeCLI) (Results[T], error) {
+	project, repo, err := pick.ParseArgs(args, true, deps)
 	if err != nil {
 		return Results[T]{}, err
 	}
@@ -163,7 +166,7 @@ func (c Command[T]) single(
 	ctx context.Context,
 	project domain.Project,
 	repo domain.Repository,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 ) Results[T] {
 	// Argument resolution found this repository in the tree, and pruning
 	// shares every surviving project's Repos array — so the only way it is
@@ -190,16 +193,16 @@ func newRepo(
 		Repository: repo,
 		Project:    project,
 		ProjectKey: projectKey,
-		Path:       cli.RepoRelPath(project, repo, homeDir),
+		Path:       format.RepoRelPath(project, repo, homeDir),
 	}
 }
 
 // one applies the state guard and, when it passes, the body — the whole of
 // what happens to a single repository, on either dispatch path.
-func (c Command[T]) one(ctx context.Context, repo Repo, deps types.RuntimeCLI) Result[T] {
+func (c Command[T]) one(ctx context.Context, repo Repo, deps app.RuntimeCLI) Result[T] {
 	res := Result[T]{Repo: repo}
 	if !c.accepts(repo.State) {
-		res.Err = cli.StateError(repo.Repository)
+		res.Err = run.StateError(repo.Repository)
 		res.Guarded = true
 		return res
 	}
@@ -259,7 +262,7 @@ func inTree(p domain.Project, repo domain.Repository) bool {
 
 // isFailure reports whether err counts as a real failure rather than a
 // warning, for the live progress error count — mirroring
-// cli.RenderErrors(_, true).
+// style.RenderErrors(_, true).
 func isFailure(err error) bool {
 	return err != nil && !types.IsWarning(err)
 }

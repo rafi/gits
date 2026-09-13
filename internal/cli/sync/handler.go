@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/providers"
 	"github.com/rafi/gits/internal/types"
@@ -16,7 +17,7 @@ import (
 //
 // Args: (optional)
 //   - project names
-func ExecSync(args []string, deps types.RuntimeCLI) error {
+func ExecSync(args []string, deps app.RuntimeCLI) error {
 	for name, p := range deps.Projects {
 		if !providers.HasCache(p.Source) {
 			continue

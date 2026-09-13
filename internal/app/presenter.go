@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/types"
 )
 
 // Presenter is what a view needs to render: where output goes, and how it
@@ -27,4 +28,11 @@ type Presenter struct {
 
 	Theme   style.Theme
 	HomeDir string
+}
+
+// RuntimeCLI is the full set of dependencies a CLI command runs with: the
+// business runtime every client shares, plus this client's view.
+type RuntimeCLI struct {
+	types.Runtime
+	Presenter
 }

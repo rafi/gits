@@ -1,6 +1,6 @@
-// Package cli holds what every gits command shares: Project and Repository
-// selection, title rendering, path formatting, and the error epilogue.
-package cli
+// Package pick resolves what a command runs on: the Project and Repository
+// selection every command shares, interactively when the arguments do not say.
+package pick
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/types"
@@ -25,7 +27,7 @@ func isCancelled(err error) bool {
 }
 
 // ParseArgs parses the arguments and returns the project and repo.
-func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
+func ParseArgs(args []string, skipRepoSelect bool, deps app.RuntimeCLI) (
 	domain.Project, *domain.Repository, error,
 ) {
 	proj, err := getOrSelectProject(args, deps)
@@ -47,7 +49,7 @@ func ParseArgs(args []string, skipRepoSelect bool, deps types.RuntimeCLI) (
 
 // getOrSelectProject returns a project from the first argument, or
 // interactively with fzf.
-func getOrSelectProject(args []string, deps types.RuntimeCLI) (
+func getOrSelectProject(args []string, deps app.RuntimeCLI) (
 	domain.Project, error,
 ) {
 	var (
@@ -92,7 +94,7 @@ func getOrSelectProject(args []string, deps types.RuntimeCLI) (
 func getOrSelectRepo(
 	project domain.Project,
 	args []string,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 ) (domain.Repository, error) {
 	var err error
 	rootProject := ""
@@ -124,14 +126,14 @@ func getOrSelectRepo(
 }
 
 // SelectProject returns an interactively selected project name.
-func SelectProject(deps types.RuntimeCLI) (string, error) {
+func SelectProject(deps app.RuntimeCLI) (string, error) {
 	// Collect project names in a stable order so the picker does not reshuffle
 	// between runs.
 	buffer := bytes.Buffer{}
 	for _, name := range deps.Projects.SortedNames() {
 		project := deps.Projects[name]
 		project.Name = name
-		projectTitle := ProjectTitle(project, deps.Theme)
+		projectTitle := style.ProjectTitle(project, deps.Theme)
 		buffer.WriteString(projectTitle)
 		buffer.WriteByte('\n')
 	}
@@ -158,7 +160,7 @@ func SelectProject(deps types.RuntimeCLI) (string, error) {
 func SelectRepo(
 	rootProject string,
 	project domain.Project,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 ) (string, error) {
 	// Collect repo names
 	style := deps.Theme.RepoTitle
@@ -199,7 +201,7 @@ func SelectRepo(
 func SelectBranch(
 	projName string,
 	repo domain.Repository,
-	deps types.RuntimeCLI,
+	deps app.RuntimeCLI,
 ) (string, error) {
 	refs, err := deps.Git.Refs(deps.Ctx, repo.AbsPath)
 	if err != nil {

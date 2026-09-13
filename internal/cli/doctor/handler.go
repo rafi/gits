@@ -27,6 +27,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/service/wire"
@@ -82,7 +83,7 @@ func (r Report) HasErrors() bool {
 // It takes no project argument by design: "which of my projects is
 // misconfigured" is the question, so scoping the answer to a project the user
 // already suspects would defeat it.
-func ExecDoctor(format string, _ []string, deps types.RuntimeCLI) error {
+func ExecDoctor(format string, _ []string, deps app.RuntimeCLI) error {
 	// doctor is not a Bulk Command, but it renders the same two formats, so
 	// it shares the one validator rather than keeping a second copy of the
 	// pair that could drift from the flag's completion and help text.
@@ -105,7 +106,7 @@ func ExecDoctor(format string, _ []string, deps types.RuntimeCLI) error {
 
 // Check runs every diagnostic and returns the findings. Exported so a test can
 // assert on the findings themselves rather than on rendered text.
-func Check(deps types.RuntimeCLI) Report {
+func Check(deps app.RuntimeCLI) Report {
 	report := Report{ConfigPath: deps.ConfigPath}
 	add := func(level Level, subject, format string, args ...any) {
 		report.Findings = append(report.Findings, Finding{
@@ -130,7 +131,7 @@ type addFunc func(level Level, subject, format string, args ...any)
 // loading it — unknown keys among them. Those are already surfaced on every
 // run; repeating them here is deliberate, since this is the command someone
 // runs when they want everything at once.
-func checkConfig(deps types.RuntimeCLI, add addFunc) {
+func checkConfig(deps app.RuntimeCLI, add addFunc) {
 	if deps.ConfigPath == "" {
 		add(LevelWarning, "config",
 			"no config file found; gits is running with an empty configuration")
@@ -145,7 +146,7 @@ func checkConfig(deps types.RuntimeCLI, add addFunc) {
 
 // checkProjects inspects each configured project without loading any of them:
 // a Provider Source is never contacted, so this stays offline and prompt-free.
-func checkProjects(deps types.RuntimeCLI, add addFunc) {
+func checkProjects(deps app.RuntimeCLI, add addFunc) {
 	if len(deps.Projects) == 0 {
 		add(LevelWarning, "projects", "no projects are configured")
 		return
@@ -231,7 +232,7 @@ const versionProbeTimeout = 5 * time.Second
 // checkBinaries reports the external programs gits shells out to. git is
 // required by every command that touches a repository; the finder is needed
 // only to pick something interactively, so its absence is a warning.
-func checkBinaries(deps types.RuntimeCLI, add addFunc) {
+func checkBinaries(deps app.RuntimeCLI, add addFunc) {
 	if path, err := exec.LookPath("git"); err != nil {
 		add(LevelError, "git", "not found on PATH; every repository operation will fail")
 	} else {
@@ -280,7 +281,7 @@ func binaryVersion(ctx context.Context, name string, args ...string) string {
 // checkCache reports where cache entries live and how each one stands against
 // cacheTTL — the answer to "why is gits still showing a repository I deleted
 // last week", which is otherwise invisible.
-func checkCache(deps types.RuntimeCLI, add addFunc) {
+func checkCache(deps app.RuntimeCLI, add addFunc) {
 	if deps.Settings.Cache != nil && !*deps.Settings.Cache {
 		add(LevelInfo, "cache", "disabled by `settings.cache: false`")
 		return
@@ -358,7 +359,7 @@ func expandHome(path string) string {
 // render writes the report as Result Output. The findings are the result of
 // this command — the thing to pipe into a grep or a ticket — so they go to
 // Out, not Err, even though every one of them is about something being wrong.
-func render(format string, report Report, deps types.RuntimeCLI) error {
+func render(format string, report Report, deps app.RuntimeCLI) error {
 	if format == bulk.FormatJSON {
 		return wire.WriteValue(deps.Out, report)
 	}

@@ -13,9 +13,9 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
-	"github.com/rafi/gits/internal/types"
 )
 
 const (
@@ -36,7 +36,7 @@ var (
 //   - project name
 //   - repo name
 //   - branch name (optional)
-func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
+func ExecBranchOverview(args []string, deps app.RuntimeCLI) error {
 	repo, err := resolveProjectRepo(args, deps)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func ExecBranchOverview(args []string, deps types.RuntimeCLI) error {
 // renderBranchOverview renders the branch overview for an already-resolved
 // repository. An empty branch means the currently checked-out one.
 func renderBranchOverview(
-	repo domain.Repository, repoName, branch string, deps types.RuntimeCLI,
+	repo domain.Repository, repoName, branch string, deps app.RuntimeCLI,
 ) error {
 	current := branch
 	if current == "" {
@@ -133,7 +133,7 @@ func renderBranchOverview(
 	return nil
 }
 
-func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps types.RuntimeCLI) string {
+func renderBranchDiffList(repoPath, subjectBranch string, remotes []string, deps app.RuntimeCLI) string {
 	doc := strings.Builder{}
 	refs, err := deps.Git.RemoteBranches(deps.Ctx, repoPath)
 	if err != nil {
