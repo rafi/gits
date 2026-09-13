@@ -1,17 +1,13 @@
-// Package fetch implements `gits fetch`, the Bulk Command that fetches and
-// prunes every Remote of every Repository in a Project.
+// Package fetch is the view side of `gits fetch`: it resolves what to run
+// on, drives the engine, and renders each report as a line or as JSON.
 package fetch
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/cli/progress"
-	"github.com/rafi/gits/internal/format"
-	"github.com/rafi/gits/internal/service"
+	"github.com/rafi/gits/internal/service/fetch"
 	"github.com/rafi/gits/internal/service/run"
 )
 
@@ -35,28 +31,11 @@ func ExecFetch(format string, args []string, deps app.RuntimeCLI) error {
 		return err
 	}
 
-	res := run.Command[string]{
+	res := run.Command[fetch.Report]{
 		Name:     "fetch",
 		Verb:     "fetching",
-		Do:       fetchRepo(deps),
+		Do:       fetch.Repo,
 		Progress: progress.New(deps.Err),
 	}.Run(target, deps.Runtime)
-	return output.Render(res, format, output.PlainView, deps)
-}
-
-// fetchRepo returns a body that fetches one repository into its result line.
-func fetchRepo(deps app.RuntimeCLI) func(
-	context.Context, run.Repo, service.Runtime,
-) (string, error) {
-	return func(ctx context.Context, repo run.Repo, rt service.Runtime) (string, error) {
-		out, err := rt.Git.Fetch(ctx, repo.AbsPath)
-		if err != nil {
-			return "", err
-		}
-		body := deps.Theme.GitOutput.Render(out)
-		if repoPath := format.Path(repo.AbsPath, rt.HomeDir); repo.Path != repoPath {
-			body = fmt.Sprintf("%s %s", repoPath, body)
-		}
-		return body, nil
-	}
+	return output.Render(res, format, view, deps)
 }

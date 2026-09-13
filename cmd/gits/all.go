@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/fetch"
 	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/app/cli/pull"
 	"github.com/rafi/gits/internal/cli/add"
@@ -20,7 +21,6 @@ import (
 	"github.com/rafi/gits/internal/cli/clone"
 	"github.com/rafi/gits/internal/cli/doctor"
 	"github.com/rafi/gits/internal/cli/exec"
-	"github.com/rafi/gits/internal/cli/fetch"
 	"github.com/rafi/gits/internal/cli/list"
 	"github.com/rafi/gits/internal/cli/orphan"
 	"github.com/rafi/gits/internal/cli/push"
