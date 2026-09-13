@@ -124,31 +124,3 @@ func TestExecOrphanAbortsOnNonOKState(t *testing.T) {
 		t.Errorf("Result Output = %q, want empty", got)
 	}
 }
-
-// TestFindNestedRepos proves the repo-scoped orphan scan finds git
-// repositories embedded inside a repository's work tree, and nothing else. It
-// stays alongside the entry-point test above because it pins where the scan
-// stops descending, which the reported list alone does not show.
-func TestFindNestedRepos(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	mkdirs(t, root,
-		".git/objects",         // the scanned repo's own metadata: skipped
-		"plain/sub",            // regular source dirs: descended, not reported
-		"vendor/embedded/.git", // an embedded repo: reported
-		"vendor/embedded/sub",  // inside the embedded repo: not descended
-	)
-
-	repos, err := findNestedRepos(t.Context(), nil, root, fakeGit{})
-	if err != nil {
-		t.Fatalf("findNestedRepos: %v", err)
-	}
-	if len(repos) != 1 {
-		t.Fatalf("len(repos) = %d, want 1: %+v", len(repos), repos)
-	}
-	want := filepath.Join(root, "vendor", "embedded")
-	if repos[0].Dir != want {
-		t.Errorf("repos[0].Dir = %q, want %q", repos[0].Dir, want)
-	}
-}

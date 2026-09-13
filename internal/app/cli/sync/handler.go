@@ -4,39 +4,21 @@ package sync
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
-	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/infra/providers"
-	"github.com/rafi/gits/internal/service/catalog"
+	"github.com/rafi/gits/internal/service/sync"
 )
 
-// ExecSync cleans the cache for the given projects.
+// ExecSync refreshes the cache for the given projects.
 //
 // Args: (optional)
 //   - project names
 func ExecSync(args []string, deps app.RuntimeCLI) error {
-	for name, p := range deps.Projects {
-		if !providers.HasCache(p.Source) {
-			continue
-		}
-		if len(args) > 0 && !slices.Contains(args, name) {
-			continue
-		}
-		if err := deps.Cache.Flush(p); err != nil {
-			return fmt.Errorf("unable to remove cache: %w", err)
-		}
+	flushed, err := sync.Sync(args, deps.Runtime)
+	// The lines are printed before the error is returned: a failure partway
+	// through still dropped the caches named above it.
+	for _, name := range flushed {
 		fmt.Fprintf(deps.Out, "Cleaned %q project cache.\n", name)
 	}
-
-	projs, err := catalog.Load(args, deps.Runtime)
-	if err != nil {
-		return fmt.Errorf("unable to list projects: %w", err)
-	}
-	if len(args) > 0 && len(projs) == 0 {
-		return domain.NewWarning("no projects found matching %q", strings.Join(args, ", "))
-	}
-	return nil
+	return err
 }
