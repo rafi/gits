@@ -19,7 +19,7 @@ import (
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/providers"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/service"
 )
 
 // Option tunes how GetProjects and GetProject populate a project. Callers that
@@ -48,7 +48,7 @@ func CacheOnly() Option {
 // configuration, so its key is the name derived from the path rather than the
 // path the caller passed; callers needing the resolved name read it from the
 // key or from Project.Name. The args slice is never modified.
-func GetProjects(args []string, deps types.Runtime, opts ...Option) (domain.ProjectListKeyed, error) {
+func GetProjects(args []string, deps service.Runtime, opts ...Option) (domain.ProjectListKeyed, error) {
 	var o options
 	for _, opt := range opts {
 		opt(&o)
@@ -92,7 +92,7 @@ func GetProjects(args []string, deps types.Runtime, opts ...Option) (domain.Proj
 }
 
 // GetProject returns a project by name or path.
-func GetProject(name string, deps types.Runtime, opts ...Option) (domain.Project, error) {
+func GetProject(name string, deps service.Runtime, opts ...Option) (domain.Project, error) {
 	list, err := GetProjects([]string{name}, deps, opts...)
 	if err != nil {
 		return domain.Project{}, err
@@ -150,7 +150,7 @@ func newFilesystemProject(path string) domain.Project {
 }
 
 // populateProject populates a project with repositories, metadata and state.
-func populateProject(project *domain.Project, deps types.Runtime, o options) error {
+func populateProject(project *domain.Project, deps service.Runtime, o options) error {
 	filesystemType := string(providers.ProviderFilesystem)
 	emptySource := (project.Source == nil || project.Source.Type == "")
 
@@ -219,7 +219,7 @@ func populateProject(project *domain.Project, deps types.Runtime, o options) err
 // Provider Source, depth-first, so a source at any nesting level is asked for
 // its repositories. A sub-project with no source of its own is left alone,
 // along with everything beneath it.
-func loadSubProjectSources(project *domain.Project, deps types.Runtime, o options) error {
+func loadSubProjectSources(project *domain.Project, deps service.Runtime, o options) error {
 	filesystemType := string(providers.ProviderFilesystem)
 	for idx := range project.SubProjects {
 		sub := &project.SubProjects[idx]
@@ -240,7 +240,7 @@ func loadSubProjectSources(project *domain.Project, deps types.Runtime, o option
 }
 
 // getSource populates project repos from a provider source.
-func getSource(project *domain.Project, deps types.Runtime, o options) error {
+func getSource(project *domain.Project, deps service.Runtime, o options) error {
 	var (
 		err         error
 		hasCache    bool
@@ -288,7 +288,7 @@ func getSource(project *domain.Project, deps types.Runtime, o options) error {
 
 // loadFromProvider asks the project's Provider Source for its repositories,
 // the path taken whenever the cache did not answer.
-func loadFromProvider(project *domain.Project, deps types.Runtime) error {
+func loadFromProvider(project *domain.Project, deps service.Runtime) error {
 	source := project.Source
 	auth := deps.Settings.ProviderAuth(source.Type)
 	// A bad providerTimeout falls back to its default here; the value is

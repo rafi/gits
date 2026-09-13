@@ -11,7 +11,6 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/loader"
-	"github.com/rafi/gits/internal/types"
 )
 
 // lister renders the loaded projects in one output style.
@@ -65,7 +64,7 @@ func ExecList(format string, args []string, deps app.RuntimeCLI) error {
 		return err
 	}
 	if len(projects) == 0 {
-		return types.NewWarning(
+		return domain.NewWarning(
 			`No projects found.
 Either your %q is empty, or you misspelled the project name.`,
 			deps.ConfigPath,

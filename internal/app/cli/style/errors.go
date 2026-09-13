@@ -10,7 +10,6 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/service/run"
-	"github.com/rafi/gits/internal/types"
 )
 
 // AbortOnRepoState writes an error message as Diagnostic Output and aborts if
@@ -48,7 +47,7 @@ func RenderErrors(w io.Writer, errs []error, excludeWarnings bool) error {
 	out := []string{}
 	count := 0
 	for _, err := range errs {
-		if excludeWarnings && types.IsWarning(err) {
+		if excludeWarnings && domain.IsWarning(err) {
 			continue
 		}
 		count++

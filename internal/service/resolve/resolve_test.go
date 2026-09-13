@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/service"
 )
 
 // TestParse covers the one piece of command-line grammar: a trailing "/" on
@@ -52,9 +52,9 @@ func (f *fakeSelector) Repo(context.Context, domain.Project, string) (string, er
 	return f.repo, f.err
 }
 
-func runtime(t *testing.T) types.Runtime {
+func runtime(t *testing.T) service.Runtime {
 	t.Helper()
-	return types.Runtime{
+	return service.Runtime{
 		Ctx: t.Context(),
 		Projects: domain.ProjectListKeyed{
 			"acme": {Repos: []domain.Repository{{Name: "api"}, {Name: "web"}}},
@@ -111,7 +111,7 @@ func TestResolve(t *testing.T) {
 		t.Parallel()
 
 		_, _, err := Resolve(Args{}, &fakeSelector{}, runtime(t))
-		if !types.IsWarning(err) {
+		if !domain.IsWarning(err) {
 			t.Errorf("Resolve error = %v, want a downgradeable warning", err)
 		}
 	})
@@ -120,7 +120,7 @@ func TestResolve(t *testing.T) {
 		t.Parallel()
 
 		_, _, err := Resolve(Parse([]string{"ghost"}, false), &fakeSelector{}, runtime(t))
-		if err == nil || types.IsWarning(err) {
+		if err == nil || domain.IsWarning(err) {
 			t.Errorf("Resolve error = %v, want a real error", err)
 		}
 	})

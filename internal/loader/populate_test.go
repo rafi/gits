@@ -13,7 +13,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/service"
 )
 
 // fakeGit stubs the git.Reader methods computeState relies on.
@@ -107,7 +107,7 @@ func TestGetProjectsRelativePath(t *testing.T) {
 	}
 	t.Chdir(parent)
 
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   fakeGit{isRepo: true, remote: "git@x:a/myrepo.git"},
 		Cache: &recordingCache{},
@@ -201,8 +201,8 @@ func (c *recordingCache) Flush(domain.Project) error { return nil }
 func TestGetSource(t *testing.T) {
 	t.Parallel()
 
-	deps := func(c *recordingCache) types.Runtime {
-		return types.Runtime{
+	deps := func(c *recordingCache) service.Runtime {
+		return service.Runtime{
 			Ctx:   context.Background(),
 			Git:   fakeGit{isRepo: true, remote: "git@x:a/b.git"},
 			Cache: c,
@@ -818,7 +818,7 @@ func TestGetProjectsIssuesNoRemoteCalls(t *testing.T) {
 	}
 
 	g := &countingGit{remote: "git@x:a/b.git"}
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   isRepoCountingGit{countingGit: g},
 		Cache: &recordingCache{},
@@ -872,7 +872,7 @@ func TestPathlessProjectKeepsRepoIdentity(t *testing.T) {
 	}
 	p := domain.Project{Name: "acme", Repos: []domain.Repository{configured}}
 
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   fakeGit{isRepo: true},
 		Cache: &recordingCache{},
@@ -912,7 +912,7 @@ func TestPathlessProjectNameFallsBackToSrc(t *testing.T) {
 		Name:  "acme",
 		Repos: []domain.Repository{{Src: "git@example.com:acme/one.git"}},
 	}
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   fakeGit{isRepo: true},
 		Cache: &recordingCache{},
@@ -955,7 +955,7 @@ func TestSubProjectSourceIsLoaded(t *testing.T) {
 			Source: &domain.ProviderSource{Type: "filesystem", Search: subPath},
 		}},
 	}
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   isRepoCountingGit{&countingGit{}},
 		Cache: &recordingCache{},
@@ -995,7 +995,7 @@ func TestInheritedSubProjectSourceIsNotRediscovered(t *testing.T) {
 		Source:      &domain.ProviderSource{Type: "filesystem", Search: root},
 		SubProjects: []domain.Project{{Name: "team"}},
 	}
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   isRepoCountingGit{&countingGit{}},
 		Cache: &recordingCache{},
@@ -1033,7 +1033,7 @@ func TestPathlessGroupingProjectIsNotDiscovered(t *testing.T) {
 			Source: &domain.ProviderSource{Type: "filesystem", Search: root},
 		}},
 	}
-	deps := types.Runtime{
+	deps := service.Runtime{
 		Ctx:   context.Background(),
 		Git:   isRepoCountingGit{&countingGit{}},
 		Cache: &recordingCache{},

@@ -9,7 +9,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/loader"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/service"
 )
 
 // Args is what the command line said, already split. An empty Project or Repo
@@ -45,7 +45,7 @@ func Parse(args []string, requireRepo bool) Args {
 // Project loads the project named name, descending into the sub-project sub
 // when it is set. Naming something that does not exist is a real failure, not
 // a downgradeable warning: a script must be able to tell a typo from success.
-func Project(name, sub string, rt types.Runtime) (domain.Project, error) {
+func Project(name, sub string, rt service.Runtime) (domain.Project, error) {
 	p, err := loader.GetProject(name, rt)
 	if err != nil {
 		return p, fmt.Errorf("unable to load project: %w", err)
@@ -73,7 +73,7 @@ func Repo(p domain.Project, name string) (domain.Repository, error) {
 // Resolve returns the project and, when asked for, the repository. The
 // repository comes back nil only when the command does not require one and no
 // second argument named one.
-func Resolve(a Args, s Selector, rt types.Runtime) (
+func Resolve(a Args, s Selector, rt service.Runtime) (
 	domain.Project, *domain.Repository, error,
 ) {
 	name := a.Project
@@ -84,7 +84,7 @@ func Resolve(a Args, s Selector, rt types.Runtime) (
 			return domain.Project{}, nil, err
 		}
 		if name == "" {
-			return domain.Project{}, nil, types.NewWarning("no project selected")
+			return domain.Project{}, nil, domain.NewWarning("no project selected")
 		}
 	}
 
@@ -111,7 +111,7 @@ func Resolve(a Args, s Selector, rt types.Runtime) (
 			return project, nil, err
 		}
 		if repoName == "" {
-			return project, nil, types.NewWarning("no repository selected")
+			return project, nil, domain.NewWarning("no repository selected")
 		}
 	}
 

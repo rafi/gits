@@ -6,10 +6,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ExecPull runs pull --ff-only on project repositories, or on a specific
@@ -46,10 +46,10 @@ func pullRepo(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string,
 	switch {
 	case head.Upstream == "":
 		// There is nowhere to pull from
-		return "", types.NewWarning("skipped: %s", git.ErrNoUpstream)
+		return "", domain.NewWarning("skipped: %s", git.ErrNoUpstream)
 	case head.Gone:
 		// Branch is gone, merged and deleted?
-		return "", types.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
+		return "", domain.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
 	}
 
 	output, err := deps.Git.Pull(ctx, repo.AbsPath)

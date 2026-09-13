@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ExecPush pushes project repositories, or a specific repo, to their
@@ -73,13 +73,13 @@ func pushRepo(opts git.PushOptions) func(
 			// is documented to pass over it — so it is wrapped here as a
 			// warning, which the module leaves alone: it shows on the line
 			// without failing the run.
-			return "", types.NewWarning("skipped: %s", git.ErrNoUpstream)
+			return "", domain.NewWarning("skipped: %s", git.ErrNoUpstream)
 		case head.Gone:
 			// Pushing here would succeed and re-create the branch someone
 			// deleted on the Remote — the creative, ref-scattering behavior
 			// ADR-0002 exists to prevent — so it is passed over instead, with
 			// the Upstream named to tell this skip from the one above.
-			return "", types.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
+			return "", domain.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
 		}
 
 		remote, branch, ok := git.SplitUpstream(head.Upstream)

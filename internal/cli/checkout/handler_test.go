@@ -11,7 +11,6 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // The branch prompt runs a huh form on the terminal, and `checkout` reaches it
@@ -315,7 +314,7 @@ func TestCheckoutRepoAbortIsAWarning(t *testing.T) {
 	if err == nil {
 		t.Fatal("ExecCheckout error = nil, want the abort reported")
 	}
-	if !types.IsWarning(err) {
+	if !domain.IsWarning(err) {
 		t.Errorf("ExecCheckout error = %T (%v), want a downgradeable warning", err, err)
 	}
 }

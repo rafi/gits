@@ -16,7 +16,6 @@ import (
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/service/run"
-	"github.com/rafi/gits/internal/types"
 )
 
 // branchPageSize is how many branches the prompt shows at once.
@@ -37,7 +36,7 @@ func ExecCheckout(args []string, deps app.RuntimeCLI) error {
 		// Checkout a single repository.
 		err := checkoutRepo(project, *repo, deps)
 		if errors.Is(err, huh.ErrUserAborted) {
-			return types.NewWarning("checkout aborted")
+			return domain.NewWarning("checkout aborted")
 		}
 		return err
 	}
@@ -63,7 +62,7 @@ func checkoutProjectRepos(project domain.Project, deps app.RuntimeCLI) ([]error,
 			continue
 		}
 		if errors.Is(err, huh.ErrUserAborted) {
-			return append(errList, types.NewWarning("checkout aborted")), true
+			return append(errList, domain.NewWarning("checkout aborted")), true
 		}
 		errList = append(errList, err)
 	}

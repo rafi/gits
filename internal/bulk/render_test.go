@@ -11,7 +11,6 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/service/run"
-	"github.com/rafi/gits/internal/types"
 )
 
 // TestLinesRendersBodyOrBareError: a result line is the padded title followed
@@ -99,7 +98,7 @@ func TestErrorsWrapsForTheEpilogue(t *testing.T) {
 	t.Parallel()
 
 	repo := domain.Repository{Name: "api", AbsPath: "/code/api"}
-	warning := types.NewWarning("skipped")
+	warning := domain.NewWarning("skipped")
 	res := Results[string]{
 		Results: []Result[string]{
 			{Repo: Repo{Repository: repo}, Err: errors.New("boom")},
@@ -243,7 +242,7 @@ func jsonFixture(t *testing.T) (Results[string], *clitest.Deps) {
 	}
 	res := Results[string]{Command: "pull", Project: proj, Results: []Result[string]{
 		{Repo: repo(0), Value: deps.Theme.GitOutput.Render("Already up to date.")},
-		{Repo: repo(1), Err: types.NewWarning("skipped: no upstream")},
+		{Repo: repo(1), Err: domain.NewWarning("skipped: no upstream")},
 		{Repo: repo(2), Value: "partial", Err: errors.New("boom")},
 		{Repo: repo(3), Err: run.StateError(proj.Repos[3]), Guarded: true},
 	}}

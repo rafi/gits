@@ -15,7 +15,6 @@ import (
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // fakeGit stubs the git.Reader methods project population touches. Finders
@@ -116,7 +115,7 @@ func TestParseArgsNonInteractive(t *testing.T) {
 		if err == nil {
 			t.Fatal("ParseArgs(ghost) = nil, want error")
 		}
-		if types.IsWarning(err) {
+		if domain.IsWarning(err) {
 			t.Errorf("ParseArgs(ghost) is a downgradeable warning, want a real error: %v", err)
 		}
 	})
@@ -260,7 +259,7 @@ func TestSelectBranch(t *testing.T) {
 	})
 
 	// A canceled branch prompt is a documented pass-over, not a failure, so
-	// it must come back as a types.Warning rather than a plain error.
+	// it must come back as a domain.Warning rather than a plain error.
 	t.Run("an abort is a warning", func(t *testing.T) {
 		stubFinder(t, "exit 130")
 
@@ -270,7 +269,7 @@ func TestSelectBranch(t *testing.T) {
 		if err == nil {
 			t.Fatal("SelectBranch error = nil, want a warning")
 		}
-		if !types.IsWarning(err) {
+		if !domain.IsWarning(err) {
 			t.Errorf("SelectBranch error = %T (%v), want a downgradeable warning", err, err)
 		}
 	})

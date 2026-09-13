@@ -27,7 +27,6 @@ import (
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/service/run"
-	"github.com/rafi/gits/internal/types"
 )
 
 // Command is one Bulk Command. T is whatever its body produces for each
@@ -55,7 +54,7 @@ type Command[T any] struct {
 	// and must write to no destination itself. The error it returns is kept
 	// as it is: shown bare on the repository's own line, and wrapped with
 	// the repository's name and path only in the error epilogue. A warning
-	// built with types.NewWarning is a documented pass-over — it shows on
+	// built with domain.NewWarning is a documented pass-over — it shows on
 	// the line and does not fail the run.
 	Body func(context.Context, Repo, app.RuntimeCLI) (T, error)
 }
@@ -118,7 +117,7 @@ func (r Results[T]) Errors() []error {
 		if res.Err == nil {
 			continue
 		}
-		if _, ok := errors.AsType[*types.Warning](res.Err); ok {
+		if _, ok := errors.AsType[*domain.Warning](res.Err); ok {
 			errs = append(errs, res.Err)
 			continue
 		}
@@ -264,5 +263,5 @@ func inTree(p domain.Project, repo domain.Repository) bool {
 // warning, for the live progress error count — mirroring
 // style.RenderErrors(_, true).
 func isFailure(err error) bool {
-	return err != nil && !types.IsWarning(err)
+	return err != nil && !domain.IsWarning(err)
 }

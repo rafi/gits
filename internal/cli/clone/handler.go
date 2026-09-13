@@ -11,7 +11,6 @@ import (
 	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ExecClone clones project repositories, or a specific repo, rendering the
@@ -61,7 +60,7 @@ func cloneRepo(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string
 	// config keys that would give it one, rather than handing git an empty
 	// target.
 	if repo.State == domain.RepoStateRemoteOnly {
-		return "", types.NewWarning(
+		return "", domain.NewWarning(
 			"no local path: set `path:` on the project or `dir:` on the repository")
 	}
 
@@ -69,7 +68,7 @@ func cloneRepo(ctx context.Context, repo bulk.Repo, deps app.RuntimeCLI) (string
 	if errors.Is(err, git.ErrTargetExists) {
 		// Repo is already cloned, skip with a warning.
 		repoPath := format.Path(repo.AbsPath, deps.HomeDir)
-		return "", types.NewWarning("already cloned at %s", repoPath)
+		return "", domain.NewWarning("already cloned at %s", repoPath)
 	}
 	if err != nil {
 		return "", err

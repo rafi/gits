@@ -31,7 +31,6 @@ import (
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/service/wire"
-	"github.com/rafi/gits/internal/types"
 )
 
 // Level is how much a finding matters. It is wire vocabulary — the `-o json`
@@ -99,7 +98,7 @@ func ExecDoctor(format string, _ []string, deps app.RuntimeCLI) error {
 		// The message is the report itself, which the user is looking at.
 		// Returning a bare non-zero rather than an epilogue keeps the last
 		// line of output a finding rather than a restatement.
-		return types.ErrSilent
+		return domain.ErrSilent
 	}
 	return nil
 }

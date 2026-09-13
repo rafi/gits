@@ -14,7 +14,6 @@ import (
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/fzf"
 	"github.com/rafi/gits/internal/service/resolve"
-	"github.com/rafi/gits/internal/types"
 )
 
 // branchLineFields is how many tab-separated fields a branch selection line
@@ -155,13 +154,13 @@ func SelectBranch(
 	selected, err := finder.Run(deps.Ctx, buffer)
 	if err != nil {
 		if isCancelled(err) {
-			return "", types.NewWarning("no branch selected")
+			return "", domain.NewWarning("no branch selected")
 		}
 		return "", err
 	}
 	parts := strings.SplitN(selected, delimiter, 3)
 	if len(parts) < branchLineFields {
-		return "", types.NewWarning("no branch selected")
+		return "", domain.NewWarning("no branch selected")
 	}
 	return parts[1], nil
 }

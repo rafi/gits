@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/internal/loader"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/service"
 )
 
-func completionDeps() types.Runtime {
+func completionDeps() service.Runtime {
 	// Shell completion discards any setting warnings: pressing Tab must stay
 	// silent, and a bad duration has already fallen back to its default.
 	deps, _ := newRuntime(context.Background())

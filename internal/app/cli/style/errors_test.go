@@ -8,11 +8,10 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/types"
 )
 
 // TestRenderErrorsExcludesWarnings verifies that RenderErrors(_, true) counts
-// only real errors, excluding types.Warning — including a warning wrapped in
+// only real errors, excluding domain.Warning — including a warning wrapped in
 // another error (matched via [errors.As]).
 func TestRenderErrorsExcludesWarnings(t *testing.T) {
 	t.Parallel()
@@ -22,10 +21,10 @@ func TestRenderErrorsExcludesWarnings(t *testing.T) {
 		errs    []error
 		wantErr bool
 	}{
-		{"only warning", []error{types.NewWarning("heads up")}, false},
-		{"wrapped warning", []error{fmt.Errorf("ctx: %w", types.NewWarning("heads up"))}, false},
+		{"only warning", []error{domain.NewWarning("heads up")}, false},
+		{"wrapped warning", []error{fmt.Errorf("ctx: %w", domain.NewWarning("heads up"))}, false},
 		{"only real error", []error{fmt.Errorf("boom")}, true},
-		{"mixed", []error{types.NewWarning("warn"), fmt.Errorf("boom")}, true},
+		{"mixed", []error{domain.NewWarning("warn"), fmt.Errorf("boom")}, true},
 		{"empty", nil, false},
 	}
 	for _, tt := range tests {
@@ -46,7 +45,7 @@ func TestRenderErrorsWritesDiagnosticOutput(t *testing.T) {
 	t.Parallel()
 
 	var diag bytes.Buffer
-	err := RenderErrors(&diag, []error{fmt.Errorf("boom"), types.NewWarning("meh")}, true)
+	err := RenderErrors(&diag, []error{fmt.Errorf("boom"), domain.NewWarning("meh")}, true)
 
 	if err == nil || err.Error() != "completed with errors" {
 		t.Fatalf("RenderErrors() = %v, want the unchanged exit-code error", err)
@@ -60,7 +59,7 @@ func TestRenderErrorsWritesDiagnosticOutput(t *testing.T) {
 	}
 
 	var empty bytes.Buffer
-	if err := RenderErrors(&empty, []error{types.NewWarning("meh")}, true); err != nil {
+	if err := RenderErrors(&empty, []error{domain.NewWarning("meh")}, true); err != nil {
 		t.Errorf("RenderErrors(only warnings) = %v, want nil", err)
 	}
 	if empty.Len() != 0 {

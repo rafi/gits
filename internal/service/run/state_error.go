@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/types"
 )
 
 // The sentinel errors a non-OK Repo State is reported as when the state
@@ -43,10 +42,10 @@ func StateError(repo domain.Repository) error {
 	}
 }
 
-// RepoError wraps a repo failure as a *types.Warning (ErrorType) so it counts
+// RepoError wraps a repo failure as a *domain.Warning (ErrorType) so it counts
 // as a real error and matches uniformly via [errors.As].
 func RepoError(err error, repo domain.Repository) error {
-	return &types.Warning{
+	return &domain.Warning{
 		Title:  repo.GetName(),
 		Reason: err.Error(),
 		Dir:    repo.AbsPath,

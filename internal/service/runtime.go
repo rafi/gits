@@ -1,4 +1,6 @@
-package types
+// Package service holds what the business layer runs with: the dependencies
+// every command is handed, independent of how the user reached it.
+package service
 
 import (
 	"context"

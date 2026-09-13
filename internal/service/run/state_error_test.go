@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/types"
 )
 
 // TestRepoStateErrorSurfacesReason proves the Reason carried by an `error`
@@ -52,7 +51,7 @@ func TestRepoStateErrorSurfacesReason(t *testing.T) {
 	}
 }
 
-// TestRepoErrorIsPointerWarning verifies RepoError yields a *types.Warning so
+// TestRepoErrorIsPointerWarning verifies RepoError yields a *domain.Warning so
 // it matches uniformly via [errors.As], and that it is an ErrorType — a real
 // failure that counts toward the exit code, not a downgraded warning.
 func TestRepoErrorIsPointerWarning(t *testing.T) {
@@ -61,14 +60,14 @@ func TestRepoErrorIsPointerWarning(t *testing.T) {
 	repo := domain.Repository{Name: "acme", AbsPath: "/tmp/acme"}
 	err := RepoError(fmt.Errorf("fetch failed"), repo)
 
-	var warning *types.Warning
+	var warning *domain.Warning
 	if !errors.As(err, &warning) {
-		t.Fatalf("RepoError() = %T, want it to match *types.Warning", err)
+		t.Fatalf("RepoError() = %T, want it to match *domain.Warning", err)
 	}
 	if warning.Title != repo.GetName() || warning.Dir != repo.AbsPath {
 		t.Errorf("RepoError() = %+v, want it to name the repository", warning)
 	}
-	if types.IsWarning(err) {
+	if domain.IsWarning(err) {
 		t.Error("RepoError should count as a real error, but was excluded as a warning")
 	}
 }

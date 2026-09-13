@@ -18,7 +18,6 @@ import (
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/types"
 )
 
 // The TestExecStatus tests drive ExecStatus — the command's real entry point —
@@ -540,7 +539,7 @@ func TestExecStatusUnknownProject(t *testing.T) {
 			if err == nil {
 				t.Fatalf("ExecStatus(%q, typo) = nil, want a real error", format)
 			}
-			if types.IsWarning(err) {
+			if domain.IsWarning(err) {
 				t.Errorf("ExecStatus(%q, typo) error = %v, want a real error not a warning",
 					format, err)
 			}

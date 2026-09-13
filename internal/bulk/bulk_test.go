@@ -12,7 +12,6 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/types"
 )
 
 // Every test here drives Run — the module's real entry point — with explicit
@@ -241,7 +240,7 @@ func TestRunErrorAggregation(t *testing.T) {
 		Body: func(_ context.Context, repo Repo, _ app.RuntimeCLI) (string, error) {
 			switch repo.GetName() {
 			case "warn":
-				return lineFor("warn"), types.NewWarning("just a warning")
+				return lineFor("warn"), domain.NewWarning("just a warning")
 			case "boom":
 				return "", errors.New("real failure")
 			default:
@@ -350,7 +349,7 @@ func TestRunSingleRepository(t *testing.T) {
 		Verb: "testing",
 		Body: func(_ context.Context, repo Repo, _ app.RuntimeCLI) (string, error) {
 			reached = append(reached, repo.GetName())
-			return lineFor(repo.GetName()), types.NewWarning("skip me")
+			return lineFor(repo.GetName()), domain.NewWarning("skip me")
 		},
 	}
 
@@ -489,15 +488,15 @@ func TestRunKeepsBodyErrorsBare(t *testing.T) {
 		t.Fatalf("body error = %v, want it kept as returned", got)
 	}
 	errs := res.Errors()
-	var wrapped *types.Warning
+	var wrapped *domain.Warning
 	if len(errs) != 1 || !errors.As(errs[0], &wrapped) {
 		t.Fatalf("Errors() = %v, want the failure wrapped for the epilogue", errs)
 	}
-	if wrapped.Title != "api" || wrapped.Type != types.ErrorType || !errors.Is(errs[0], boom) {
+	if wrapped.Title != "api" || wrapped.Type != domain.ErrorType || !errors.Is(errs[0], boom) {
 		t.Errorf("wrapped error = %+v, want the repository named and a real failure", wrapped)
 	}
 
-	warning := types.NewWarning("already handled")
+	warning := domain.NewWarning("already handled")
 	downgraded := Command[string]{
 		Verb: "testing",
 		Body: func(context.Context, Repo, app.RuntimeCLI) (string, error) { return "", warning },

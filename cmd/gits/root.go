@@ -15,13 +15,14 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/cache"
 	"github.com/rafi/gits/internal/config"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
-	"github.com/rafi/gits/internal/types"
+	"github.com/rafi/gits/internal/service"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -35,7 +36,7 @@ var (
 	// is not an error and leaves this nil.
 	errConfigLoad error
 	// logger is the debug tracer built once from the resolved config and
-	// handed to every command on types.Runtime. It is nil until cobra's
+	// handed to every command on service.Runtime. It is nil until cobra's
 	// initializer runs; newRuntime substitutes a discarding logger so a
 	// command driven directly by a test never panics on it.
 	logger *slog.Logger
@@ -81,7 +82,7 @@ func main() {
 		// A silent failure has already shown the user why — `gits doctor`'s
 		// findings are its Result Output — so it sets the exit code without
 		// a message that would only restate the last line.
-		if !types.IsSilent(err) {
+		if !domain.IsSilent(err) {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(1)
@@ -149,7 +150,7 @@ func newLogger(cfg config.File) *slog.Logger {
 // from the domain package). The caller decides where they surface: a command
 // writes them to Diagnostic Output; shell completion discards them so Tab
 // stays silent.
-func newRuntime(ctx context.Context) (types.Runtime, []error) {
+func newRuntime(ctx context.Context) (service.Runtime, []error) {
 	// A command reached without main's initializer — a test driving the
 	// assembled cobra tree — still gets a working, silent logger.
 	log := logging.Or(logger)
@@ -176,7 +177,7 @@ func newRuntime(ctx context.Context) (types.Runtime, []error) {
 		warnings = append(warnings, err)
 	}
 
-	return types.Runtime{
+	return service.Runtime{
 		Ctx:        ctx,
 		Projects:   configFile.Projects,
 		Settings:   configFile.Settings,
@@ -264,7 +265,7 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 
 		// Downgrade warnings to a subtle sentence on Diagnostic Output — real
 		// errors must still propagate.
-		if types.IsWarning(cmdErr) {
+		if domain.IsWarning(cmdErr) {
 			writeWarning(os.Stderr, theme, cmdErr.Error())
 			return nil
 		}

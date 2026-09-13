@@ -7,7 +7,6 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/types"
 )
 
 // Every test here drives ExecSync — the command's real entry point — naming
@@ -102,8 +101,8 @@ func TestExecSyncUnknownProject(t *testing.T) {
 	if err == nil {
 		t.Fatal("ExecSync(bogus) = nil, want a warning")
 	}
-	if _, ok := errors.AsType[*types.Warning](err); !ok {
-		t.Errorf("ExecSync(bogus) error = %T (%v), want *types.Warning", err, err)
+	if _, ok := errors.AsType[*domain.Warning](err); !ok {
+		t.Errorf("ExecSync(bogus) error = %T (%v), want *domain.Warning", err, err)
 	}
 	if len(cache.flushed) > 0 {
 		t.Errorf("flushed %v, want nothing cleaned for an unknown project", cache.flushed)

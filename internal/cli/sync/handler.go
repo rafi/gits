@@ -7,10 +7,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/loader"
 	"github.com/rafi/gits/internal/providers"
-	"github.com/rafi/gits/internal/types"
 )
 
 // ExecSync cleans the cache for the given projects.
@@ -36,7 +36,7 @@ func ExecSync(args []string, deps app.RuntimeCLI) error {
 		return fmt.Errorf("unable to list projects: %w", err)
 	}
 	if len(args) > 0 && len(projs) == 0 {
-		return types.NewWarning("no projects found matching %q", strings.Join(args, ", "))
+		return domain.NewWarning("no projects found matching %q", strings.Join(args, ", "))
 	}
 	return nil
 }

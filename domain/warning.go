@@ -1,6 +1,4 @@
-// Package types holds the runtime dependencies every command is handed, and
-// the warning envelope commands report failures through.
-package types
+package domain
 
 import (
 	"errors"
@@ -8,12 +6,12 @@ import (
 	"strings"
 )
 
-// Type separates a real failure from a downgradeable warning.
-type Type int
+// Severity separates a real failure from a downgradeable warning.
+type Severity int
 
 // ErrorType counts toward the exit code; WarningType does not.
 const (
-	ErrorType Type = iota
+	ErrorType Severity = iota
 	WarningType
 )
 
@@ -26,7 +24,7 @@ const (
 //
 //nolint:errname // deliberate — see above.
 type Warning struct {
-	Type   Type
+	Type   Severity
 	Title  string
 	Reason string
 	Dir    string

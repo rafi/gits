@@ -9,7 +9,6 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/types"
 )
 
 // Every test drives ExecDoctor or Check — the command's real entry points —
@@ -232,7 +231,7 @@ func TestDoctorExitCode(t *testing.T) {
 		}
 		// The findings are the output, so the failure carries no message of
 		// its own to restate them.
-		if !types.IsSilent(err) {
+		if !domain.IsSilent(err) {
 			t.Errorf("error = %v, want a silent one", err)
 		}
 	})
@@ -288,7 +287,7 @@ func TestDoctorJSONDocument(t *testing.T) {
 		Repos: []domain.Repository{{Name: "rel", Dir: "relative-dir"}},
 	}}
 
-	if err := ExecDoctor("json", nil, deps.RuntimeCLI); err != nil && !types.IsSilent(err) {
+	if err := ExecDoctor("json", nil, deps.RuntimeCLI); err != nil && !domain.IsSilent(err) {
 		t.Fatalf("ExecDoctor: %v", err)
 	}
 

@@ -4,7 +4,7 @@
 // Diagnostic Output, written as prose to deps.Err (see ADR-0004).
 //
 // Nothing here is global. The logger is built in cmd/gits and travels on
-// types.Runtime, so a test can hand any component a logger of its own.
+// service.Runtime, so a test can hand any component a logger of its own.
 package logging
 
 import (

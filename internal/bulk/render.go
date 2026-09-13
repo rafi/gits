@@ -14,7 +14,6 @@ import (
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/app/format"
 	"github.com/rafi/gits/internal/service/wire"
-	"github.com/rafi/gits/internal/types"
 )
 
 // The output formats a line Bulk Command renders: the stock lines, or the
@@ -146,7 +145,7 @@ func outcome(command string, r Result[string]) *wire.Command {
 	switch {
 	case r.Err == nil:
 		return wire.OK(command, plain(r.Value))
-	case types.IsWarning(r.Err):
+	case domain.IsWarning(r.Err):
 		return wire.Skipped(command, plain(r.Err.Error()))
 	default:
 		return wire.Failed(command, errors.New(plain(r.Err.Error())))
