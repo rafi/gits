@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
 // Every test drives Exec — the command's real entry point — with explicit

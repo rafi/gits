@@ -7,8 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cache"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/cache"
+	"github.com/rafi/gits/internal/infra/git"
 )
 
 // Runtime is the runtime dependencies for the application.
@@ -39,7 +39,7 @@ type Runtime struct {
 
 	// Log is the debug tracer: page fetches, cache hits and misses, git's
 	// stderr. It is never how a user is told something — that is Diagnostic
-	// Output on Err, as prose. Constructed once in cmd/gits and passed here
+	// Output on Err, as prose. Constructed once by the command wiring and passed here
 	// so no package reaches for a global logger.
 	Log *slog.Logger
 }

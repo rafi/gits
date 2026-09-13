@@ -24,7 +24,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cache"
+	"github.com/rafi/gits/internal/infra/cache"
 	"github.com/rafi/gits/internal/service"
 )
 

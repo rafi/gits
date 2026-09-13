@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/service"
 	"github.com/rafi/gits/internal/service/run"
 )

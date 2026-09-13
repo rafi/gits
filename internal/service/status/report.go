@@ -3,7 +3,7 @@
 package status
 
 import (
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/service/run"
 )
 

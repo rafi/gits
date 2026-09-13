@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/infra/providers"
 	"github.com/rafi/gits/internal/logging"
-	"github.com/rafi/gits/internal/providers"
 	"github.com/rafi/gits/internal/service"
 )
 

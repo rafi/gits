@@ -9,7 +9,7 @@ import (
 	"charm.land/huh/v2"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
 // The branch prompt runs a huh form on the terminal, and `checkout` reaches it

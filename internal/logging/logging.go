@@ -3,7 +3,7 @@
 // not for anything the user is meant to read: user-facing messages are
 // Diagnostic Output, written as prose to deps.Err (see ADR-0004).
 //
-// Nothing here is global. The logger is built in cmd/gits and travels on
+// Nothing here is global. The logger is built by the command wiring and travels on
 // service.Runtime, so a test can hand any component a logger of its own.
 package logging
 

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/app/cli/clitest"
+	"github.com/rafi/gits/internal/infra/git"
 )
 
 // Every test here drives ExecPull — the command's real entry point — with

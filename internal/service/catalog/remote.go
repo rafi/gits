@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 )
 
 // FillSources fills in the Repo Src of every `ok` repository in the tree that

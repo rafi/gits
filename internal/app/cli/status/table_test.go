@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app/cli/clitest"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/service/status"
 )

@@ -180,6 +180,33 @@ linters:
           deny:
             - pkg: log$
               desc: Use log/slog instead, see https://go.dev/blog/slog
+        # The layer rule: app → service → infra → domain. Each layer may only
+        # depend inwards, so the same business logic can serve a second view
+        # without dragging the CLI along. See docs/adr/0007.
+        "service layer":
+          files:
+            - "**/internal/service/**"
+          deny:
+            - pkg: github.com/rafi/gits/internal/app
+              desc: the service layer may not import a view; return a report and let the view render it
+            - pkg: charm.land/lipgloss
+              desc: styling is a view concern; the service returns data, not styled strings
+            - pkg: charm.land/huh
+              desc: prompting is a view concern; the service takes a decision as an argument
+        "infra layer":
+          files:
+            - "**/internal/infra/**"
+          deny:
+            - pkg: github.com/rafi/gits/internal/app
+              desc: infrastructure may not import a view
+            - pkg: github.com/rafi/gits/internal/service
+              desc: infrastructure may not import business logic; it is called by it
+        "domain layer":
+          files:
+            - "**/domain/**"
+          deny:
+            - pkg: github.com/rafi/gits/internal
+              desc: the domain is the innermost layer and depends on nothing in this repo
 
     embeddedstructfieldcheck:
       # Checks that sync.Mutex and sync.RWMutex are not used as embedded fields.
@@ -197,11 +224,11 @@ linters:
         - switch
         - map
 
-    # The two output destinations are runtime dependencies on types.RuntimeCLI:
+    # The two output destinations are runtime dependencies on app.RuntimeCLI:
     # a command's result goes to deps.Out and its diagnostics to deps.Err, so
     # `gits status | jq` receives only the status document and every command
-    # stays reachable from a test through its real entry point. cmd/gits
-    # constructs the process streams; nothing else names them.
+    # stays reachable from a test through its real entry point. The command
+    # wiring constructs the process streams; nothing else names them.
     forbidigo:
       forbid:
         - pattern: ^(fmt|lipgloss)\.Print(f|ln)?$
@@ -209,7 +236,7 @@ linters:
         - pattern: ^print(ln)?$
           msg: printing goes to a process stream — write the command's result to deps.Out and its diagnostics to deps.Err, which Fprint* takes as its first argument
         - pattern: ^(os\.Std(out|err)|lipgloss\.Writer)$
-          msg: the process streams are constructed in cmd/gits — take deps.Out for a command's result or deps.Err for its diagnostics
+          msg: the process streams are constructed by the command wiring — take deps.Out for a command's result or deps.Err for its diagnostics
 
     funcorder:
       # Checks if the exported methods of a structure are placed before the non-exported ones.
@@ -423,7 +450,7 @@ linters:
       # The command wiring constructs the runtime, so it is where the process
       # streams are named, and `gits --version` prints before one exists.
       - linters: [forbidigo]
-        path: ^cmd/gits/
+        path: ^internal/app/cli/(root|all|completion)\.go$
       # The --color toggle sets the colour profile on the global styled
       # writer: it is a process-wide setting applied at startup, before any
       # runtime or per-command writer exists.
@@ -436,4 +463,4 @@ linters:
       # linter fails loudly here instead of quietly widening the exception.
       - linters: [forbidigo]
         path: _test\.go$
-        text: the process streams are constructed in cmd/gits
+        text: the process streams are constructed by the command wiring

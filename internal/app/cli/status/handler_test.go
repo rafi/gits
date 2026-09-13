@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/app/cli/clitest"
+	"github.com/rafi/gits/internal/infra/git"
 )
 
 // The TestExecStatus tests drive ExecStatus — the command's real entry point —

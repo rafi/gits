@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
 // Every test drives ExecDoctor — the command's real entry point — with a nil

@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/app/cli/clitest"
+	"github.com/rafi/gits/internal/infra/git"
 )
 
 // fakeGit stubs the status-relevant git.Reader methods. The view's own tests

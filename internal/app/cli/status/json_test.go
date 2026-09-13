@@ -10,7 +10,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/output"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/service/status"
 )

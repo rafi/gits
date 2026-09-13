@@ -10,8 +10,8 @@ import (
 	"github.com/mitchellh/go-homedir"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/git"
-	"github.com/rafi/gits/internal/providers"
+	"github.com/rafi/gits/internal/infra/git"
+	"github.com/rafi/gits/internal/infra/providers"
 )
 
 // expandPaths resolves each project's configured path to an absolute one, and

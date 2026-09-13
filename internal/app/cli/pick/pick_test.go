@@ -12,9 +12,9 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
+	"github.com/rafi/gits/internal/app/cli/clitest"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 )
 
 // fakeGit stubs the git.Reader methods project population touches. Finders

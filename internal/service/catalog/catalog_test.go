@@ -11,8 +11,7 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/service"
 )
@@ -27,8 +26,7 @@ func classification(ctx context.Context, project *domain.Project, gitClient git.
 
 // fakeGit stubs the git.Reader methods classification relies on.
 type fakeGit struct {
-	git.Reader
-	clitest.FakeNoWrites
+	git.Client
 
 	isRepo    bool
 	remote    string
@@ -46,8 +44,7 @@ func (f fakeGit) Remote(context.Context, string) (string, error) {
 // countingGit records how many times Remote is called, to prove FillSources
 // consults it once per unresolved `ok` repository and never otherwise.
 type countingGit struct {
-	git.Reader
-	clitest.FakeNoWrites
+	git.Client
 
 	remote      string
 	remoteErr   error

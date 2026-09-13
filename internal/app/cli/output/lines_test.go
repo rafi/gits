@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app/cli/clitest"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/service/run"
 )
 

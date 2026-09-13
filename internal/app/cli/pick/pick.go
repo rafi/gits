@@ -12,7 +12,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
-	"github.com/rafi/gits/internal/fzf"
+	"github.com/rafi/gits/internal/infra/fzf"
 	"github.com/rafi/gits/internal/service/resolve"
 	"github.com/rafi/gits/internal/service/run"
 )

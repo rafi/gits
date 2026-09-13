@@ -9,7 +9,7 @@ import (
 	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/cli/progress"
-	"github.com/rafi/gits/internal/git"
+	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/service"
 	"github.com/rafi/gits/internal/service/push"
 	"github.com/rafi/gits/internal/service/run"
