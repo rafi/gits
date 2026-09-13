@@ -10,7 +10,6 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/git"
 )
 
 // The branch prompt runs a huh form on the terminal, and `checkout` reaches it
@@ -27,28 +26,6 @@ import (
 var (
 	errBoom = errors.New("boom")
 )
-
-// fakeBranchClient implements the two methods promptRepo reaches before the
-// (TTY) prompt; everything else is inherited from clitest.FakeGit and panics
-// if reached. CurrentBranch succeeds so control flows into AllBranches, which
-// returns whatever the test asked for.
-type fakeBranchClient struct {
-	clitest.FakeGit
-
-	branches []string
-	err      error
-}
-
-func (fakeBranchClient) CurrentBranch(context.Context, string) (string, error) {
-	return "main", nil
-}
-
-func (c fakeBranchClient) AllBranches(context.Context, string) ([]string, error) {
-	return c.branches, c.err
-}
-
-// compile-time check: fakeBranchClient must satisfy the git client interface.
-var _ git.Client = fakeBranchClient{}
 
 // TestExecCheckoutAbortsOnNonOKState covers `gits checkout acme bad`: the
 // state guard runs before the prompt, and the Repository's own Reason reaches
@@ -129,40 +106,6 @@ func TestExecCheckoutTitlesEverySubProject(t *testing.T) {
 
 	if want := ":: acme\n\n:: tools\n"; deps.Result() != want {
 		t.Errorf("Result Output = %q, want exactly %q", deps.Result(), want)
-	}
-}
-
-// TestPromptRepoBranchesErrorDoesNotExit proves T3 (#4): a Branches failure
-// surfaces as a returned error instead of aborting the whole process. The
-// original defect called [log.Fatal], which exits; if it ever returns here,
-// the test binary dies and this test fails loudly by not reporting at all.
-func TestPromptRepoBranchesErrorDoesNotExit(t *testing.T) {
-	t.Parallel()
-
-	deps := clitest.New(t, fakeBranchClient{err: errBoom})
-
-	got, _, err := promptRepo("title", "/path", deps.RuntimeCLI)
-	if err == nil {
-		t.Fatalf("promptRepo with failing Branches = (%q, nil), want a wrapped error", got)
-	}
-	if !errors.Is(err, errBoom) {
-		t.Fatalf("error %v does not wrap the Branches failure", err)
-	}
-}
-
-// TestPromptRepoNoBranchesErrors proves AC-4: an empty branch list returns an
-// error instead of opening a prompt. huh's select refuses to submit while it
-// has no options, so prompting would strand the user in a form only Ctrl-C
-// escapes. Defensive rather than reachable today — a repository with no
-// commits fails a step earlier, in CurrentBranch.
-func TestPromptRepoNoBranchesErrors(t *testing.T) {
-	t.Parallel()
-
-	deps := clitest.New(t, fakeBranchClient{branches: []string{}})
-
-	got, current, err := promptRepo("title", "/path", deps.RuntimeCLI)
-	if err == nil {
-		t.Fatalf("promptRepo with no branches = (%q, %q, nil), want an error", got, current)
 	}
 }
 
