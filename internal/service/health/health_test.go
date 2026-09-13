@@ -1,28 +1,40 @@
-package doctor
+package health
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/clitest"
+	"github.com/rafi/gits/internal/service"
 )
 
-// Every test drives ExecDoctor or Check — the command's real entry points —
-// with a nil git client, because doctor must never reach one: it inspects
-// configuration, the filesystem and PATH, and any git call would be a bug the
-// nil client turns into a panic.
+// Every test drives Check — the real entry point — with a nil git client,
+// because health must never reach one: it inspects configuration, the
+// filesystem and PATH, and any git call would be a bug the nil client turns
+// into a panic. Nothing here writes output either; the checks run headless.
+
+// runtime builds the business runtime the checks read from.
+func runtime(t *testing.T) service.Runtime {
+	t.Helper()
+
+	settings := domain.Settings{WorkerCount: 1}
+	settings.Icons.ApplyDefaults()
+	return service.Runtime{
+		Ctx:      t.Context(),
+		Settings: settings,
+		Projects: domain.ProjectListKeyed{},
+	}
+}
 
 // findings returns the findings for the given subject, so a test asserts on
 // what was reported rather than on the whole rendered report.
-func findings(t *testing.T, deps *clitest.Deps, subject string) []Finding {
+func findings(t *testing.T, rt service.Runtime, subject string) []Finding {
 	t.Helper()
 
 	var out []Finding
-	for _, f := range Check(deps.RuntimeCLI).Findings {
+	for _, f := range Check(rt) {
 		if f.Subject == subject {
 			out = append(out, f)
 		}
@@ -30,10 +42,10 @@ func findings(t *testing.T, deps *clitest.Deps, subject string) []Finding {
 	return out
 }
 
-// TestDoctorReportsUnresolvableRepoHome covers the config defects the loader
-// can only report once a project is loaded, and only for the project the user
+// TestReportsUnresolvableRepoHome covers the config defects the loader can
+// only report once a project is loaded, and only for the project the user
 // happened to name. As configuration problems they had no home before doctor.
-func TestDoctorReportsUnresolvableRepoHome(t *testing.T) {
+func TestReportsUnresolvableRepoHome(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -63,15 +75,18 @@ func TestDoctorReportsUnresolvableRepoHome(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			deps := clitest.New(t, nil)
-			deps.Projects = domain.ProjectListKeyed{"acme": tt.project}
+			rt := runtime(t)
+			rt.Projects = domain.ProjectListKeyed{"acme": tt.project}
 
-			got := findings(t, deps, tt.subject)
+			got := findings(t, rt, tt.subject)
 			if len(got) != 1 {
 				t.Fatalf("findings for %q = %+v, want exactly one", tt.subject, got)
 			}
 			if got[0].Level != LevelError {
 				t.Errorf("level = %q, want %q", got[0].Level, LevelError)
+			}
+			if got[0].Scope != ScopeConfig {
+				t.Errorf("scope = %q, want %q", got[0].Scope, ScopeConfig)
 			}
 			if !strings.Contains(got[0].Message, tt.want) {
 				t.Errorf("message = %q, want it to contain %q", got[0].Message, tt.want)
@@ -80,40 +95,40 @@ func TestDoctorReportsUnresolvableRepoHome(t *testing.T) {
 	}
 }
 
-// TestDoctorExemptsProviderBackedRepos is the counterpart: a provider-backed
+// TestExemptsProviderBackedRepos is the counterpart: a provider-backed
 // repository legitimately has no local home until it is cloned, so reporting
 // one would make every remote project look broken.
-func TestDoctorExemptsProviderBackedRepos(t *testing.T) {
+func TestExemptsProviderBackedRepos(t *testing.T) {
 	t.Parallel()
 
-	deps := clitest.New(t, nil)
-	deps.Projects = domain.ProjectListKeyed{"acme": {
+	rt := runtime(t)
+	rt.Projects = domain.ProjectListKeyed{"acme": {
 		Source: &domain.ProviderSource{Type: "github", Search: "acme"},
 		Repos:  []domain.Repository{{Name: "api", Src: "git@github.com:acme/api.git"}},
 	}}
 
-	for _, f := range Check(deps.RuntimeCLI).Findings {
+	for _, f := range Check(rt) {
 		if f.Level == LevelError {
 			t.Errorf("finding %+v, want no error for a provider-backed project", f)
 		}
 	}
 }
 
-// TestDoctorReportsProjectPath covers the `path:` checks: a path that does not
-// exist yet is a warning, since `gits clone` creates it, while a path naming a
-// file is an error that nothing will fix.
-func TestDoctorReportsProjectPath(t *testing.T) {
+// TestReportsProjectPath covers the `path:` checks: a path that does not exist
+// yet is a warning, since `gits clone` creates it, while a path naming a file
+// is an error that nothing will fix.
+func TestReportsProjectPath(t *testing.T) {
 	t.Parallel()
 
 	t.Run("missing path warns", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		deps.Projects = domain.ProjectListKeyed{
+		rt := runtime(t)
+		rt.Projects = domain.ProjectListKeyed{
 			"acme": {Path: filepath.Join(t.TempDir(), "not-created-yet")},
 		}
 
-		got := findings(t, deps, "acme")
+		got := findings(t, rt, "acme")
 		if len(got) != 1 || got[0].Level != LevelWarning {
 			t.Fatalf("findings = %+v, want one warning", got)
 		}
@@ -129,10 +144,10 @@ func TestDoctorReportsProjectPath(t *testing.T) {
 		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		deps := clitest.New(t, nil)
-		deps.Projects = domain.ProjectListKeyed{"acme": {Path: file}}
+		rt := runtime(t)
+		rt.Projects = domain.ProjectListKeyed{"acme": {Path: file}}
 
-		got := findings(t, deps, "acme")
+		got := findings(t, rt, "acme")
 		if len(got) != 1 || got[0].Level != LevelError {
 			t.Fatalf("findings = %+v, want one error", got)
 		}
@@ -144,22 +159,22 @@ func TestDoctorReportsProjectPath(t *testing.T) {
 	t.Run("existing path is silent", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		deps.Projects = domain.ProjectListKeyed{"acme": {Path: t.TempDir()}}
+		rt := runtime(t)
+		rt.Projects = domain.ProjectListKeyed{"acme": {Path: t.TempDir()}}
 
-		if got := findings(t, deps, "acme"); len(got) != 0 {
+		if got := findings(t, rt, "acme"); len(got) != 0 {
 			t.Errorf("findings = %+v, want none for a path that exists", got)
 		}
 	})
 }
 
-// TestDoctorNamesSubProjects proves a finding names its project's path through
-// the tree, so `acme/tools` is distinguishable from another project's `tools`.
-func TestDoctorNamesSubProjects(t *testing.T) {
+// TestNamesSubProjects proves a finding names its project's path through the
+// tree, so `acme/tools` is distinguishable from another project's `tools`.
+func TestNamesSubProjects(t *testing.T) {
 	t.Parallel()
 
-	deps := clitest.New(t, nil)
-	deps.Projects = domain.ProjectListKeyed{"acme": {
+	rt := runtime(t)
+	rt.Projects = domain.ProjectListKeyed{"acme": {
 		Path: t.TempDir(),
 		SubProjects: []domain.Project{{
 			Name: "tools",
@@ -171,7 +186,7 @@ func TestDoctorNamesSubProjects(t *testing.T) {
 
 	// The sub-project inherits its parent's path, which exists, so the
 	// repository's relative dir resolves and nothing is reported.
-	for _, f := range Check(deps.RuntimeCLI).Findings {
+	for _, f := range Check(rt) {
 		if f.Level == LevelError {
 			t.Errorf("finding %+v, want none: the sub-project inherits a usable path", f)
 		}
@@ -179,31 +194,30 @@ func TestDoctorNamesSubProjects(t *testing.T) {
 
 	// With no parent path to inherit, the same repository is reported, named
 	// through the tree.
-	deps.Projects = domain.ProjectListKeyed{"acme": {
+	rt.Projects = domain.ProjectListKeyed{"acme": {
 		SubProjects: []domain.Project{{
 			Name:  "tools",
 			Repos: []domain.Repository{{Name: "rel", Dir: "relative-dir"}},
 		}},
 	}}
-	got := findings(t, deps, "acme/tools.rel")
+	got := findings(t, rt, "acme/tools.rel")
 	if len(got) != 1 {
 		t.Fatalf("findings = %+v, want one naming the sub-project's path through the tree",
-			Check(deps.RuntimeCLI).Findings)
+			Check(rt))
 	}
 }
 
-// TestDoctorReportsConfigWarnings proves the load-time warnings — unknown keys
-// among them — reach the report. They are already shown on every run; doctor
-// repeats them because it is the one command someone runs wanting everything
-// at once.
-func TestDoctorReportsConfigWarnings(t *testing.T) {
+// TestReportsConfigWarnings proves the load-time warnings — unknown keys among
+// them — reach the report. They are already shown on every run; doctor repeats
+// them because it is the one command someone runs wanting everything at once.
+func TestReportsConfigWarnings(t *testing.T) {
 	t.Parallel()
 
-	deps := clitest.New(t, nil)
-	deps.ConfigPath = "/home/nobody/.gits.yaml"
-	deps.ConfigWarnings = []string{`unknown config key "acme.pth" in config.yaml, ignored`}
+	rt := runtime(t)
+	rt.ConfigPath = "/home/nobody/.gits.yaml"
+	rt.ConfigWarnings = []string{`unknown config key "acme.pth" in config.yaml, ignored`}
 
-	got := findings(t, deps, "config")
+	got := findings(t, rt, "config")
 	if len(got) != 2 {
 		t.Fatalf("findings = %+v, want the config path and the warning", got)
 	}
@@ -212,146 +226,48 @@ func TestDoctorReportsConfigWarnings(t *testing.T) {
 	}
 }
 
-// TestDoctorExitCode pins the rule tickets 01 and 02 established: an error
-// finding exits non-zero so CI can gate on it, and warnings and info do not.
-func TestDoctorExitCode(t *testing.T) {
+// TestHasErrors pins the rule tickets 01 and 02 established: an error finding
+// decides a non-zero exit so CI can gate on it, and warnings and info do not.
+func TestHasErrors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("an error finding fails the run", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		deps.Projects = domain.ProjectListKeyed{"acme": {
+		rt := runtime(t)
+		rt.Projects = domain.ProjectListKeyed{"acme": {
 			Repos: []domain.Repository{{Name: "rel", Dir: "relative-dir"}},
 		}}
 
-		err := ExecDoctor("table", nil, deps.RuntimeCLI)
-		if err == nil {
-			t.Fatal("ExecDoctor = nil, want a non-zero exit for an error finding")
-		}
-		// The findings are the output, so the failure carries no message of
-		// its own to restate them.
-		if !domain.IsSilent(err) {
-			t.Errorf("error = %v, want a silent one", err)
+		if !HasErrors(Check(rt)) {
+			t.Error("HasErrors = false, want true for an error finding")
 		}
 	})
 
 	t.Run("warnings alone succeed", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		deps.Projects = domain.ProjectListKeyed{
+		rt := runtime(t)
+		rt.Projects = domain.ProjectListKeyed{
 			"acme": {Path: filepath.Join(t.TempDir(), "not-created-yet")},
 		}
 
-		if err := ExecDoctor("table", nil, deps.RuntimeCLI); err != nil {
-			t.Errorf("ExecDoctor = %v, want nil: a warning is not a failure", err)
+		if HasErrors(Check(rt)) {
+			t.Error("HasErrors = true, want false: a warning is not a failure")
 		}
 	})
 }
 
-// TestDoctorWritesResultOutput proves the findings are Result Output. They are
-// what the command was asked for — the thing to pipe into a grep or a ticket —
-// even though every one of them is about something being wrong.
-func TestDoctorWritesResultOutput(t *testing.T) {
+// TestReportsMissingConfig covers the case with no config file at all: every
+// command runs against an empty configuration, which is legitimate but worth
+// saying out loud when someone is asking what is wrong.
+func TestReportsMissingConfig(t *testing.T) {
 	t.Parallel()
 
-	for _, format := range []string{"table", "json"} {
-		t.Run(format, func(t *testing.T) {
-			t.Parallel()
+	rt := runtime(t)
+	rt.ConfigPath = ""
 
-			deps := clitest.New(t, nil)
-			deps.Projects = domain.ProjectListKeyed{"acme": {Path: t.TempDir()}}
-
-			if err := ExecDoctor(format, nil, deps.RuntimeCLI); err != nil {
-				t.Fatalf("ExecDoctor: %v", err)
-			}
-			if deps.Result() == "" {
-				t.Error("Result Output empty, want the findings")
-			}
-			if got := deps.Diagnostic(); got != "" {
-				t.Errorf("Diagnostic Output = %q, want empty: findings are Result Output", got)
-			}
-		})
-	}
-}
-
-// TestDoctorJSONDocument pins the wire shape: one newline-terminated line, so
-// it pipes into jq without a reader knowing how many lines to expect.
-func TestDoctorJSONDocument(t *testing.T) {
-	t.Parallel()
-
-	deps := clitest.New(t, nil)
-	deps.ConfigPath = "/home/nobody/.gits.yaml"
-	deps.Projects = domain.ProjectListKeyed{"acme": {
-		Repos: []domain.Repository{{Name: "rel", Dir: "relative-dir"}},
-	}}
-
-	if err := ExecDoctor("json", nil, deps.RuntimeCLI); err != nil && !domain.IsSilent(err) {
-		t.Fatalf("ExecDoctor: %v", err)
-	}
-
-	raw := deps.Result()
-	if n := strings.Count(raw, "\n"); n != 1 || !strings.HasSuffix(raw, "\n") {
-		t.Fatalf("Result Output = %q, want one newline-terminated line", raw)
-	}
-
-	// Decoded structurally rather than through the report types, so the wire
-	// contract is checked against something other than itself.
-	var doc struct {
-		ConfigPath string `json:"configPath"`
-		Findings   []struct {
-			Level   string `json:"level"`
-			Subject string `json:"subject"`
-			Message string `json:"message"`
-		} `json:"findings"`
-	}
-	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-		t.Fatalf("unmarshal Result Output %q: %v", raw, err)
-	}
-	if doc.ConfigPath != deps.ConfigPath {
-		t.Errorf("configPath = %q, want %q", doc.ConfigPath, deps.ConfigPath)
-	}
-
-	var found bool
-	for _, f := range doc.Findings {
-		if f.Subject == "acme.rel" && f.Level == "error" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("findings = %+v, want the repository reported as an error", doc.Findings)
-	}
-}
-
-// TestDoctorRejectsFormat proves an unusable -o is refused before any check
-// runs, the rule every other -o command follows.
-func TestDoctorRejectsFormat(t *testing.T) {
-	t.Parallel()
-
-	deps := clitest.New(t, nil)
-	err := ExecDoctor("tree", nil, deps.RuntimeCLI)
-	if err == nil {
-		t.Fatal("ExecDoctor(tree) = nil, want an error")
-	}
-	if !strings.Contains(err.Error(), "table or json") {
-		t.Errorf("error = %v, want it to name the accepted formats", err)
-	}
-	if deps.Result() != "" {
-		t.Errorf("Result Output = %q, want nothing written before the format was rejected", deps.Result())
-	}
-}
-
-// TestDoctorReportsMissingConfig covers the case with no config file at all:
-// every command runs against an empty configuration, which is legitimate but
-// worth saying out loud when someone is asking what is wrong.
-func TestDoctorReportsMissingConfig(t *testing.T) {
-	t.Parallel()
-
-	deps := clitest.New(t, nil)
-	deps.ConfigPath = ""
-
-	got := findings(t, deps, "config")
+	got := findings(t, rt, "config")
 	if len(got) != 1 || got[0].Level != LevelWarning {
 		t.Fatalf("findings = %+v, want one warning about the missing config", got)
 	}
@@ -360,20 +276,20 @@ func TestDoctorReportsMissingConfig(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsCache covers the cache checks, which answer "why is gits
-// still showing a repository I deleted last week" — otherwise invisible.
+// TestReportsCache covers the cache checks, which answer "why is gits still
+// showing a repository I deleted last week" — otherwise invisible.
 //
 // Not parallel: the entries subtest sets XDG_CACHE_HOME, which is
 // process-wide, and t.Setenv refuses to run under a parallel parent.
 //
 //nolint:paralleltest // see above: t.Setenv forbids a parallel parent.
-func TestDoctorReportsCache(t *testing.T) {
+func TestReportsCache(t *testing.T) {
 	t.Run("disabled cache says so and reads no directory", func(t *testing.T) {
 		disabled := false
-		deps := clitest.New(t, nil)
-		deps.Settings.Cache = &disabled
+		rt := runtime(t)
+		rt.Settings.Cache = &disabled
 
-		got := findings(t, deps, "cache")
+		got := findings(t, rt, "cache")
 		if len(got) != 1 {
 			t.Fatalf("findings = %+v, want exactly one", got)
 		}
@@ -401,9 +317,9 @@ func TestDoctorReportsCache(t *testing.T) {
 			t.Fatalf("write: %v", err)
 		}
 
-		deps := clitest.New(t, nil)
+		rt := runtime(t)
 
-		got := findings(t, deps, "cache.github-acme")
+		got := findings(t, rt, "cache.github-acme")
 		if len(got) != 1 || got[0].Level != LevelWarning {
 			t.Fatalf("findings = %+v, want one warning for the stale entry", got)
 		}
@@ -411,7 +327,7 @@ func TestDoctorReportsCache(t *testing.T) {
 			t.Errorf("message = %q, want it to say the entry will be refetched", got[0].Message)
 		}
 
-		broken := findings(t, deps, "cache.github-broken")
+		broken := findings(t, rt, "cache.github-broken")
 		if len(broken) != 1 {
 			t.Fatalf("findings = %+v, want one for the corrupt entry", broken)
 		}
@@ -424,17 +340,16 @@ func TestDoctorReportsCache(t *testing.T) {
 	})
 }
 
-// TestDoctorReportsBinaries covers the git and finder checks. Without it,
-// deleting either check outright still passed the whole suite — the two were
-// verified by hand and by nothing else.
-func TestDoctorReportsBinaries(t *testing.T) {
+// TestReportsBinaries covers the git and finder checks. Without it, deleting
+// either check outright still passed the whole suite — the two were verified
+// by hand and by nothing else.
+func TestReportsBinaries(t *testing.T) {
 	t.Parallel()
 
 	t.Run("git is reported", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		got := findings(t, deps, "git")
+		got := findings(t, runtime(t), "git")
 		if len(got) != 1 {
 			t.Fatalf("findings = %+v, want exactly one for git", got)
 		}
@@ -442,6 +357,9 @@ func TestDoctorReportsBinaries(t *testing.T) {
 		// finding is informational and names the binary it found.
 		if got[0].Level != LevelInfo {
 			t.Errorf("level = %q, want %q where git is on PATH", got[0].Level, LevelInfo)
+		}
+		if got[0].Scope != ScopeEnvironment {
+			t.Errorf("scope = %q, want %q", got[0].Scope, ScopeEnvironment)
 		}
 		if !strings.Contains(got[0].Message, "git") {
 			t.Errorf("message = %q, want it to name git and its version", got[0].Message)
@@ -451,12 +369,12 @@ func TestDoctorReportsBinaries(t *testing.T) {
 	t.Run("a missing finder warns and names it", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		deps.Settings.Finder.Binary = "gits-finder-that-does-not-exist"
+		rt := runtime(t)
+		rt.Settings.Finder.Binary = "gits-finder-that-does-not-exist"
 
 		// The subject says the finding came from the configured override
 		// rather than from the default fzf, so a user knows which to fix.
-		got := findings(t, deps, "finder (settings.finder.binary)")
+		got := findings(t, rt, "finder (settings.finder.binary)")
 		if len(got) != 1 {
 			t.Fatalf("findings = %+v, want one naming the configured finder", got)
 		}
@@ -464,7 +382,7 @@ func TestDoctorReportsBinaries(t *testing.T) {
 			t.Errorf("level = %q, want %q: a missing finder degrades gits without stopping it",
 				got[0].Level, LevelWarning)
 		}
-		if !strings.Contains(got[0].Message, deps.Settings.Finder.Binary) {
+		if !strings.Contains(got[0].Message, rt.Settings.Finder.Binary) {
 			t.Errorf("message = %q, want it to name the missing binary", got[0].Message)
 		}
 	})
@@ -472,24 +390,23 @@ func TestDoctorReportsBinaries(t *testing.T) {
 	t.Run("an unconfigured finder is reported as fzf", func(t *testing.T) {
 		t.Parallel()
 
-		deps := clitest.New(t, nil)
-		if got := findings(t, deps, "finder"); len(got) != 1 {
+		if got := findings(t, runtime(t), "finder"); len(got) != 1 {
 			t.Fatalf("findings = %+v, want one under the plain `finder` subject", got)
 		}
 	})
 }
 
-// TestDoctorChecksEverySubject pins the set of subjects a report covers, so a
-// check cannot be dropped silently. Deleting one used to pass the whole suite.
-func TestDoctorChecksEverySubject(t *testing.T) {
+// TestChecksEverySubject pins the set of subjects a report covers, so a check
+// cannot be dropped silently. Deleting one used to pass the whole suite.
+func TestChecksEverySubject(t *testing.T) {
 	t.Parallel()
 
-	deps := clitest.New(t, nil)
-	deps.ConfigPath = "/home/nobody/.gits.yaml"
-	deps.Projects = domain.ProjectListKeyed{"acme": {Path: t.TempDir()}}
+	rt := runtime(t)
+	rt.ConfigPath = "/home/nobody/.gits.yaml"
+	rt.Projects = domain.ProjectListKeyed{"acme": {Path: t.TempDir()}}
 
 	seen := map[string]bool{}
-	for _, f := range Check(deps.RuntimeCLI).Findings {
+	for _, f := range Check(rt) {
 		seen[f.Subject] = true
 	}
 	// One subject per check that always reports something. The project and
