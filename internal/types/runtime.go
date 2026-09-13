@@ -2,12 +2,11 @@ package types
 
 import (
 	"context"
-	"io"
 	"log/slog"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/cache"
-	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/git"
 )
 
@@ -42,20 +41,5 @@ type Runtime struct {
 // RuntimeCLI is the runtime dependencies for the CLI client.
 type RuntimeCLI struct {
 	Runtime
-
-	Theme   config.Theme
-	HomeDir string
-
-	// Out is the Result Output destination: what the command was asked for —
-	// the status table, the JSON document, the list of names — and nothing
-	// else, so any command's output can be piped or redirected unfiltered.
-	Out io.Writer
-	// Err is the Diagnostic Output destination: everything a command emits
-	// about producing its Result Output — live per-repository progress, the
-	// summary footer, the error epilogue.
-	//
-	// The progress reporter is derived from this writer rather than injected:
-	// the bulk module sniffs it for a terminal, so a test buffer yields the
-	// no-op reporter and no ANSI reaches the assertions.
-	Err io.Writer
+	app.Presenter
 }

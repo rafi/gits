@@ -250,11 +250,11 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error, opts ...runOption) co
 
 		// Run command with dependencies.
 		cmdErr := f(args, types.RuntimeCLI{
+			Runtime: runtime,
 			Theme:   theme,
 			HomeDir: homeDir,
 			Out:     os.Stdout,
 			Err:     os.Stderr,
-			Runtime: runtime,
 		})
 
 		// Downgrade warnings to a subtle sentence on Diagnostic Output — real
