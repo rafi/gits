@@ -1,9 +1,10 @@
-// Package pick resolves what a command runs on: the Project and Repository
-// selection every command shares, interactively when the arguments do not say.
+// Package pick is the interactive half of resolving what a command runs on:
+// an fzf-backed [resolve.Selector], plus the branch picker `browse` uses.
 package pick
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/fzf"
-	"github.com/rafi/gits/internal/loader"
+	"github.com/rafi/gits/internal/service/resolve"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -20,121 +21,42 @@ import (
 // carries: the kind indicator and the ref name.
 const branchLineFields = 2
 
+// FZF asks the user, through the finder subprocess.
+type FZF struct {
+	deps app.RuntimeCLI
+}
+
+// NewFZF returns the interactive selector for a CLI run.
+func NewFZF(deps app.RuntimeCLI) FZF { return FZF{deps: deps} }
+
+var _ resolve.Selector = FZF{}
+
 // isCancelled reports whether an interactive selection ended without a
 // choice — the user pressed Esc/Ctrl-C or there was nothing to match.
 func isCancelled(err error) bool {
 	return errors.Is(err, fzf.ErrAborted) || errors.Is(err, fzf.ErrNoMatch)
 }
 
-// ParseArgs parses the arguments and returns the project and repo.
+// ParseArgs parses the arguments and returns the project and repo, prompting
+// for whatever they left out.
 func ParseArgs(args []string, skipRepoSelect bool, deps app.RuntimeCLI) (
 	domain.Project, *domain.Repository, error,
 ) {
-	proj, err := getOrSelectProject(args, deps)
-	if err != nil {
-		return proj, nil, err
-	}
-
-	// Select a repo when the command demands one, or when a 2nd argument
-	// names one directly (a trailing "/" means sub-project, not repo).
-	if !skipRepoSelect || (len(args) > 1 && !strings.HasSuffix(args[1], "/")) {
-		repo, err := getOrSelectRepo(proj, args, deps)
-		if err != nil {
-			return proj, nil, err
-		}
-		return proj, &repo, nil
-	}
-	return proj, nil, nil
+	return resolve.Resolve(
+		resolve.Parse(args, !skipRepoSelect), NewFZF(deps), deps.Runtime)
 }
 
-// getOrSelectProject returns a project from the first argument, or
-// interactively with fzf.
-func getOrSelectProject(args []string, deps app.RuntimeCLI) (
-	domain.Project, error,
-) {
-	var (
-		err      error
-		projName string
-	)
-	if len(args) > 0 {
-		projName = args[0]
-	} else {
-		projName, err = SelectProject(deps)
-		if err != nil {
-			return domain.Project{}, err
-		}
-	}
-	if projName == "" {
-		return domain.Project{}, types.NewWarning("no project selected")
-	}
+// Project returns an interactively selected project name.
+func (f FZF) Project(ctx context.Context) (string, error) {
+	deps := f.deps
 
-	// Find project by name. Naming a project that does not exist is a real
-	// failure, not a downgradeable warning: a script must be able to tell a
-	// typo from success.
-	p, err := loader.GetProject(projName, deps.Runtime)
-	if err != nil {
-		return p, fmt.Errorf("unable to load project: %w", err)
-	}
-
-	// Find a sub-project if provided via 2nd argument. A named sub-project
-	// that does not exist is likewise a failure.
-	if len(args) > 1 && strings.HasSuffix(args[1], "/") {
-		var found bool
-		p, found = p.GetSubProject(args[1], "")
-		if !found {
-			return p, fmt.Errorf("project %q not found", args[1])
-		}
-		p.Name = args[1]
-	}
-	return p, nil
-}
-
-// getOrSelectRepo returns a repository from the 2nd argument, or
-// interactively with fzf.
-func getOrSelectRepo(
-	project domain.Project,
-	args []string,
-	deps app.RuntimeCLI,
-) (domain.Repository, error) {
-	var err error
-	rootProject := ""
-	repoName := ""
-	if len(args) > 1 {
-		if strings.HasSuffix(args[1], "/") {
-			// The preview re-invokes gits with the root project, which for a
-			// path argument is the name the loader derived from it.
-			rootProject = loader.ProjectName(args[0])
-		} else {
-			repoName = args[1]
-		}
-	}
-	if repoName == "" {
-		repoName, err = SelectRepo(rootProject, project, deps)
-		if err != nil {
-			return domain.Repository{}, err
-		}
-		if repoName == "" {
-			return domain.Repository{}, types.NewWarning("no repository selected")
-		}
-	}
-
-	repo, found := project.GetRepo(repoName, "")
-	if !found {
-		return repo, fmt.Errorf("repo %q not found", repoName)
-	}
-	return repo, nil
-}
-
-// SelectProject returns an interactively selected project name.
-func SelectProject(deps app.RuntimeCLI) (string, error) {
 	// Collect project names in a stable order so the picker does not reshuffle
 	// between runs.
 	buffer := bytes.Buffer{}
 	for _, name := range deps.Projects.SortedNames() {
 		project := deps.Projects[name]
 		project.Name = name
-		projectTitle := style.ProjectTitle(project, deps.Theme)
-		buffer.WriteString(projectTitle)
+		buffer.WriteString(style.ProjectTitle(project, deps.Theme))
 		buffer.WriteByte('\n')
 	}
 
@@ -145,29 +67,26 @@ func SelectProject(deps app.RuntimeCLI) (string, error) {
 	previewCmd := previewCommandf(deps.ConfigPath, "list", "{1}", "-o", "tree")
 	finder.WithPreview(previewCmd, "")
 
-	projName, err := finder.Run(deps.Ctx, buffer)
+	projName, err := finder.Run(ctx, buffer)
 	if err != nil {
 		if isCancelled(err) {
 			return "", nil
 		}
 		return "", err
 	}
-	projName = strings.Split(projName, " ")[0]
-	return projName, nil
+	return strings.Split(projName, " ")[0], nil
 }
 
-// SelectRepo returns an interactively selected repository name.
-func SelectRepo(
-	rootProject string,
-	project domain.Project,
-	deps app.RuntimeCLI,
+// Repo returns an interactively selected repository name.
+func (f FZF) Repo(
+	ctx context.Context, project domain.Project, rootProject string,
 ) (string, error) {
-	// Collect repo names
-	style := deps.Theme.RepoTitle
+	deps := f.deps
+
+	repoStyle := deps.Theme.RepoTitle
 	buffer := bytes.Buffer{}
-	repos := project.ListReposWithNamespace()
-	for _, repo := range repos {
-		buffer.WriteString(style.Render(repo))
+	for _, repo := range project.ListReposWithNamespace() {
+		buffer.WriteString(repoStyle.Render(repo))
 		buffer.WriteByte('\n')
 	}
 
@@ -187,7 +106,7 @@ func SelectRepo(
 	previewCmd := previewCommand(deps.ConfigPath, "repo-overview", rootProject, prefix) + "{}"
 	finder.WithPreview(previewCmd, "")
 
-	repoName, err := finder.Run(deps.Ctx, buffer)
+	repoName, err := finder.Run(ctx, buffer)
 	if err != nil {
 		if isCancelled(err) {
 			return "", nil
@@ -197,7 +116,8 @@ func SelectRepo(
 	return repoName, nil
 }
 
-// SelectBranch returns an interactively selected branch name.
+// SelectBranch returns an interactively selected branch name. It is not part
+// of the Selector: only `browse` picks a branch.
 func SelectBranch(
 	projName string,
 	repo domain.Repository,

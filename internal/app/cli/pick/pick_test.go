@@ -124,7 +124,7 @@ func TestParseArgsNonInteractive(t *testing.T) {
 
 // stubFinder installs a fake fzf at the front of PATH. The script receives the
 // candidate lines on stdin, so a shim that echoes one drives the real
-// SelectProject/SelectRepo/SelectBranch end to end.
+// FZF.Project/FZF.Repo/SelectBranch end to end.
 func stubFinder(t *testing.T, script string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -147,58 +147,58 @@ func selectDeps(t *testing.T) app.RuntimeCLI {
 }
 
 //nolint:paralleltest // stubFinder calls t.Setenv, which t.Parallel forbids.
-func TestSelectProject(t *testing.T) {
+func TestFZFProject(t *testing.T) {
 	t.Run("returns the first field of the chosen line", func(t *testing.T) {
 		// The project title carries styling and may carry a source and
-		// description; SelectProject keeps only the name.
+		// description; FZF.Project keeps only the name.
 		stubFinder(t, "head -n1")
 
-		got, err := SelectProject(selectDeps(t))
+		got, err := NewFZF(selectDeps(t)).Project(t.Context())
 		if err != nil {
-			t.Fatalf("SelectProject: %v", err)
+			t.Fatalf("FZF.Project: %v", err)
 		}
-		// The picker returns the styled line, and SelectProject keeps its
+		// The picker returns the styled line, and FZF.Project keeps its
 		// first field; the name is what the user sees inside the styling.
 		if stripANSI(got) != "myproj" {
-			t.Errorf("SelectProject() = %q, want %q", stripANSI(got), "myproj")
+			t.Errorf("FZF.Project() = %q, want %q", stripANSI(got), "myproj")
 		}
 	})
 
 	t.Run("an abort selects nothing without failing", func(t *testing.T) {
 		stubFinder(t, "exit 130")
 
-		got, err := SelectProject(selectDeps(t))
+		got, err := NewFZF(selectDeps(t)).Project(t.Context())
 		if err != nil {
-			t.Fatalf("SelectProject: %v, want a cancellation to be silent", err)
+			t.Fatalf("FZF.Project: %v, want a cancellation to be silent", err)
 		}
 		if got != "" {
-			t.Errorf("SelectProject() = %q, want empty on abort", got)
+			t.Errorf("FZF.Project() = %q, want empty on abort", got)
 		}
 	})
 
 	t.Run("a finder failure is reported", func(t *testing.T) {
 		stubFinder(t, "exit 2")
 
-		if _, err := SelectProject(selectDeps(t)); err == nil {
-			t.Fatal("SelectProject error = nil, want the finder's failure")
+		if _, err := NewFZF(selectDeps(t)).Project(t.Context()); err == nil {
+			t.Fatal("FZF.Project error = nil, want the finder's failure")
 		}
 	})
 }
 
 //nolint:paralleltest // stubFinder calls t.Setenv, which t.Parallel forbids.
-func TestSelectRepo(t *testing.T) {
+func TestFZFRepo(t *testing.T) {
 	t.Run("returns the chosen repository name", func(t *testing.T) {
 		stubFinder(t, "head -n1")
 
 		deps := selectDeps(t)
 		project := deps.Projects["myproj"]
 		project.Name = "myproj"
-		got, err := SelectRepo("", project, deps)
+		got, err := NewFZF(deps).Repo(t.Context(), project, "")
 		if err != nil {
-			t.Fatalf("SelectRepo: %v", err)
+			t.Fatalf("FZF.Repo: %v", err)
 		}
 		if stripANSI(got) != "alpha" {
-			t.Errorf("SelectRepo() = %q, want %q", stripANSI(got), "alpha")
+			t.Errorf("FZF.Repo() = %q, want %q", stripANSI(got), "alpha")
 		}
 	})
 
@@ -206,12 +206,12 @@ func TestSelectRepo(t *testing.T) {
 		stubFinder(t, "exit 130")
 
 		deps := selectDeps(t)
-		got, err := SelectRepo("", deps.Projects["myproj"], deps)
+		got, err := NewFZF(deps).Repo(t.Context(), deps.Projects["myproj"], "")
 		if err != nil {
-			t.Fatalf("SelectRepo: %v, want a cancellation to be silent", err)
+			t.Fatalf("FZF.Repo: %v, want a cancellation to be silent", err)
 		}
 		if got != "" {
-			t.Errorf("SelectRepo() = %q, want empty on abort", got)
+			t.Errorf("FZF.Repo() = %q, want empty on abort", got)
 		}
 	})
 
@@ -219,8 +219,8 @@ func TestSelectRepo(t *testing.T) {
 		stubFinder(t, "exit 2")
 
 		deps := selectDeps(t)
-		if _, err := SelectRepo("", deps.Projects["myproj"], deps); err == nil {
-			t.Fatal("SelectRepo error = nil, want the finder's failure")
+		if _, err := NewFZF(deps).Repo(t.Context(), deps.Projects["myproj"], ""); err == nil {
+			t.Fatal("FZF.Repo error = nil, want the finder's failure")
 		}
 	})
 }
