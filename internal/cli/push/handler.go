@@ -48,7 +48,7 @@ func ExecPush(format string, opts git.PushOptions, args []string, deps app.Runti
 		Do:       pushRepo(opts, deps),
 		Progress: progress.New(deps.Err),
 	}.Run(target, deps.Runtime)
-	return output.Render(res, format, deps)
+	return output.Render(res, format, output.PlainView, deps)
 }
 
 // pushRepo returns a body that pushes one repository into its result lines.

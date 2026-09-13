@@ -41,7 +41,7 @@ func ExecFetch(format string, args []string, deps app.RuntimeCLI) error {
 		Do:       fetchRepo(deps),
 		Progress: progress.New(deps.Err),
 	}.Run(target, deps.Runtime)
-	return output.Render(res, format, deps)
+	return output.Render(res, format, output.PlainView, deps)
 }
 
 // fetchRepo returns a body that fetches one repository into its result line.

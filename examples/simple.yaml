@@ -1,0 +1,24 @@
+---
+# A minimal gits config. See [config.yaml](./config.yaml) for every available
+# setting with its default value.
+
+# GitHub user/org
+gh:
+  path: ~/code/github
+  source:
+    type: github
+    search: rafi
+
+# A project whose repositories are discovered from a local directory.
+vim:
+  path: ~/code/vim
+  desc: Vim plugins
+
+# A project with an explicit repository list and absolute directories.
+rafi:
+  desc: My dotfiles
+  repos:
+    - dir: ~/.config
+      src: git@github.com:rafi/.config.git
+    - dir: ~/.config/nvim
+      src: git@github.com:rafi/vim-config.git

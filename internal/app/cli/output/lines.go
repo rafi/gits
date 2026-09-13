@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
@@ -52,14 +51,24 @@ func ValidateFormat(format string) error {
 	}
 }
 
+// View is how a command turns one repository's report into text. Line is the
+// terminal form — styled with the theme, as the table shows it — and Text is
+// the same content plain, for the JSON document. Two functions rather than
+// one stripped string: the document is built from the report's own fields,
+// so no renderer has to undo what another one added.
+type View[T any] struct {
+	Line func(T, style.Theme) string
+	Text func(T) string
+}
+
 // Render writes the results in the given format — already validated — and
 // returns the error that decides the run's exit code, which differs by
 // format: see Lines and JSON.
-func Render(res run.Results[string], format string, deps app.RuntimeCLI) error {
+func Render[T any](res run.Results[T], format string, v View[T], deps app.RuntimeCLI) error {
 	if format == FormatJSON {
-		return JSON(res, deps)
+		return JSON(res, v, deps)
 	}
-	return Lines(res, deps)
+	return Lines(res, v, deps)
 }
 
 // Skips reports the projects the run's configuration dropped as Diagnostic
@@ -75,7 +84,7 @@ func Skips[T any](res run.Results[T], deps app.RuntimeCLI) {
 // path followed by the body's text, or by its bare error — as Result Output,
 // a blank line between projects, then the error epilogue as Diagnostic
 // Output. Every line command but status renders its table form through it.
-func Lines(res run.Results[string], deps app.RuntimeCLI) error {
+func Lines[T any](res run.Results[T], v View[T], deps app.RuntimeCLI) error {
 	Skips(res, deps)
 	width := 0
 	for i, r := range res.Results {
@@ -87,7 +96,7 @@ func Lines(res run.Results[string], deps app.RuntimeCLI) error {
 		}
 		title := style.RepoTitle(r.Repo.Repository, r.Repo.Project, deps.HomeDir, deps.Theme).
 			Width(width)
-		body := r.Value
+		body := v.Line(r.Value, deps.Theme)
 		if r.Err != nil {
 			body = deps.Theme.Error.Render(r.Err.Error())
 		}
@@ -107,26 +116,26 @@ func Lines(res run.Results[string], deps app.RuntimeCLI) error {
 // them fails the run and no error epilogue is printed. An interrupted run
 // still fails, because the document is incomplete and nothing inside it
 // says so.
-func JSON(res run.Results[string], deps app.RuntimeCLI) error {
+func JSON[T any](res run.Results[T], v View[T], deps app.RuntimeCLI) error {
 	Skips(res, deps)
-	if err := writeJSON(deps.Out, res); err != nil {
+	if err := writeJSON(deps.Out, res, v); err != nil {
 		return err
 	}
 	return res.Interrupted
 }
 
 // writeJSON builds the document from the tree and the results and writes it.
-func writeJSON(w io.Writer, res run.Results[string]) error {
+func writeJSON[T any](w io.Writer, res run.Results[T], v View[T]) error {
 	env := wire.Envelope{}
 	if res.Project.Name == "" {
 		// The named project was skipped: nothing ran, nothing to document.
 		return wire.Write(w, env)
 	}
-	index := make(map[string]run.Result[string], len(res.Results))
+	index := make(map[string]run.Result[T], len(res.Results))
 	for _, r := range res.Results {
 		index[r.Repo.Key()] = r
 	}
-	env[res.Project.Name] = buildNode(res.Project, res.Command, index)
+	env[res.Project.Name] = buildNode(res.Project, res.Command, index, v)
 	return wire.Write(w, env)
 }
 
@@ -136,43 +145,36 @@ func writeJSON(w io.Writer, res run.Results[string]) error {
 // dequeued) is present with its identity and state and no outcome, exactly
 // as a repository the guard turned back is: the command did not run for
 // either.
-func buildNode(
-	p domain.Project, command string, index map[string]run.Result[string],
+func buildNode[T any](
+	p domain.Project, command string, index map[string]run.Result[T], v View[T],
 ) wire.Project {
 	node := wire.NewProject(p)
 	for _, repo := range p.Repos {
 		out := wire.NewRepository(repo)
 		if r, ok := index[repo.Key()]; ok && !r.Guarded {
-			out.Command = outcome(command, r)
+			out.Command = outcome(command, r, v)
 		}
 		node.Repos = append(node.Repos, out)
 	}
 	for _, sub := range p.SubProjects {
-		node.SubProjects = append(node.SubProjects, buildNode(sub, command, index))
+		node.SubProjects = append(node.SubProjects, buildNode(sub, command, index, v))
 	}
 	return node
 }
 
-// outcome converts one result the body produced. The body's text is what the
-// table shows, terminal styling and padding included; the document carries
-// the text alone. A warning is the documented pass-over, reported as such
-// rather than as an error, so a consumer can tell "nothing to do here" from
-// "this failed".
-func outcome(command string, r run.Result[string]) *wire.Command {
+// outcome converts one result the body produced, through the view's plain
+// form. A warning is the documented pass-over, reported as such rather than
+// as an error, so a consumer can tell "nothing to do here" from "this
+// failed".
+func outcome[T any](command string, r run.Result[T], v View[T]) *wire.Command {
 	switch {
 	case r.Err == nil:
-		return wire.OK(command, plain(r.Value))
+		return wire.OK(command, strings.TrimSpace(v.Text(r.Value)))
 	case domain.IsWarning(r.Err):
-		return wire.Skipped(command, plain(r.Err.Error()))
+		return wire.Skipped(command, strings.TrimSpace(r.Err.Error()))
 	default:
-		return wire.Failed(command, errors.New(plain(r.Err.Error())))
+		return wire.Failed(command, errors.New(strings.TrimSpace(r.Err.Error())))
 	}
-}
-
-// plain strips what a body adds for the terminal: styling, and the whitespace
-// a line's layout leaves at its ends.
-func plain(s string) string {
-	return strings.TrimSpace(ansi.Strip(s))
 }
 
 // Epilogue writes the error epilogue as Diagnostic Output and returns the

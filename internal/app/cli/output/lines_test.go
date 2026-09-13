@@ -31,7 +31,7 @@ func TestLinesRendersBodyOrBareError(t *testing.T) {
 	}}
 
 	deps := clitest.New(t, nil)
-	err := Lines(res, deps.RuntimeCLI)
+	err := Lines(res, PlainView, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "completed with errors") {
 		t.Fatalf("Lines error = %v, want the failure to fail the run", err)
 	}
@@ -76,7 +76,7 @@ func TestLinesSeparatesProjects(t *testing.T) {
 	}}
 
 	deps := clitest.New(t, nil)
-	if err := Lines(res, deps.RuntimeCLI); err != nil {
+	if err := Lines(res, PlainView, deps.RuntimeCLI); err != nil {
 		t.Fatalf("Lines error = %v, want nil", err)
 	}
 	lines := strings.Split(strings.TrimRight(deps.Result(), "\n"), "\n")
@@ -191,7 +191,7 @@ func TestLinesGroupsProjectsCopiedThroughAppend(t *testing.T) {
 	}}
 
 	deps := clitest.New(t, nil)
-	if err := Lines(res, deps.RuntimeCLI); err != nil {
+	if err := Lines(res, PlainView, deps.RuntimeCLI); err != nil {
 		t.Fatalf("Lines error = %v, want nil", err)
 	}
 	lines := strings.Split(strings.TrimRight(deps.Result(), "\n"), "\n")
@@ -258,7 +258,7 @@ func TestJSONOutcomes(t *testing.T) {
 	t.Parallel()
 
 	res, deps := jsonFixture(t)
-	if err := JSON(res, deps.RuntimeCLI); err != nil {
+	if err := JSON(res, PlainView, deps.RuntimeCLI); err != nil {
 		t.Fatalf("JSON error = %v, want nil: a repository's outcome is data", err)
 	}
 	if got := deps.Diagnostic(); got != "" {
@@ -307,7 +307,7 @@ func TestJSONInterrupted(t *testing.T) {
 	res.Results = res.Results[:1]
 	res.Interrupted = errors.New("interrupted: 3 of 4 repositories not processed")
 
-	err := JSON(res, deps.RuntimeCLI)
+	err := JSON(res, PlainView, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "interrupted") {
 		t.Fatalf("JSON error = %v, want the interruption to fail the run", err)
 	}
@@ -331,7 +331,7 @@ func TestJSONSkippedProject(t *testing.T) {
 	t.Parallel()
 
 	deps := clitest.New(t, nil)
-	if err := JSON(run.Results[string]{Command: "clone"}, deps.RuntimeCLI); err != nil {
+	if err := JSON(run.Results[string]{Command: "clone"}, PlainView, deps.RuntimeCLI); err != nil {
 		t.Fatalf("JSON error = %v, want nil", err)
 	}
 	if got := deps.Result(); got != "{}\n" {
@@ -357,7 +357,7 @@ func TestJSONTree(t *testing.T) {
 	}}
 
 	deps := clitest.New(t, nil)
-	if err := JSON(res, deps.RuntimeCLI); err != nil {
+	if err := JSON(res, PlainView, deps.RuntimeCLI); err != nil {
 		t.Fatalf("JSON error = %v, want nil", err)
 	}
 	var env map[string]struct {
@@ -396,7 +396,7 @@ func TestRenderDispatches(t *testing.T) {
 	t.Parallel()
 
 	res, deps := jsonFixture(t)
-	if err := Render(res, FormatJSON, deps.RuntimeCLI); err != nil {
+	if err := Render(res, FormatJSON, PlainView, deps.RuntimeCLI); err != nil {
 		t.Errorf("Render(json) error = %v, want nil", err)
 	}
 	if !strings.HasPrefix(deps.Result(), "{") {
@@ -404,7 +404,7 @@ func TestRenderDispatches(t *testing.T) {
 	}
 
 	res, deps = jsonFixture(t)
-	err := Render(res, FormatTable, deps.RuntimeCLI)
+	err := Render(res, FormatTable, PlainView, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "completed with errors") {
 		t.Errorf("Render(table) error = %v, want the failures to fail the run", err)
 	}

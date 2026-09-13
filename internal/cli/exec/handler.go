@@ -70,7 +70,7 @@ func Exec(format string, command []string, args []string, deps app.RuntimeCLI) e
 		},
 		Progress: progress.New(deps.Err),
 	}.Run(target, deps.Runtime)
-	return output.Render(res, format, deps)
+	return output.Render(res, format, output.PlainView, deps)
 }
 
 // runRepo runs the command in one repository and returns its result line's

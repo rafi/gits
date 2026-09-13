@@ -53,7 +53,7 @@ func ExecClone(format string, args []string, deps app.RuntimeCLI) error {
 		Do:       cloneRepo(deps),
 		Progress: progress.New(deps.Err),
 	}.Run(target, deps.Runtime)
-	return output.Render(res, format, deps)
+	return output.Render(res, format, output.PlainView, deps)
 }
 
 // skipped reports whether a project's configuration disables cloning it, and
