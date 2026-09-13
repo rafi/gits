@@ -346,18 +346,21 @@ func TestExecPullJSON(t *testing.T) {
 			}
 
 			repos := deps.JSONRepos("acme")
-			outcome, ok := repos["api"]["pull"].(map[string]any)
-			if !ok {
-				t.Fatalf("api = %v, want the outcome under \"pull\"", repos["api"])
+			outcome, name := clitest.JSONCommand(t, repos["api"])
+			if outcome == nil {
+				t.Fatalf("api = %v, want an outcome under \"command\"", repos["api"])
+			}
+			if name != "pull" {
+				t.Errorf("api.command.name = %q, want %q", name, "pull")
 			}
 			if len(outcome) != 1 || outcome[tc.key] != tc.want {
-				t.Errorf("api.pull = %v, want only %q: %q", outcome, tc.key, tc.want)
+				t.Errorf("api.command = %v, want only %q: %q", outcome, tc.key, tc.want)
 			}
 			gone := repos["gone"]
 			if gone["state"] != "not-cloned" {
 				t.Errorf("gone.state = %v, want not-cloned", gone["state"])
 			}
-			if _, found := gone["pull"]; found {
+			if _, found := gone["command"]; found {
 				t.Errorf("gone = %v, want no outcome for a repository pull never ran for", gone)
 			}
 		})
@@ -388,7 +391,7 @@ func TestExecPullJSONInterrupted(t *testing.T) {
 	}
 	started := 0
 	for _, repo := range repos {
-		if _, ok := repo["pull"]; ok {
+		if _, ok := repo["command"]; ok {
 			started++
 		}
 	}

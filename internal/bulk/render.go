@@ -1,6 +1,7 @@
 package bulk
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -10,7 +11,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/jsonout"
+	"github.com/rafi/gits/internal/service/wire"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -100,17 +101,17 @@ func JSON(res Results[string], deps types.RuntimeCLI) error {
 
 // writeJSON builds the document from the tree and the results and writes it.
 func writeJSON(w io.Writer, res Results[string]) error {
-	env := jsonout.Envelope{}
+	env := wire.Envelope{}
 	if res.Project.Name == "" {
 		// The named project was skipped: nothing ran, nothing to document.
-		return jsonout.Write(w, env)
+		return wire.Write(w, env)
 	}
 	index := make(map[string]Result[string], len(res.Results))
 	for _, r := range res.Results {
 		index[r.Repo.Key()] = r
 	}
 	env[res.Project.Name] = buildNode(res.Project, res.Command, index)
-	return jsonout.Write(w, env)
+	return wire.Write(w, env)
 }
 
 // buildNode converts one project subtree, looking each repository's result
@@ -119,13 +120,12 @@ func writeJSON(w io.Writer, res Results[string]) error {
 // dequeued) is present with its identity and state and no outcome, exactly
 // as a repository the guard turned back is: the command did not run for
 // either.
-func buildNode(p domain.Project, command string, index map[string]Result[string]) jsonout.Project {
-	node := jsonout.NewProject(p)
+func buildNode(p domain.Project, command string, index map[string]Result[string]) wire.Project {
+	node := wire.NewProject(p)
 	for _, repo := range p.Repos {
-		out := jsonout.NewRepository(repo)
+		out := wire.NewRepository(repo)
 		if r, ok := index[repo.Key()]; ok && !r.Guarded {
-			out.Command = command
-			out.Outcome = outcome(r)
+			out.Command = outcome(command, r)
 		}
 		node.Repos = append(node.Repos, out)
 	}
@@ -137,18 +137,17 @@ func buildNode(p domain.Project, command string, index map[string]Result[string]
 
 // outcome converts one result the body produced. The body's text is what the
 // table shows, terminal styling and padding included; the document carries
-// the text alone. A warning is the documented pass-over the table shows on
-// the line without failing the run, and it is reported as such rather than
-// as an error, so a consumer can tell "nothing to do here" from "this
-// failed".
-func outcome(r Result[string]) *jsonout.Outcome {
+// the text alone. A warning is the documented pass-over, reported as such
+// rather than as an error, so a consumer can tell "nothing to do here" from
+// "this failed".
+func outcome(command string, r Result[string]) *wire.Command {
 	switch {
 	case r.Err == nil:
-		return &jsonout.Outcome{Output: plain(r.Value)}
+		return wire.OK(command, plain(r.Value))
 	case types.IsWarning(r.Err):
-		return &jsonout.Outcome{Skipped: plain(r.Err.Error())}
+		return wire.Skipped(command, plain(r.Err.Error()))
 	default:
-		return &jsonout.Outcome{Error: plain(r.Err.Error())}
+		return wire.Failed(command, errors.New(plain(r.Err.Error())))
 	}
 }
 

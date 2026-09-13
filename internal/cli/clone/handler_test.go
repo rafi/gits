@@ -346,20 +346,22 @@ func TestExecCloneJSON(t *testing.T) {
 	}
 
 	repos := deps.JSONRepos("acme")
-	gone, ok := repos["gone"]["clone"].(map[string]any)
-	if !ok || len(gone) != 1 || gone["output"] != "Cloning into 'gone'…" {
-		t.Errorf("gone.clone = %v, want only the clone's output", repos["gone"]["clone"])
+	gone, name := clitest.JSONCommand(t, repos["gone"])
+	if gone == nil || name != "clone" || len(gone) != 1 || gone["output"] != "Cloning into 'gone'…" {
+		t.Errorf("gone.command = %v, want only the clone's output under %q",
+			repos["gone"]["command"], "clone")
 	}
-	api, ok := repos["api"]["clone"].(map[string]any)
-	if skipped, _ := api["skipped"].(string); !ok || len(api) != 1 ||
+	api, _ := clitest.JSONCommand(t, repos["api"])
+	if skipped, _ := api["skipped"].(string); api == nil || len(api) != 1 ||
 		!strings.HasPrefix(skipped, "already cloned at ") {
-		t.Errorf("api.clone = %v, want only the already-cloned pass-over as skipped", repos["api"]["clone"])
+		t.Errorf("api.command = %v, want only the already-cloned pass-over as skipped",
+			repos["api"]["command"])
 	}
 	bad := repos["bad"]
 	if bad["state"] != "error" || bad["reason"] != clitest.BrokenReason {
 		t.Errorf("bad = %v, want the error state and its reason", bad)
 	}
-	if _, found := bad["clone"]; found {
+	if _, found := bad["command"]; found {
 		t.Errorf("bad = %v, want no outcome for a repository the guard turned back", bad)
 	}
 
@@ -369,9 +371,9 @@ func TestExecCloneJSON(t *testing.T) {
 	if err := ExecClone("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecClone error = %v, want nil: a repository's failure is data", err)
 	}
-	got, ok := deps.JSONRepos("acme")["gone"]["clone"].(map[string]any)
-	if !ok || len(got) != 1 || got["error"] != "repository not found" {
-		t.Errorf("gone.clone = %v, want only the error", got)
+	got, _ := clitest.JSONCommand(t, deps.JSONRepos("acme")["gone"])
+	if got == nil || len(got) != 1 || got["error"] != "repository not found" {
+		t.Errorf("gone.command = %v, want only the error", got)
 	}
 }
 

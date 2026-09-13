@@ -191,21 +191,24 @@ func TestExecFetchJSON(t *testing.T) {
 			}
 
 			repos := deps.JSONRepos("acme")
-			outcome, ok := repos["api"]["fetch"].(map[string]any)
-			if !ok {
-				t.Fatalf("api = %v, want the outcome under \"fetch\"", repos["api"])
+			outcome, name := clitest.JSONCommand(t, repos["api"])
+			if outcome == nil {
+				t.Fatalf("api = %v, want an outcome under \"command\"", repos["api"])
+			}
+			if name != "fetch" {
+				t.Errorf("api.command.name = %q, want %q", name, "fetch")
 			}
 			// The body's text is what the table shows, which for fetch
 			// carries the repository's path ahead of git's report whenever
 			// the display path is not the whole of it.
 			if got, _ := outcome[tc.key].(string); len(outcome) != 1 || !strings.HasSuffix(got, tc.want) {
-				t.Errorf("api.fetch = %v, want only %q ending in %q", outcome, tc.key, tc.want)
+				t.Errorf("api.command = %v, want only %q ending in %q", outcome, tc.key, tc.want)
 			}
 			for name, state := range map[string]string{"gone": "not-cloned", "bad": "error"} {
 				if repos[name]["state"] != state {
 					t.Errorf("%s.state = %v, want %s", name, repos[name]["state"], state)
 				}
-				if _, found := repos[name]["fetch"]; found {
+				if _, found := repos[name]["command"]; found {
 					t.Errorf("%s = %v, want no outcome for a repository fetch never ran for",
 						name, repos[name])
 				}

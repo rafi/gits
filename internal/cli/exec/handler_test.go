@@ -219,17 +219,17 @@ func TestExecJSON(t *testing.T) {
 	}
 
 	repos := deps.JSONRepos("acme")
-	web, ok := repos["web"]["exec"].(map[string]any)
-	if !ok || len(web) != 1 || web["output"] != "ok web" {
-		t.Errorf("web.exec = %v, want only the child's output", repos["web"]["exec"])
+	web, name := clitest.JSONCommand(t, repos["web"])
+	if web == nil || name != "exec" || len(web) != 1 || web["output"] != "ok web" {
+		t.Errorf("web.command = %v, want only the child's output under %q", repos["web"]["command"], "exec")
 	}
-	api, ok := repos["api"]["exec"].(map[string]any)
-	if msg, _ := api["error"].(string); !ok || len(api) != 1 ||
+	api, _ := clitest.JSONCommand(t, repos["api"])
+	if msg, _ := api["error"].(string); api == nil || len(api) != 1 ||
 		!strings.Contains(msg, "exit status 3") || !strings.Contains(msg, "boom") {
-		t.Errorf("api.exec = %v, want only the error, carrying the status and the child's output",
-			repos["api"]["exec"])
+		t.Errorf("api.command = %v, want only the error, carrying the status and the child's output",
+			repos["api"]["command"])
 	}
-	if _, found := repos["gone"]["exec"]; found {
+	if _, found := repos["gone"]["command"]; found {
 		t.Errorf("gone = %v, want no outcome for a repository with no directory to run in", repos["gone"])
 	}
 }

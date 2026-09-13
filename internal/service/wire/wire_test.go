@@ -1,8 +1,9 @@
-package jsonout
+package wire
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -205,24 +206,6 @@ func TestStatusMarshalUpstream(t *testing.T) {
 	}
 }
 
-// TestStatusMarshalError: AC-5. A failed probe measured nothing, so it emits
-// nothing but its error — zero counts beside it would read as a clean tree.
-func TestStatusMarshalError(t *testing.T) {
-	t.Parallel()
-
-	raw, err := json.Marshal(Status{Error: "unable to read repo snapshot: boom"})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var got map[string]any
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got["error"] != "unable to read repo snapshot: boom" {
-		t.Errorf("failed probe = %s, want only an error key", raw)
-	}
-}
-
 // TestStatusNested: the status object attaches under the repository, beside
 // the identity fields rather than replacing them.
 func TestStatusNested(t *testing.T) {
@@ -275,118 +258,124 @@ func TestWriteEndsWithNewline(t *testing.T) {
 	}
 }
 
-// TestOutcomeMarshalsOneField: an Outcome is one of three things, and the
-// document says which by carrying exactly that key — an empty `output`
-// beside an error would read as a command that ran and said nothing.
-func TestOutcomeMarshalsOneField(t *testing.T) {
+// TestFailedStatusIsOnlyItsError: a failed probe measured nothing, so it
+// carries nothing but the reason — zero counts beside an error would read as
+// a clean work tree. The type system enforces it: StatusError has no other
+// field to set.
+func TestFailedStatusIsOnlyItsError(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		outcome Outcome
-		want    string
-	}{
-		{"output", Outcome{Output: "Already up to date."}, `{"output":"Already up to date."}`},
-		{"empty output", Outcome{}, `{"output":""}`},
-		{"skipped", Outcome{Skipped: "no upstream"}, `{"skipped":"no upstream"}`},
-		{"error", Outcome{Error: "boom"}, `{"error":"boom"}`},
-		// A failed command may have said something before failing; the
-		// failure is the outcome and the output travels inside it.
-		{"error wins", Outcome{Output: "partial", Error: "boom"}, `{"error":"boom"}`},
-		{"skipped wins over output", Outcome{Output: "x", Skipped: "s"}, `{"skipped":"s"}`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			raw, err := json.Marshal(tt.outcome)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			if string(raw) != tt.want {
-				t.Errorf("Outcome = %s, want %s", raw, tt.want)
-			}
-		})
-	}
-}
-
-// TestRepositoryNestsOutcomeUnderCommand: the outcome sits under the
-// command's own name, after the repository's identity and state, so the key
-// says which command ran — as `status` does for the working tree.
-func TestRepositoryNestsOutcomeUnderCommand(t *testing.T) {
-	t.Parallel()
-
-	repo := Repository{
-		Name: "api", State: domain.RepoStateOK,
-		Command: "pull", Outcome: &Outcome{Output: "Already up to date."},
-	}
-	raw, err := json.Marshal(repo)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	want := `{"name":"api","state":"ok","pull":{"output":"Already up to date."}}`
-	if string(raw) != want {
-		t.Errorf("Repository = %s, want %s", raw, want)
-	}
-
-	// A key that needs escaping is escaped as any JSON string is.
-	repo.Command = `we"ird`
-	raw, err = json.Marshal(repo)
+	raw, err := json.Marshal(FailedStatus(errors.New("unable to read repo snapshot: boom")))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	var got map[string]any
 	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("unmarshal %s: %v", raw, err)
+		t.Fatal(err)
 	}
-	if _, ok := got[`we"ird`].(map[string]any); !ok {
-		t.Errorf("Repository = %s, want the outcome under the escaped key", raw)
-	}
-}
-
-// TestRepositoryOutcomeNeedsCommand: an outcome with no key to nest under is
-// a renderer's bug, and is refused rather than emitted nameless.
-func TestRepositoryOutcomeNeedsCommand(t *testing.T) {
-	t.Parallel()
-
-	repo := Repository{Name: "api", Outcome: &Outcome{Output: "x"}}
-	if _, err := json.Marshal(repo); err == nil {
-		t.Fatal("marshal = nil, want a refusal for an Outcome without a Command")
+	if len(got) != 1 || got["error"] != "unable to read repo snapshot: boom" {
+		t.Errorf("failed probe = %s, want only an error key", raw)
 	}
 }
 
-// TestRepositoryWithoutOutcomeIsUnchanged: the `list` and `status` documents
-// are byte-identical to what the plain struct encoding produces, so adding
-// the outcome cannot have moved a byte in either. The status object is the
-// deepest nesting `status` emits, so it is the one worth comparing.
-func TestRepositoryWithoutOutcomeIsUnchanged(t *testing.T) {
+// TestCommandCarriesItsName: the outcome nests under a fixed key and names
+// the command inside it, so a consumer reads `.command.output` without
+// knowing which command ran.
+func TestCommandCarriesItsName(t *testing.T) {
 	t.Parallel()
 
-	when := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
-	repos := []Repository{
-		{Name: "api", Src: "git@host:acme/api.git", State: domain.RepoStateOK},
-		{Name: "web", State: domain.RepoStateError, Reason: "no path"},
-		{Name: "tools", State: domain.RepoStateOK, Status: &Status{
-			Branch: "main", Staged: 1, Compared: true,
-			Upstream: &Upstream{Name: "origin/main", Tracked: true},
-			Head:     &Head{Added: 1, Deleted: 2},
-			Commit:   &Commit{Hash: "abc", Subject: "x", Time: when},
-		}},
-		{Name: "broken", State: domain.RepoStateOK, Status: &Status{Error: "boom"}},
-		// Command alone, with nothing to nest, is not emitted either.
-		{Name: "named", State: domain.RepoStateOK, Command: "pull"},
+	repo := NewRepository(domain.Repository{Name: "api", State: domain.RepoStateOK})
+	repo.Command = OK("pull", "Already up to date.")
+
+	raw, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
 	}
-	type alias Repository
-	for _, repo := range repos {
-		got, err := json.Marshal(repo)
-		if err != nil {
-			t.Fatalf("marshal %s: %v", repo.Name, err)
+	want := `{"name":"api","state":"ok","command":{"name":"pull","output":"Already up to date."}}`
+	if string(raw) != want {
+		t.Errorf("Repository = %s,\nwant %s", raw, want)
+	}
+}
+
+// TestCommandConstructorsSetOneField: a command either produced output,
+// passed the repository over, or failed. The constructors are the only way to
+// build one, so two outcomes cannot be reported at once.
+func TestCommandConstructorsSetOneField(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		cmd  *Command
+		want string
+	}{
+		{"output", OK("pull", "Already up to date."),
+			`{"name":"pull","output":"Already up to date."}`},
+		// An empty output still emits the key: "ran and said nothing" is not
+		// the same as "did not run", which is the absent object.
+		{"empty output", OK("pull", ""), `{"name":"pull","output":""}`},
+		{"skipped", Skipped("push", "no upstream"),
+			`{"name":"push","skipped":"no upstream"}`},
+		{"error", Failed("pull", errors.New("boom")),
+			`{"name":"pull","error":"boom"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw, err := json.Marshal(tc.cmd)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(raw) != tc.want {
+				t.Errorf("Command = %s, want %s", raw, tc.want)
+			}
+		})
+	}
+}
+
+// TestRepositoryWithoutCommandOmitsIt: the `list` and `status` documents say
+// nothing about a command, so the key's absence is what states none ran.
+func TestRepositoryWithoutCommandOmitsIt(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(NewRepository(
+		domain.Repository{Name: "api", State: domain.RepoStateOK}))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if want := `{"name":"api","state":"ok"}`; string(raw) != want {
+		t.Errorf("Repository = %s, want %s", raw, want)
+	}
+}
+
+// TestIdentityProjectsDomain: the wire identity is projected from the domain
+// type rather than restated, so a field added to one cannot go missing from
+// the other. Repo State is deliberately absent from the identity: it must
+// stay out of the cache file, which marshals the domain type.
+func TestIdentityProjectsDomain(t *testing.T) {
+	t.Parallel()
+
+	repo := domain.Repository{
+		ID: "r1", Name: "api", Namespace: "acme", Src: "git@host:acme/api.git",
+		Dir: "api", URL: "https://host/acme/api", Desc: "the api",
+		State: domain.RepoStateOK, Reason: "ignored", AbsPath: "/tmp/api",
+	}
+
+	raw, err := json.Marshal(repo.Identity())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"id", "name", "namespace", "src", "dir", "url", "desc"} {
+		if _, found := got[key]; !found {
+			t.Errorf("identity key %q missing from %s", key, raw)
 		}
-		want, err := json.Marshal(alias(repo))
-		if err != nil {
-			t.Fatalf("marshal alias %s: %v", repo.Name, err)
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("Repository %s = %s, want the plain encoding %s", repo.Name, got, want)
+	}
+	for _, key := range []string{"state", "reason", "abspath"} {
+		if _, found := got[key]; found {
+			t.Errorf("identity carries %q, which belongs to the repository's local presence", key)
 		}
 	}
 }

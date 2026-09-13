@@ -5,7 +5,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli/jsonout"
+	"github.com/rafi/gits/internal/service/wire"
 )
 
 // renderJSON writes the run's results as the envelope `list -o json` shares,
@@ -13,15 +13,15 @@ import (
 // document's tree is the one the run visited — a whole project, or one
 // repository under its project.
 func renderJSON(w io.Writer, res bulk.Results[*repoStatus], opts Options) error {
-	env := jsonout.Envelope{}
+	env := wire.Envelope{}
 	if res.Project.Name == "" {
 		// The named project was skipped: nothing ran, nothing to document.
-		return jsonout.Write(w, env)
+		return wire.Write(w, env)
 	}
 	if node, keep := buildNode(res.Project, newRows(res), opts); keep {
 		env[res.Project.Name] = node
 	}
-	return jsonout.Write(w, env)
+	return wire.Write(w, env)
 }
 
 // buildNode converts one project subtree, returning the node and whether it
@@ -33,8 +33,8 @@ func renderJSON(w io.Writer, res bulk.Results[*repoStatus], opts Options) error 
 // nowhere else to hang. The table has no such constraint — it judges each
 // project alone and the emptied parent's table just goes. The node that stays
 // omits `repos` entirely, as any project with none does.
-func buildNode(p domain.Project, index rows, opts Options) (jsonout.Project, bool) {
-	node := jsonout.NewProject(p)
+func buildNode(p domain.Project, index rows, opts Options) (wire.Project, bool) {
+	node := wire.NewProject(p)
 	sts, _ := index.visible(p, opts)
 	for _, st := range sts {
 		node.Repos = append(node.Repos, buildRepo(st))
@@ -52,18 +52,18 @@ func buildNode(p domain.Project, index rows, opts Options) (jsonout.Project, boo
 
 // buildRepo converts one repository's identity, state and — where git was
 // actually consulted — its working tree.
-func buildRepo(st *repoStatus) jsonout.Repository {
-	repo := jsonout.NewRepository(st.repo.Repository)
+func buildRepo(st *repoStatus) wire.Repository {
+	repo := wire.NewRepository(st.repo.Repository)
 	if st.repo.State != domain.RepoStateOK {
 		// Nothing was probed: the state and its reason are the whole story.
 		return repo
 	}
 	if st.err != nil {
-		repo.Status = &jsonout.Status{Error: st.err.Error()}
+		repo.Status = wire.FailedStatus(st.err)
 		return repo
 	}
 
-	status := &jsonout.Status{
+	status := &wire.Status{
 		Branch:    st.Branch,
 		Staged:    st.Staged,
 		Unstaged:  st.Unstaged,
@@ -77,16 +77,16 @@ func buildRepo(st *repoStatus) jsonout.Repository {
 	// that was never pushed is structurally distinct from one whose Upstream
 	// went away.
 	if st.Upstream != "" {
-		status.Upstream = &jsonout.Upstream{
+		status.Upstream = &wire.Upstream{
 			Name:    st.Upstream,
 			Tracked: !st.GoneUpstream(),
 		}
 	}
 	if st.stat != nil {
-		status.Head = &jsonout.Head{Added: st.stat.Added, Deleted: st.stat.Deleted}
+		status.Head = &wire.Head{Added: st.stat.Added, Deleted: st.stat.Deleted}
 	}
 	if st.head.Hash != "" {
-		status.Commit = &jsonout.Commit{
+		status.Commit = &wire.Commit{
 			Hash:    st.head.Hash,
 			Subject: st.head.Subject,
 			Time:    st.head.Time,

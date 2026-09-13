@@ -276,13 +276,16 @@ func TestJSONOutcomes(t *testing.T) {
 		"docs": {"error": "boom"},
 	}
 	for name, outcome := range want {
-		got, ok := repos[name]["pull"].(map[string]any)
-		if !ok {
-			t.Errorf("%s = %v, want the outcome under the command's name", name, repos[name])
+		got, cmd := clitest.JSONCommand(t, repos[name])
+		if got == nil {
+			t.Errorf("%s = %v, want an outcome under \"command\"", name, repos[name])
 			continue
 		}
+		if cmd != "pull" {
+			t.Errorf("%s.command.name = %q, want %q", name, cmd, "pull")
+		}
 		if len(got) != 1 || fmt.Sprint(got) != fmt.Sprint(outcome) {
-			t.Errorf("%s.pull = %v, want %v", name, got, outcome)
+			t.Errorf("%s.command = %v, want %v", name, got, outcome)
 		}
 	}
 	gone := repos["gone"]
@@ -313,11 +316,11 @@ func TestJSONInterrupted(t *testing.T) {
 	if len(repos) != 4 {
 		t.Fatalf("repos = %v, want every repository of the tree, started or not", repos)
 	}
-	if _, ok := repos["api"]["pull"]; !ok {
+	if _, ok := repos["api"]["command"]; !ok {
 		t.Errorf("api = %v, want the started repository's outcome", repos["api"])
 	}
 	for _, name := range []string{"web", "docs", "gone"} {
-		if _, found := repos[name]["pull"]; found {
+		if _, found := repos[name]["command"]; found {
 			t.Errorf("%s = %v, want no outcome for a repository never started", name, repos[name])
 		}
 	}
@@ -360,14 +363,14 @@ func TestJSONTree(t *testing.T) {
 	}
 	var env map[string]struct {
 		Repos []struct {
-			Name  string            `json:"name"`
-			Fetch map[string]string `json:"fetch"`
+			Name    string            `json:"name"`
+			Command map[string]string `json:"command"`
 		} `json:"repos"`
 		SubProjects []struct {
 			Name  string `json:"name"`
 			Repos []struct {
-				Name  string            `json:"name"`
-				Fetch map[string]string `json:"fetch"`
+				Name    string            `json:"name"`
+				Command map[string]string `json:"command"`
 			} `json:"repos"`
 		} `json:"subprojects"`
 	}
@@ -375,13 +378,14 @@ func TestJSONTree(t *testing.T) {
 		t.Fatalf("unmarshal %q: %v", deps.Result(), err)
 	}
 	acme := env["acme"]
-	if len(acme.Repos) != 1 || acme.Repos[0].Name != "api" || acme.Repos[0].Fetch["output"] != "root" {
+	if len(acme.Repos) != 1 || acme.Repos[0].Name != "api" ||
+		acme.Repos[0].Command["output"] != "root" {
 		t.Errorf("acme.repos = %+v, want api with its own outcome", acme.Repos)
 	}
 	if len(acme.SubProjects) != 1 || acme.SubProjects[0].Name != "team" {
 		t.Fatalf("acme.subprojects = %+v, want team nested", acme.SubProjects)
 	}
-	if team := acme.SubProjects[0].Repos; len(team) != 1 || team[0].Fetch["output"] != "sub" {
+	if team := acme.SubProjects[0].Repos; len(team) != 1 || team[0].Command["output"] != "sub" {
 		t.Errorf("team.repos = %+v, want tools with its own outcome", team)
 	}
 }

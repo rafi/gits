@@ -129,6 +129,31 @@ func (d *Deps) JSONRepos(project string) map[string]map[string]any {
 	return repos
 }
 
+// JSONCommand returns a repository's command object — what a line Bulk
+// Command made of it — and the name of the command that ran. Both come from
+// the one `command` key every line command nests under, so a test asserts on
+// the outcome without restating which command produced it.
+//
+// The returned map holds only the outcome fields (output, skipped or error);
+// the command's name is returned separately rather than left among them, so
+// a test can still assert that exactly one outcome field is present.
+func JSONCommand(t *testing.T, repo map[string]any) (outcome map[string]any, name string) {
+	t.Helper()
+
+	raw, ok := repo["command"].(map[string]any)
+	if !ok {
+		return nil, ""
+	}
+	name, _ = raw["name"].(string)
+	outcome = make(map[string]any, len(raw)-1)
+	for k, v := range raw {
+		if k != "name" {
+			outcome[k] = v
+		}
+	}
+	return outcome, name
+}
+
 // FakeGit is the base of a command test's fake git client: it answers the one
 // question repository classification asks of git — whether a path is a git
 // repository — and embeds the read-only half of the seam, so any query the

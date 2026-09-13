@@ -29,7 +29,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cache"
-	"github.com/rafi/gits/internal/cli/jsonout"
+	"github.com/rafi/gits/internal/service/wire"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -360,7 +360,7 @@ func expandHome(path string) string {
 // Out, not Err, even though every one of them is about something being wrong.
 func render(format string, report Report, deps types.RuntimeCLI) error {
 	if format == bulk.FormatJSON {
-		return jsonout.WriteValue(deps.Out, report)
+		return wire.WriteValue(deps.Out, report)
 	}
 
 	for _, f := range report.Findings {

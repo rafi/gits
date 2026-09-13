@@ -524,14 +524,17 @@ func TestExecPushJSON(t *testing.T) {
 			}
 
 			repos := deps.JSONRepos("acme")
-			outcome, ok := repos["api"]["push"].(map[string]any)
-			if !ok {
-				t.Fatalf("api = %v, want the outcome under \"push\"", repos["api"])
+			outcome, name := clitest.JSONCommand(t, repos["api"])
+			if outcome == nil {
+				t.Fatalf("api = %v, want an outcome under \"command\"", repos["api"])
+			}
+			if name != "push" {
+				t.Errorf("api.command.name = %q, want %q", name, "push")
 			}
 			if len(outcome) != 1 || outcome[tc.key] != tc.want {
-				t.Errorf("api.push = %v, want only %q: %q", outcome, tc.key, tc.want)
+				t.Errorf("api.command = %v, want only %q: %q", outcome, tc.key, tc.want)
 			}
-			if _, found := repos["gone"]["push"]; found {
+			if _, found := repos["gone"]["command"]; found {
 				t.Errorf("gone = %v, want no outcome for a repository push never ran for", repos["gone"])
 			}
 		})
