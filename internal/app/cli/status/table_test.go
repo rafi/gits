@@ -13,53 +13,54 @@ import (
 	"github.com/rafi/gits/internal/cli/clitest"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/service/status"
 )
 
 // fixture builds one row bound to a repository in the given state.
-func fixture(name string, state domain.RepoState, st repoStatus) *repoStatus {
-	st.repo = run.Repo{
+func fixture(name string, state domain.RepoState, st status.Report) *status.Report {
+	st.Repo = run.Repo{
 		Name: name, AbsPath: "/code/acme/" + name, State: state,
 		Path: name,
 	}
 	return &st
 }
 
-func fixtureStatuses() []*repoStatus {
+func fixtureStatuses() []*status.Report {
 	now := time.Now()
-	return []*repoStatus{
-		fixture("api", domain.RepoStateOK, repoStatus{
+	return []*status.Report{
+		fixture("api", domain.RepoStateOK, status.Report{
 			Branch: "main", Ahead: 2,
 			Staged: 1, Unstaged: 11,
-			compared: true,
-			version:  "v2.1.0",
-			head:     git.Head{Hash: "f3a9c2d1", Subject: "Add rate limiter", Time: now.Add(-2 * time.Hour)},
+			Compared: true,
+			Version:  "v2.1.0",
+			Head:     git.Head{Hash: "f3a9c2d1", Subject: "Add rate limiter", Time: now.Add(-2 * time.Hour)},
 		}),
-		fixture("web", domain.RepoStateOK, repoStatus{
+		fixture("web", domain.RepoStateOK, status.Report{
 			Branch: "develop", Behind: 1,
 			Untracked: 4567,
-			compared:  true,
-			version:   "v0.9.0",
-			head:      git.Head{Hash: "0e631add", Subject: "Initial commit", Time: now.Add(-26 * time.Hour)},
+			Compared:  true,
+			Version:   "v0.9.0",
+			Head:      git.Head{Hash: "0e631add", Subject: "Initial commit", Time: now.Add(-26 * time.Hour)},
 		}),
-		fixture("infra", domain.RepoStateNotCloned, repoStatus{err: errFixture}),
+		fixture("infra", domain.RepoStateNotCloned, status.Report{Err: errFixture}),
 	}
 }
 
 // project bundles rows under a project node so the renderer's tree walk
 // finds them.
-func project(name string, sts ...*repoStatus) domain.Project {
+func project(name string, sts ...*status.Report) domain.Project {
 	p := domain.Project{Name: name}
 	for _, st := range sts {
-		p.Repos = append(p.Repos, st.repo.Repository)
+		p.Repos = append(p.Repos, st.Repo.Repository)
 	}
 	return p
 }
 
 // resultsOf wraps rows as the run hands them to the renderer, under root.
-func resultsOf(root domain.Project, sts ...*repoStatus) run.Results[*repoStatus] {
-	res := run.Results[*repoStatus]{Project: root}
+func resultsOf(root domain.Project, sts ...*status.Report) run.Results[*status.Report] {
+	res := run.Results[*status.Report]{Project: root}
 	for _, st := range sts {
-		res.Results = append(res.Results, run.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
+		res.Results = append(res.Results, run.Result[*status.Report]{Repo: st.Repo, Value: st, Err: st.Err})
 	}
 	return res
 }
@@ -184,8 +185,8 @@ func TestRenderTablesDirtyFilter(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses() // api dirty, web dirty (untracked), infra error
-	clean := fixture("tidy", domain.RepoStateOK, repoStatus{
-		Branch: "main", version: "v1.0.0",
+	clean := fixture("tidy", domain.RepoStateOK, status.Report{
+		Branch: "main", Version: "v1.0.0",
 	})
 	pristine := project("pristine", clean)
 	root := project("acme", sts[0], clean, sts[2])
@@ -217,14 +218,14 @@ func TestRenderTablesDirtyFilter(t *testing.T) {
 func TestRenderTablesUnsyncedFilter(t *testing.T) {
 	t.Parallel()
 
-	dirtyInSync := fixture("edited", domain.RepoStateOK, repoStatus{
-		Unstaged: 2, compared: true,
+	dirtyInSync := fixture("edited", domain.RepoStateOK, status.Report{
+		Unstaged: 2, Compared: true,
 	})
-	cleanAhead := fixture("racer", domain.RepoStateOK, repoStatus{
-		Ahead: 3, compared: true,
+	cleanAhead := fixture("racer", domain.RepoStateOK, status.Report{
+		Ahead: 3, Compared: true,
 	})
-	noUp := fixture("loner", domain.RepoStateOK, repoStatus{})
-	sts := []*repoStatus{dirtyInSync, cleanAhead, noUp}
+	noUp := fixture("loner", domain.RepoStateOK, status.Report{})
+	sts := []*status.Report{dirtyInSync, cleanAhead, noUp}
 	res := resultsOf(project("acme", sts...), sts...)
 
 	deps := clitest.New(t, nil)
@@ -263,7 +264,7 @@ func TestRenderTableClampsToTerminal(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses()
-	sts[0].head.Subject = strings.Repeat("very long commit subject ", 8)
+	sts[0].Head.Subject = strings.Repeat("very long commit subject ", 8)
 	const width = 72
 
 	out := renderTable(sts, width, Options{}, statusDeps(t, fakeGit{}))
@@ -297,8 +298,8 @@ func TestRenderTableStatColumn(t *testing.T) {
 	t.Parallel()
 
 	sts := fixtureStatuses()
-	sts[0].stat = &git.DiffStat{Added: 27, Deleted: 8}
-	sts[1].stat = &git.DiffStat{Added: 4321}
+	sts[0].Stat = &git.DiffStat{Added: 27, Deleted: 8}
+	sts[1].Stat = &git.DiffStat{Added: 4321}
 
 	out := renderTable(sts, 0, Options{Stat: true}, statusDeps(t, fakeGit{}))
 	plain := ansi.Strip(out)
@@ -380,13 +381,13 @@ func TestStatusSlotsWidthWithWideIcons(t *testing.T) {
 	icons := domain.Icons{DiffError: "✗✗"} // 2-cell error icon
 	icons.ApplyDefaults()
 	th := style.NewThemeDefault()
-	sts := []*repoStatus{
-		fixture("a", domain.RepoStateOK, repoStatus{}),
-		fixture("b", domain.RepoStateOK, repoStatus{
-			Staged: 1, err: errFixture,
+	sts := []*status.Report{
+		fixture("a", domain.RepoStateOK, status.Report{}),
+		fixture("b", domain.RepoStateOK, status.Report{
+			Staged: 1, Err: errFixture,
 		}),
-		fixture("c", domain.RepoStateNotCloned, repoStatus{err: errFixture}),
-		fixture("d", domain.RepoStateOK, repoStatus{Ahead: 3}),
+		fixture("c", domain.RepoStateNotCloned, status.Report{Err: errFixture}),
+		fixture("d", domain.RepoStateOK, status.Report{Ahead: 3}),
 	}
 	widths := newSlotWidths(icons)
 	want := lipgloss.Width(statusSlots(sts[0], icons, th, widths))

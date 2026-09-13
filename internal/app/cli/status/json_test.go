@@ -12,6 +12,7 @@ import (
 	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/service/status"
 )
 
 // okRepo is a cloned repository the Traversal would have probed.
@@ -22,23 +23,23 @@ func okRepo(name string) domain.Repository {
 
 // row builds one repository's status as the probe would, bound to its
 // repository so the tree lookup finds it.
-func row(repo domain.Repository, st repoStatus) *repoStatus {
-	st.repo = run.Repo{Repository: repo, Path: repo.Name}
+func row(repo domain.Repository, st status.Report) *status.Report {
+	st.Repo = run.Repo{Repository: repo, Path: repo.Name}
 	return &st
 }
 
 // results wraps statuses as the run hands them to the renderer, under the
 // tree the run visited.
-func results(project domain.Project, sts ...*repoStatus) run.Results[*repoStatus] {
-	res := run.Results[*repoStatus]{Project: project}
+func results(project domain.Project, sts ...*status.Report) run.Results[*status.Report] {
+	res := run.Results[*status.Report]{Project: project}
 	for _, st := range sts {
-		res.Results = append(res.Results, run.Result[*repoStatus]{Repo: st.repo, Value: st, Err: st.err})
+		res.Results = append(res.Results, run.Result[*status.Report]{Repo: st.Repo, Value: st, Err: st.Err})
 	}
 	return res
 }
 
 // renderDoc renders results to JSON and parses the document back.
-func renderDoc(t *testing.T, res run.Results[*repoStatus], opts Options) map[string]any {
+func renderDoc(t *testing.T, res run.Results[*status.Report], opts Options) map[string]any {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := renderJSON(&buf, res, opts); err != nil {
@@ -67,14 +68,14 @@ func TestStatusJSONNestsStatus(t *testing.T) {
 	t.Parallel()
 
 	when := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
-	st := row(okRepo("api"), repoStatus{
+	st := row(okRepo("api"), status.Report{
 		Branch: "main", Ahead: 4, Behind: 5,
 		Staged: 1, Unstaged: 2, Untracked: 3,
-		compared: true,
-		version:  "v1.2.3",
-		head:     git.Head{Hash: "abc1234", Subject: "Add feature", Time: when},
+		Compared: true,
+		Version:  "v1.2.3",
+		Head:     git.Head{Hash: "abc1234", Subject: "Add feature", Time: when},
 	})
-	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository}}
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.Repo.Repository}}
 
 	doc := renderDoc(t, results(proj, st), Options{})
 	node, ok := doc["acme"].(map[string]any)
@@ -88,7 +89,7 @@ func TestStatusJSONNestsStatus(t *testing.T) {
 
 	got, ok := repo["status"].(map[string]any)
 	if !ok {
-		t.Fatalf("no status object on an ok repo: %v", repo)
+		t.Fatalf("no status object on an ok Repo: %v", repo)
 	}
 	want := map[string]any{
 		"branch": "main", "staged": float64(1), "unstaged": float64(2),
@@ -114,8 +115,8 @@ func TestStatusJSONNestsStatus(t *testing.T) {
 func TestStatusJSONNoUpstream(t *testing.T) {
 	t.Parallel()
 
-	st := row(okRepo("api"), repoStatus{Branch: "main"})
-	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository}}
+	st := row(okRepo("api"), status.Report{Branch: "main"})
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.Repo.Repository}}
 
 	doc := renderDoc(t, results(proj, st), Options{})
 	got := reposOf(t, doc["acme"].(map[string]any))[0].(map[string]any)["status"].(map[string]any)
@@ -136,9 +137,9 @@ func TestStatusJSONSkipsUnprobed(t *testing.T) {
 		State:  domain.RepoStateError,
 		Reason: "no `path:` on the project and no `dir:` on the repository",
 	}
-	sts := []*repoStatus{
-		row(notCloned, repoStatus{err: errors.New("not cloned")}),
-		row(broken, repoStatus{err: errors.New("boom")}),
+	sts := []*status.Report{
+		row(notCloned, status.Report{Err: errors.New("not cloned")}),
+		row(broken, status.Report{Err: errors.New("boom")}),
 	}
 	proj := domain.Project{Name: "acme", Repos: []domain.Repository{notCloned, broken}}
 
@@ -171,8 +172,8 @@ func TestStatusJSONSkipsUnprobed(t *testing.T) {
 func TestStatusJSONProbeError(t *testing.T) {
 	t.Parallel()
 
-	st := row(okRepo("api"), repoStatus{err: errors.New("unable to read repo snapshot: boom")})
-	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository}}
+	st := row(okRepo("api"), status.Report{Err: errors.New("unable to read repo snapshot: boom")})
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.Repo.Repository}}
 
 	doc := renderDoc(t, results(proj, st), Options{})
 	repo := reposOf(t, doc["acme"].(map[string]any))[0].(map[string]any)
@@ -188,14 +189,14 @@ func TestStatusJSONHead(t *testing.T) {
 	t.Parallel()
 
 	proj := domain.Project{Name: "acme", Repos: []domain.Repository{okRepo("api")}}
-	measured := row(okRepo("api"), repoStatus{stat: &git.DiffStat{Added: 27, Deleted: 8}})
-	unmeasured := row(okRepo("api"), repoStatus{})
+	measured := row(okRepo("api"), status.Report{Stat: &git.DiffStat{Added: 27, Deleted: 8}})
+	unmeasured := row(okRepo("api"), status.Report{})
 
 	doc := renderDoc(t, results(proj, measured), Options{Stat: true})
 	got := reposOf(t, doc["acme"].(map[string]any))[0].(map[string]any)["status"].(map[string]any)
 	head, ok := got["head"].(map[string]any)
 	if !ok {
-		t.Fatalf("no head object under --stat: %v", got)
+		t.Fatalf("no head object under --Stat: %v", got)
 	}
 	if head["added"] != float64(27) || head["deleted"] != float64(8) {
 		t.Errorf("head = %v, want +27 -8", head)
@@ -217,7 +218,9 @@ func TestStatusJSONHead(t *testing.T) {
 	})
 	repo := okRepo("api")
 	plain := domain.Project{Name: "acme", Repos: []domain.Repository{repo}}
-	st, err := probe(t, deps, Options{}, plain, repo)
+	st, err := status.Probe{}.Repo(t.Context(), run.Repo{
+		Repository: repo, Project: plain, Path: repo.Name,
+	}, deps.Runtime)
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
@@ -225,7 +228,7 @@ func TestStatusJSONHead(t *testing.T) {
 	doc = renderDoc(t, results(plain, st), Options{})
 	got = reposOf(t, doc["acme"].(map[string]any))[0].(map[string]any)["status"].(map[string]any)
 	if _, found := got["head"]; found {
-		t.Errorf("head emitted without --stat: %v", got)
+		t.Errorf("head emitted without --Stat: %v", got)
 	}
 }
 
@@ -233,12 +236,12 @@ func TestStatusJSONHead(t *testing.T) {
 func TestStatusJSONTree(t *testing.T) {
 	t.Parallel()
 
-	root := row(okRepo("api"), repoStatus{Branch: "main"})
-	nested := row(okRepo("tools"), repoStatus{Branch: "main"})
-	sub := domain.Project{Name: "team", Repos: []domain.Repository{nested.repo.Repository}}
+	root := row(okRepo("api"), status.Report{Branch: "main"})
+	nested := row(okRepo("tools"), status.Report{Branch: "main"})
+	sub := domain.Project{Name: "team", Repos: []domain.Repository{nested.Repo.Repository}}
 	proj := domain.Project{
 		Name:        "acme",
-		Repos:       []domain.Repository{root.repo.Repository},
+		Repos:       []domain.Repository{root.Repo.Repository},
 		SubProjects: []domain.Project{sub},
 	}
 
@@ -271,21 +274,21 @@ func TestStatusJSONTreeAtDepth(t *testing.T) {
 	//   ├── team ── tools
 	//   │     └── infra ── ansible
 	//   └── vendor ── forks
-	leaf := func(name string) *repoStatus {
-		return row(okRepo(name), repoStatus{Branch: "main"})
+	leaf := func(name string) *status.Report {
+		return row(okRepo(name), status.Report{Branch: "main"})
 	}
 	api, tools, ansible, forks := leaf("api"), leaf("tools"), leaf("ansible"), leaf("forks")
 
-	infra := domain.Project{Name: "infra", Repos: []domain.Repository{ansible.repo.Repository}}
+	infra := domain.Project{Name: "infra", Repos: []domain.Repository{ansible.Repo.Repository}}
 	team := domain.Project{
 		Name:        "team",
-		Repos:       []domain.Repository{tools.repo.Repository},
+		Repos:       []domain.Repository{tools.Repo.Repository},
 		SubProjects: []domain.Project{infra},
 	}
-	vendor := domain.Project{Name: "vendor", Repos: []domain.Repository{forks.repo.Repository}}
+	vendor := domain.Project{Name: "vendor", Repos: []domain.Repository{forks.Repo.Repository}}
 	proj := domain.Project{
 		Name:        "acme",
-		Repos:       []domain.Repository{api.repo.Repository},
+		Repos:       []domain.Repository{api.Repo.Repository},
 		SubProjects: []domain.Project{team, vendor},
 	}
 
@@ -340,14 +343,14 @@ func TestStatusJSONTreeAtDepth(t *testing.T) {
 func TestStatusJSONFilters(t *testing.T) {
 	t.Parallel()
 
-	dirty := row(okRepo("api"), repoStatus{Staged: 1})
-	clean := row(okRepo("web"), repoStatus{})
-	failed := row(okRepo("db"), repoStatus{err: errors.New("boom")})
-	tidy := row(okRepo("tidy"), repoStatus{})
-	sub := domain.Project{Name: "team", Repos: []domain.Repository{tidy.repo.Repository}}
+	dirty := row(okRepo("api"), status.Report{Staged: 1})
+	clean := row(okRepo("web"), status.Report{})
+	failed := row(okRepo("db"), status.Report{Err: errors.New("boom")})
+	tidy := row(okRepo("tidy"), status.Report{})
+	sub := domain.Project{Name: "team", Repos: []domain.Repository{tidy.Repo.Repository}}
 	proj := domain.Project{
 		Name:        "acme",
-		Repos:       []domain.Repository{dirty.repo.Repository, clean.repo.Repository, failed.repo.Repository},
+		Repos:       []domain.Repository{dirty.Repo.Repository, clean.Repo.Repository, failed.Repo.Repository},
 		SubProjects: []domain.Project{sub},
 	}
 
@@ -377,12 +380,12 @@ func TestStatusJSONFilters(t *testing.T) {
 func TestStatusJSONFilterKeepsBridgingParent(t *testing.T) {
 	t.Parallel()
 
-	clean := row(okRepo("web"), repoStatus{})
-	dirty := row(okRepo("tools"), repoStatus{Staged: 1})
-	sub := domain.Project{Name: "team", Repos: []domain.Repository{dirty.repo.Repository}}
+	clean := row(okRepo("web"), status.Report{})
+	dirty := row(okRepo("tools"), status.Report{Staged: 1})
+	sub := domain.Project{Name: "team", Repos: []domain.Repository{dirty.Repo.Repository}}
 	proj := domain.Project{
 		Name:        "acme",
-		Repos:       []domain.Repository{clean.repo.Repository},
+		Repos:       []domain.Repository{clean.Repo.Repository},
 		SubProjects: []domain.Project{sub},
 	}
 
@@ -406,8 +409,8 @@ func TestStatusJSONFilterKeepsBridgingParent(t *testing.T) {
 func TestStatusJSONFilterEmptiesEverything(t *testing.T) {
 	t.Parallel()
 
-	clean := row(okRepo("web"), repoStatus{})
-	proj := domain.Project{Name: "acme", Repos: []domain.Repository{clean.repo.Repository}}
+	clean := row(okRepo("web"), status.Report{})
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{clean.Repo.Repository}}
 
 	var buf bytes.Buffer
 	if err := renderJSON(&buf, results(proj, clean), Options{Unsynced: true}); err != nil {
@@ -424,8 +427,8 @@ func TestStatusJSONFilterEmptiesEverything(t *testing.T) {
 func TestStatusJSONSingleRepo(t *testing.T) {
 	t.Parallel()
 
-	st := row(okRepo("api"), repoStatus{Branch: "main"})
-	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository}}
+	st := row(okRepo("api"), status.Report{Branch: "main"})
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.Repo.Repository}}
 
 	doc := renderDoc(t, results(proj, st), Options{})
 	node := doc["acme"].(map[string]any)
@@ -443,8 +446,8 @@ func TestStatusJSONSingleRepo(t *testing.T) {
 func TestStatusJSONSkipsUnstartedRepos(t *testing.T) {
 	t.Parallel()
 
-	st := row(okRepo("api"), repoStatus{})
-	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.repo.Repository, okRepo("web")}}
+	st := row(okRepo("api"), status.Report{})
+	proj := domain.Project{Name: "acme", Repos: []domain.Repository{st.Repo.Repository, okRepo("web")}}
 
 	doc := renderDoc(t, results(proj, st), Options{})
 	if repos := reposOf(t, doc["acme"].(map[string]any)); len(repos) != 1 {

@@ -14,6 +14,7 @@ import (
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/service/status"
 )
 
 // renderTables prints one compact table per project as Result Output and a
@@ -21,12 +22,12 @@ import (
 // depth-first, a project's own repositories before its sub-projects — and
 // looks each repository's row up; a project left with no rows prints
 // nothing, and consecutive tables are separated by a blank line.
-func renderTables(res run.Results[*repoStatus], opts Options, deps app.RuntimeCLI) {
+func renderTables(res run.Results[*status.Report], opts Options, deps app.RuntimeCLI) {
 	out := deps.Out
 	termWidth, _ := style.TermWidth(out)
 	index := newRows(res)
 	var (
-		all     []*repoStatus
+		all     []*status.Report
 		hidden  int
 		printed int
 	)
@@ -83,7 +84,7 @@ type tableColumn struct {
 // renderTable renders one project's repositories as a borderless aligned
 // table: bold header, gutter glyph, fixed status slots, right-aligned counts
 // and dim metadata.
-func renderTable(sts []*repoStatus, termWidth int, opts Options, deps app.RuntimeCLI) string {
+func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.RuntimeCLI) string {
 	th, icons := deps.Theme, deps.Settings.Icons
 	now := time.Now()
 	widths := newSlotWidths(icons)
@@ -121,8 +122,8 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps app.Runtim
 			}
 			return th.StatusDim.Render(s)
 		}
-		title, branch := st.repo.Path, st.Branch
-		if st.repo.State != domain.RepoStateOK {
+		title, branch := st.Repo.Path, st.Branch
+		if st.Repo.State != domain.RepoStateOK {
 			title, branch = dim(title), dim(branch)
 		}
 		message := messageCell(st, th, dim)
@@ -135,9 +136,9 @@ func renderTable(sts []*repoStatus, termWidth int, opts Options, deps app.Runtim
 		rows[i] = append(row,
 			counts.delta[i],
 			counts.upstream[i],
-			dim(st.version),
-			dim(st.head.Hash),
-			dim(shortAge(st.head.Time, now)),
+			dim(st.Version),
+			dim(st.Head.Hash),
+			dim(shortAge(st.Head.Time, now)),
 			message,
 		)
 	}
@@ -223,23 +224,23 @@ func columnStyle(cols []tableColumn, pinned map[int]int, th style.Theme) func(ro
 // messageCell renders the last column: the last commit's subject, or the
 // bare failure reason in its place. Real failures show in red; benign non-OK
 // states (not cloned, remote-only) and ordinary commit subjects stay dim.
-func messageCell(st *repoStatus, th style.Theme, dim func(string) string) string {
+func messageCell(st *status.Report, th style.Theme, dim func(string) string) string {
 	switch {
-	case st.err == nil:
-		return dim(st.head.Subject)
-	case st.repo.State == domain.RepoStateOK, st.repo.State == domain.RepoStateError:
-		return th.Error.Render(st.err.Error())
+	case st.Err == nil:
+		return dim(st.Head.Subject)
+	case st.Repo.State == domain.RepoStateOK, st.Repo.State == domain.RepoStateError:
+		return th.Error.Render(st.Err.Error())
 	default:
-		return dim(st.err.Error())
+		return dim(st.Err.Error())
 	}
 }
 
 // gutter returns the leading row-kind glyph, mapped onto
 // repository states.
-func gutter(st *repoStatus, icons domain.Icons, th style.Theme) string {
-	switch st.repo.State {
+func gutter(st *status.Report, icons domain.Icons, th style.Theme) string {
+	switch st.Repo.State {
 	case domain.RepoStateOK:
-		if st.err != nil {
+		if st.Err != nil {
 			return th.Error.Render(icons.DiffError)
 		}
 		return "+"
@@ -282,7 +283,7 @@ func newSlotWidths(icons domain.Icons) slotWidths {
 // same five slots, absent symbols render as spaces so glyphs align vertically:
 //
 //	1 staged  2 unstaged  3 untracked  4 error/not-cloned  5 upstream
-func statusSlots(st *repoStatus, icons domain.Icons, th style.Theme, widths slotWidths) string {
+func statusSlots(st *status.Report, icons domain.Icons, th style.Theme, widths slotWidths) string {
 	slot := func(active bool, icon string, style lipgloss.Style) string {
 		if !active {
 			return strings.Repeat(" ", lipgloss.Width(icon))
@@ -301,7 +302,7 @@ func statusSlots(st *repoStatus, icons domain.Icons, th style.Theme, widths slot
 		// about, and the counts — measured against a fallback ref, when one
 		// was found — still show in the Upstream⇅ column.
 		upstreamIcon = icons.Gone
-	case !st.compared:
+	case !st.Compared:
 		upstreamIcon = icons.NA
 	case st.Ahead > 0 && st.Behind > 0:
 		upstreamIcon = icons.Diverged
@@ -311,13 +312,13 @@ func statusSlots(st *repoStatus, icons domain.Icons, th style.Theme, widths slot
 		upstreamIcon = icons.Behind
 	}
 
-	broken := st.repo.State != domain.RepoStateOK || st.err != nil
+	broken := st.Repo.State != domain.RepoStateOK || st.Err != nil
 	fourth := pad(" ", " ", widths.fourth)
 	switch {
-	case st.err != nil && st.repo.State != domain.RepoStateNotCloned &&
-		st.repo.State != domain.RepoStateRemoteOnly:
+	case st.Err != nil && st.Repo.State != domain.RepoStateNotCloned &&
+		st.Repo.State != domain.RepoStateRemoteOnly:
 		fourth = pad(th.Error.Render(icons.DiffError), icons.DiffError, widths.fourth)
-	case st.repo.State != domain.RepoStateOK:
+	case st.Repo.State != domain.RepoStateOK:
 		fourth = pad(th.StatusDim.Render(icons.NA), icons.NA, widths.fourth)
 	}
 
@@ -343,7 +344,7 @@ type countCells struct {
 // buildCountCells renders the HEAD±, Δ± and Upstream⇅ cells with per-table
 // sub-cell padding, so counts right-align on the ones digit across the group.
 func buildCountCells(
-	sts []*repoStatus,
+	sts []*status.Report,
 	icons domain.Icons,
 	th style.Theme,
 ) countCells {
@@ -351,14 +352,14 @@ func buildCountCells(
 	subs := make([]sub, len(sts))
 	var wAdd, wDel, wMod, wUnt, wAhead, wBehind int
 	for i, st := range sts {
-		if st.err != nil || st.repo.State != domain.RepoStateOK {
+		if st.Err != nil || st.Repo.State != domain.RepoStateOK {
 			continue
 		}
-		if st.stat != nil && st.stat.Added > 0 {
-			subs[i].add = th.StatusAdded.Render("+" + compactCount(st.stat.Added))
+		if st.Stat != nil && st.Stat.Added > 0 {
+			subs[i].add = th.StatusAdded.Render("+" + compactCount(st.Stat.Added))
 		}
-		if st.stat != nil && st.stat.Deleted > 0 {
-			subs[i].del = th.StatusDeleted.Render("-" + compactCount(st.stat.Deleted))
+		if st.Stat != nil && st.Stat.Deleted > 0 {
+			subs[i].del = th.StatusDeleted.Render("-" + compactCount(st.Stat.Deleted))
 		}
 		if n := st.Staged + st.Unstaged; n > 0 {
 			subs[i].mod = th.StatusFlag.Render(icons.Modified + compactCount(n))
@@ -454,17 +455,17 @@ func shortAge(t, now time.Time) string {
 
 // renderFooter prints the dim `○ Showing …` summary footer as Diagnostic
 // Output, after a blank separator.
-func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th style.Theme) {
+func renderFooter(w io.Writer, sts []*status.Report, hidden int, th style.Theme) {
 	repos := len(sts)
 	changed, ahead, errCount := 0, 0, 0
 	for _, st := range sts {
-		if st.changed() {
+		if st.Changed() {
 			changed++
 		}
 		if st.Ahead > 0 {
 			ahead++
 		}
-		if st.err != nil {
+		if st.Err != nil {
 			errCount++
 		}
 	}

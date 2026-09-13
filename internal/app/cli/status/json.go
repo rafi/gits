@@ -5,6 +5,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/service/status"
 	"github.com/rafi/gits/internal/service/wire"
 )
 
@@ -12,7 +13,7 @@ import (
 // with each probed repository's working-tree data nested under it. The
 // document's tree is the one the run visited — a whole project, or one
 // repository under its project.
-func renderJSON(w io.Writer, res run.Results[*repoStatus], opts Options) error {
+func renderJSON(w io.Writer, res run.Results[*status.Report], opts Options) error {
 	env := wire.Envelope{}
 	if res.Project.Name == "" {
 		// The named project was skipped: nothing ran, nothing to document.
@@ -52,14 +53,14 @@ func buildNode(p domain.Project, index rows, opts Options) (wire.Project, bool) 
 
 // buildRepo converts one repository's identity, state and — where git was
 // actually consulted — its working tree.
-func buildRepo(st *repoStatus) wire.Repository {
-	repo := wire.NewRepository(st.repo.Repository)
-	if st.repo.State != domain.RepoStateOK {
+func buildRepo(st *status.Report) wire.Repository {
+	repo := wire.NewRepository(st.Repo.Repository)
+	if st.Repo.State != domain.RepoStateOK {
 		// Nothing was probed: the state and its reason are the whole story.
 		return repo
 	}
-	if st.err != nil {
-		repo.Status = wire.FailedStatus(st.err)
+	if st.Err != nil {
+		repo.Status = wire.FailedStatus(st.Err)
 		return repo
 	}
 
@@ -70,8 +71,8 @@ func buildRepo(st *repoStatus) wire.Repository {
 		Untracked: st.Untracked,
 		Ahead:     st.Ahead,
 		Behind:    st.Behind,
-		Compared:  st.compared,
-		Version:   st.version,
+		Compared:  st.Compared,
+		Version:   st.Version,
 	}
 	// The object's absence is what says no Upstream is configured, so a branch
 	// that was never pushed is structurally distinct from one whose Upstream
@@ -82,14 +83,14 @@ func buildRepo(st *repoStatus) wire.Repository {
 			Tracked: !st.GoneUpstream(),
 		}
 	}
-	if st.stat != nil {
-		status.Head = &wire.Head{Added: st.stat.Added, Deleted: st.stat.Deleted}
+	if st.Stat != nil {
+		status.Head = &wire.Head{Added: st.Stat.Added, Deleted: st.Stat.Deleted}
 	}
-	if st.head.Hash != "" {
+	if st.Head.Hash != "" {
 		status.Commit = &wire.Commit{
-			Hash:    st.head.Hash,
-			Subject: st.head.Subject,
-			Time:    st.head.Time,
+			Hash:    st.Head.Hash,
+			Subject: st.Head.Subject,
+			Time:    st.Head.Time,
 		}
 	}
 	repo.Status = status
