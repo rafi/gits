@@ -15,8 +15,9 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/cache"
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/config"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/types"
@@ -64,6 +65,9 @@ func main() {
 		// turned into a non-zero exit by PersistentPreRunE. A missing file
 		// returns nil, so git-free commands (add, version) still run.
 		errConfigLoad = config.NewConfigFromFile(configPath, &configFile)
+		// The color toggle is a view concern, applied here rather than by the
+		// loader, and applied even when the config file is missing or broken.
+		style.ApplyColor(configFile.Color)
 		// The CLI flag wins over the config file's settings.verbose, which
 		// loadConfig would otherwise clobber by unmarshalling onto Settings.
 		if verboseFlag {
@@ -100,11 +104,11 @@ func registerRootFlags() {
 		// -C rejects anything but auto|always|never, so a typo fails loudly
 		// rather than silently meaning auto.
 		rootCmd.PersistentFlags().
-			VarP(config.NewColorValue(&configFile.Color), "color", "C",
-				fmt.Sprintf("color (%s)", strings.Join(config.ColorChoices(), ", ")))
+			VarP(style.NewColorValue(&configFile.Color), "color", "C",
+				fmt.Sprintf("color (%s)", strings.Join(style.ColorChoices(), ", ")))
 		// The same three values Tab offers, from the same list, so completion
 		// cannot suggest one the flag would reject.
-		mustRegisterFlagCompletion(rootCmd, "color", completeValues(config.ColorChoices()))
+		mustRegisterFlagCompletion(rootCmd, "color", completeValues(style.ColorChoices()))
 
 		rootCmd.PersistentFlags().
 			BoolVarP(&verboseFlag, "verbose", "v", false, "display verbose output")
@@ -230,7 +234,7 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error, opts ...runOption) co
 		}
 
 		// Setup CLI theme.
-		theme := config.NewThemeDefault()
+		theme := style.NewThemeDefault()
 		if err := theme.ParseConfig(configFile.Settings.Theme); err != nil {
 			return err
 		}
@@ -272,6 +276,6 @@ func runWithDeps(f func([]string, types.RuntimeCLI) error, opts ...runOption) co
 // warnings — a passed-over Repository, a setting that fell back to its
 // default — reach the user, so none of them arrive as a `level=warning`
 // log record.
-func writeWarning(w io.Writer, theme config.Theme, msg string) {
+func writeWarning(w io.Writer, theme style.Theme, msg string) {
 	lipgloss.Fprintln(w, theme.Warning.Render(msg))
 }

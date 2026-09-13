@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/config"
 	"github.com/rafi/gits/internal/git"
 )
 

@@ -10,7 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -125,7 +125,7 @@ func Plural(n int) string {
 }
 
 // ProjectTitleWithBullet returns a formatted project title.
-func ProjectTitleWithBullet(project domain.Project, theme config.Theme) string {
+func ProjectTitleWithBullet(project domain.Project, theme style.Theme) string {
 	return fmt.Sprintf(
 		"%s %s",
 		theme.Bullet.Render("::"),
@@ -134,7 +134,7 @@ func ProjectTitleWithBullet(project domain.Project, theme config.Theme) string {
 }
 
 // ProjectTitle returns a formatted project title.
-func ProjectTitle(project domain.Project, theme config.Theme) string {
+func ProjectTitle(project domain.Project, theme style.Theme) string {
 	sourceName := getSourceType(project)
 	if sourceName != "" {
 		sourceName = theme.Provider.Render(" [" + sourceName + "]")
@@ -153,7 +153,7 @@ func ProjectTitle(project domain.Project, theme config.Theme) string {
 }
 
 // ProjectTreeTitle returns a formatted project title for tree display.
-func ProjectTreeTitle(project domain.Project, homeDir string, theme config.Theme) string {
+func ProjectTreeTitle(project domain.Project, homeDir string, theme style.Theme) string {
 	title := theme.ProjectTitle.Render(project.Name)
 	if sourceName := getSourceType(project); sourceName != "" {
 		title = fmt.Sprintf("%s %s", title, theme.Provider.Render(sourceName))
@@ -179,7 +179,7 @@ func RepoRelPath(project domain.Project, repo domain.Repository, homeDir string)
 }
 
 // RepoTitle returns a formatted repository title.
-func RepoTitle(repo domain.Repository, project domain.Project, homeDir string, theme config.Theme) lipgloss.Style {
+func RepoTitle(repo domain.Repository, project domain.Project, homeDir string, theme style.Theme) lipgloss.Style {
 	return theme.RepoTitle.
 		MarginLeft(LeftMargin).
 		MarginRight(RightMargin).

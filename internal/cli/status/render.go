@@ -11,9 +11,9 @@ import (
 	"charm.land/lipgloss/v2/table"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli"
-	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -196,7 +196,7 @@ func measureColumns(cols []tableColumn, rows [][]string) (map[int]int, int) {
 // columnStyle returns the table's per-cell style function: alignment and
 // padding from the column's declaration, its measured width when pinned, and
 // the header style on the header row.
-func columnStyle(cols []tableColumn, pinned map[int]int, th config.Theme) func(row, c int) lipgloss.Style {
+func columnStyle(cols []tableColumn, pinned map[int]int, th style.Theme) func(row, c int) lipgloss.Style {
 	return func(row, c int) lipgloss.Style {
 		s := lipgloss.NewStyle().PaddingRight(cellPad)
 		if c < 0 || c >= len(cols) {
@@ -224,7 +224,7 @@ func columnStyle(cols []tableColumn, pinned map[int]int, th config.Theme) func(r
 // messageCell renders the last column: the last commit's subject, or the
 // bare failure reason in its place. Real failures show in red; benign non-OK
 // states (not cloned, remote-only) and ordinary commit subjects stay dim.
-func messageCell(st *repoStatus, th config.Theme, dim func(string) string) string {
+func messageCell(st *repoStatus, th style.Theme, dim func(string) string) string {
 	switch {
 	case st.err == nil:
 		return dim(st.head.Subject)
@@ -237,7 +237,7 @@ func messageCell(st *repoStatus, th config.Theme, dim func(string) string) strin
 
 // gutter returns the leading row-kind glyph, mapped onto
 // repository states.
-func gutter(st *repoStatus, icons domain.Icons, th config.Theme) string {
+func gutter(st *repoStatus, icons domain.Icons, th style.Theme) string {
 	switch st.repo.State {
 	case domain.RepoStateOK:
 		if st.err != nil {
@@ -283,7 +283,7 @@ func newSlotWidths(icons domain.Icons) slotWidths {
 // same five slots, absent symbols render as spaces so glyphs align vertically:
 //
 //	1 staged  2 unstaged  3 untracked  4 error/not-cloned  5 upstream
-func statusSlots(st *repoStatus, icons domain.Icons, th config.Theme, widths slotWidths) string {
+func statusSlots(st *repoStatus, icons domain.Icons, th style.Theme, widths slotWidths) string {
 	slot := func(active bool, icon string, style lipgloss.Style) string {
 		if !active {
 			return strings.Repeat(" ", lipgloss.Width(icon))
@@ -346,7 +346,7 @@ type countCells struct {
 func buildCountCells(
 	sts []*repoStatus,
 	icons domain.Icons,
-	th config.Theme,
+	th style.Theme,
 ) countCells {
 	type sub struct{ add, del, mod, unt, ahead, behind string }
 	subs := make([]sub, len(sts))
@@ -455,7 +455,7 @@ func shortAge(t, now time.Time) string {
 
 // renderFooter prints the dim `○ Showing …` summary footer as Diagnostic
 // Output, after a blank separator.
-func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th config.Theme) {
+func renderFooter(w io.Writer, sts []*repoStatus, hidden int, th style.Theme) {
 	repos := len(sts)
 	changed, ahead, errCount := 0, 0, 0
 	for _, st := range sts {

@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/bulk"
-	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/cli/list"
 )
 
@@ -92,7 +92,7 @@ func TestCompletionDepsSettings(t *testing.T) {
 // TestFlagValueCompletion proves pressing Tab after `-o` or `-C` offers the
 // values that flag accepts, filtered by what has been typed. The candidates
 // come from the validators themselves — bulk.Formats, list.Formats,
-// config.ColorChoices — and the drift test below pins that they stay the
+// style.ColorChoices — and the drift test below pins that they stay the
 // values the command accepts.
 //
 //nolint:paralleltest // reads the shared command tree; kept serial with its siblings.
@@ -115,7 +115,7 @@ func TestFlagValueCompletion(t *testing.T) {
 		{"fetch -o is table and json", fetchCmd, "output", "", bulk.Formats()},
 		{"pull -o is table and json", pullCmd, "output", "", bulk.Formats()},
 		{"push -o is table and json", pushCmd, "output", "", bulk.Formats()},
-		{"-C offers the three colors", rootCmd, "color", "", config.ColorChoices()},
+		{"-C offers the three colors", rootCmd, "color", "", style.ColorChoices()},
 		{"-C filters by prefix", rootCmd, "color", "a", []string{"auto", "always"}},
 		{"an unmatched prefix offers nothing", listCmd, "output", "z", nil},
 	} {
@@ -183,7 +183,7 @@ func TestFlagCompletionMatchesValidators(t *testing.T) {
 			t.Fatal("--color offers nothing")
 		}
 		flag := rootCmd.PersistentFlags().Lookup("color")
-		t.Cleanup(func() { _ = flag.Value.Set(config.ColorOptionDefault) })
+		t.Cleanup(func() { _ = flag.Value.Set(style.ColorOptionDefault) })
 		for _, v := range got {
 			if err := flag.Value.Set(v); err != nil {
 				t.Errorf("--color offers %q, which the flag rejects: %v", v, err)

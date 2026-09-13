@@ -1,11 +1,15 @@
-// Package config reads the gits config file and turns its settings into the
-// Theme the CLI renders with.
-package config
+// Package style turns the config's settings into the Theme the CLI renders
+// with, and owns the --color flag.
+package style
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strings"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
 type colorOption int
@@ -70,3 +74,19 @@ func (c *ColorValue) Set(v string) error {
 
 // Type is the flag's value type name, shown in help.
 func (c *ColorValue) Type() string { return "color" }
+
+// ApplyColor honors the never/always color toggle. lipgloss v2 downsamples at
+// the output writer, so force the profile on the global stdout writer and
+// mirror the intent into the environment so per-writer outputs (e.g. the
+// progress reporter's destination) and child processes (git, fzf) honor it
+// too. Any other value, "auto" included, leaves detection alone.
+func ApplyColor(value string) {
+	switch value {
+	case ColorOptionNever.String():
+		_ = os.Setenv("NO_COLOR", "1")
+		lipgloss.Writer.Profile = colorprofile.NoTTY
+	case ColorOptionAlways.String():
+		_ = os.Setenv("CLICOLOR_FORCE", "1")
+		lipgloss.Writer.Profile = colorprofile.TrueColor
+	}
+}

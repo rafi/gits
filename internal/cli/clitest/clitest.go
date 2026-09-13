@@ -23,7 +23,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/git"
 	"github.com/rafi/gits/internal/logging"
 	"github.com/rafi/gits/internal/types"
@@ -61,7 +61,7 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 	deps := &Deps{t: t}
 	logger := logging.New(&deps.log, true)
 	deps.RuntimeCLI = types.RuntimeCLI{
-		Theme:   config.NewThemeDefault(),
+		Theme:   style.NewThemeDefault(),
 		HomeDir: HomeDir,
 		Out:     &deps.out,
 		Err:     &deps.err,

@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/bulk"
 	"github.com/rafi/gits/internal/cli/clitest"
-	"github.com/rafi/gits/internal/cli/config"
 	"github.com/rafi/gits/internal/git"
 )
 
@@ -379,7 +379,7 @@ func TestStatusSlotsWidthWithWideIcons(t *testing.T) {
 
 	icons := domain.Icons{DiffError: "✗✗"} // 2-cell error icon
 	icons.ApplyDefaults()
-	th := config.NewThemeDefault()
+	th := style.NewThemeDefault()
 	sts := []*repoStatus{
 		fixture("a", domain.RepoStateOK, repoStatus{}),
 		fixture("b", domain.RepoStateOK, repoStatus{

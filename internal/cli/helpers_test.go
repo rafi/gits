@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/app/cli/style"
 	"github.com/rafi/gits/internal/types"
 )
 
@@ -84,7 +84,7 @@ func TestAbortOnRepoStateTerminatesItsLine(t *testing.T) {
 	}
 
 	var diag bytes.Buffer
-	err := AbortOnRepoState(&diag, repo, config.NewThemeDefault().Error)
+	err := AbortOnRepoState(&diag, repo, style.NewThemeDefault().Error)
 
 	if RenderErrors(io.Discard, []error{err}, true) == nil {
 		t.Error("an aborted repo should count toward the exit code")
@@ -156,7 +156,7 @@ func TestRepoPathDerivation(t *testing.T) {
 		t.Errorf("RepoRelPath(dir repo) = %q, want short", got)
 	}
 
-	theme := config.NewThemeDefault()
+	theme := style.NewThemeDefault()
 	for _, repo := range project.Repos {
 		want := RepoRelPath(project, repo, home)
 		if got := RepoTitle(repo, project, home, theme).Value(); got != want {
@@ -267,7 +267,7 @@ var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 func TestProjectTitles(t *testing.T) {
 	t.Parallel()
 
-	theme := config.NewThemeDefault()
+	theme := style.NewThemeDefault()
 
 	t.Run("title carries source and description", func(t *testing.T) {
 		t.Parallel()

@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/mitchellh/go-homedir"
 )
 
@@ -314,35 +312,23 @@ func TestFindDefaultPath(t *testing.T) {
 }
 
 // TestNewConfigDefaultsWithoutFile proves runtime defaults do not depend on a
-// config file: without one, bulk commands must still get a real worker count
-// and the -C color toggle must still be honored.
+// config file: without one, bulk commands must still get a real worker count.
 //
-//nolint:paralleltest // restoreEnv rewrites process environment; must stay serial.
+//nolint:paralleltest // t.Setenv rewrites process environment; must stay serial.
 func TestNewConfigDefaultsWithoutFile(t *testing.T) {
 	disableHomedirCache(t)
-
-	origProfile := lipgloss.Writer.Profile
-	origForce, hadForce := os.LookupEnv("CLICOLOR_FORCE")
-	t.Cleanup(func() {
-		lipgloss.Writer.Profile = origProfile
-		restoreEnv(t, "CLICOLOR_FORCE", origForce, hadForce)
-	})
 
 	t.Run("no config file found", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-		os.Unsetenv("CLICOLOR_FORCE")
 
-		f := &File{Color: ColorOptionAlways.String()}
+		f := &File{}
 		if err := NewConfigFromFile("", f); err != nil {
 			t.Fatalf("NewConfigFromFile: %v", err)
 		}
 		want := max(runtime.NumCPU(), 2)
 		if f.Settings.WorkerCount != want {
 			t.Errorf("workerCount = %d, want %d", f.Settings.WorkerCount, want)
-		}
-		if os.Getenv("CLICOLOR_FORCE") != "1" {
-			t.Errorf("CLICOLOR_FORCE = %q, want 1", os.Getenv("CLICOLOR_FORCE"))
 		}
 	})
 
@@ -355,48 +341,6 @@ func TestNewConfigDefaultsWithoutFile(t *testing.T) {
 		want := max(runtime.NumCPU(), 2)
 		if f.Settings.WorkerCount != want {
 			t.Errorf("workerCount = %d, want %d", f.Settings.WorkerCount, want)
-		}
-	})
-}
-
-//nolint:paralleltest // restoreEnv rewrites process environment; must stay serial.
-func TestLoadConfigColorToggle(t *testing.T) {
-	origProfile := lipgloss.Writer.Profile
-	origNoColor, hadNoColor := os.LookupEnv("NO_COLOR")
-	origForce, hadForce := os.LookupEnv("CLICOLOR_FORCE")
-	t.Cleanup(func() {
-		lipgloss.Writer.Profile = origProfile
-		restoreEnv(t, "NO_COLOR", origNoColor, hadNoColor)
-		restoreEnv(t, "CLICOLOR_FORCE", origForce, hadForce)
-	})
-
-	t.Run("never forces NoTTY", func(t *testing.T) {
-		os.Unsetenv("NO_COLOR")
-		path := writeTemp(t, "c.yaml", "p:\n  desc: x\n")
-		f := &File{Color: ColorOptionNever.String()}
-		if err := NewConfigFromFile(path, f); err != nil {
-			t.Fatalf("NewConfigFromFile: %v", err)
-		}
-		if lipgloss.Writer.Profile != colorprofile.NoTTY {
-			t.Errorf("profile = %v, want NoTTY", lipgloss.Writer.Profile)
-		}
-		if os.Getenv("NO_COLOR") != "1" {
-			t.Errorf("NO_COLOR = %q, want 1", os.Getenv("NO_COLOR"))
-		}
-	})
-
-	t.Run("always forces TrueColor", func(t *testing.T) {
-		os.Unsetenv("CLICOLOR_FORCE")
-		path := writeTemp(t, "c.yaml", "p:\n  desc: x\n")
-		f := &File{Color: ColorOptionAlways.String()}
-		if err := NewConfigFromFile(path, f); err != nil {
-			t.Fatalf("NewConfigFromFile: %v", err)
-		}
-		if lipgloss.Writer.Profile != colorprofile.TrueColor {
-			t.Errorf("profile = %v, want TrueColor", lipgloss.Writer.Profile)
-		}
-		if os.Getenv("CLICOLOR_FORCE") != "1" {
-			t.Errorf("CLICOLOR_FORCE = %q, want 1", os.Getenv("CLICOLOR_FORCE"))
 		}
 	})
 }
@@ -446,16 +390,6 @@ func disableHomedirCache(t *testing.T) {
 		//nolint:reassign // restore the package default this test changed.
 		homedir.DisableCache = false
 	})
-}
-
-func restoreEnv(t *testing.T, key, val string, had bool) {
-	t.Helper()
-	if had {
-		//nolint:usetesting // t.Setenv registers its own cleanup and cannot run from inside one.
-		os.Setenv(key, val)
-	} else {
-		os.Unsetenv(key)
-	}
 }
 
 // TestLoadConfigUnknownKeysWarn covers the load-time half of `gits doctor`:

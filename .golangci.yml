@@ -424,11 +424,11 @@ linters:
       # streams are named, and `gits --version` prints before one exists.
       - linters: [forbidigo]
         path: ^cmd/gits/
-      # The config loader reports a load failure from cobra's initializer,
-      # before a runtime exists, and sets the colour profile on the global
-      # styled writer for the same reason.
+      # The --color toggle sets the colour profile on the global styled
+      # writer: it is a process-wide setting applied at startup, before any
+      # runtime or per-command writer exists.
       - linters: [forbidigo]
-        path: ^internal/cli/config/file\.go$
+        path: ^internal/app/cli/style/color\.go$
       # A test may name a process stream — to pin what the loader does to the
       # global styled writer, or to hand a subprocess a real terminal. It may
       # not print: a test that wants output asserts on a buffer. Matched on

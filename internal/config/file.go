@@ -1,3 +1,5 @@
+// Package config reads the gits config file and validates its contents.
+// It knows nothing about how anything is rendered.
 package config
 
 import (
@@ -7,8 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -51,8 +51,6 @@ type deprecations struct {
 
 // NewConfigFromFile reads in config file and ENV variables if set.
 func NewConfigFromFile(filePath string, cfg *File) error {
-	// Runtime defaults and the color toggle must apply even when no config
-	// file exists or loading fails part-way.
 	defer cfg.applyDefaults()
 
 	if filePath == "" {
@@ -72,25 +70,14 @@ func NewConfigFromFile(filePath string, cfg *File) error {
 	return nil
 }
 
-// applyDefaults fills runtime defaults and applies the never/always color
-// toggle. lipgloss v2 downsamples at the output writer, so force the profile
-// on the global stdout writer and mirror the intent into the environment so
-// per-writer outputs (e.g. the progress reporter's destination) and child
-// processes (git, fzf) honor it too.
+// applyDefaults fills runtime defaults, so they hold even when no config file
+// exists or loading fails part-way. The --color value is carried but not acted
+// on here: forcing a color profile is the view's job.
 func (f *File) applyDefaults() {
 	if f.Settings.WorkerCount == 0 {
 		f.Settings.WorkerCount = max(runtime.NumCPU(), minWorkerCount)
 	}
 	f.Settings.Icons.ApplyDefaults()
-
-	switch f.Color {
-	case ColorOptionNever.String():
-		_ = os.Setenv("NO_COLOR", "1")
-		lipgloss.Writer.Profile = colorprofile.NoTTY
-	case ColorOptionAlways.String():
-		_ = os.Setenv("CLICOLOR_FORCE", "1")
-		lipgloss.Writer.Profile = colorprofile.TrueColor
-	}
 }
 
 // Convert handles deprecated config formats.

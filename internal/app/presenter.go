@@ -6,7 +6,7 @@ package app
 import (
 	"io"
 
-	"github.com/rafi/gits/internal/cli/config"
+	"github.com/rafi/gits/internal/app/cli/style"
 )
 
 // Presenter is what a view needs to render: where output goes, and how it
@@ -25,6 +25,6 @@ type Presenter struct {
 	// no-op reporter and no ANSI reaches the assertions.
 	Err io.Writer
 
-	Theme   config.Theme
+	Theme   style.Theme
 	HomeDir string
 }
