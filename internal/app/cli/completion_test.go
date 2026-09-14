@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/app/cli/list"
-	"github.com/rafi/gits/internal/app/cli/output"
-	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/cli/commands/list"
+	"github.com/rafi/gits/internal/app/cli/render/output"
+	"github.com/rafi/gits/internal/app/cli/render/style"
 )
 
 // TestCompletionNeverReachesProvider proves pressing Tab on a remote,

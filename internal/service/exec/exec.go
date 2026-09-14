@@ -24,7 +24,7 @@ import (
 	osexec "os/exec"
 	"strings"
 
-	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // ErrNoCommand is returned when no command follows the `--` separator.
@@ -40,7 +40,7 @@ type Report struct {
 // error — reported on its line and in the error epilogue — with whatever the
 // child said kept alongside the exit status, since a bare "exit status 1"
 // names nothing the user can act on.
-func Repo(ctx context.Context, command []string, repo run.Repo) (Report, error) {
+func Repo(ctx context.Context, command []string, repo command.Repo) (Report, error) {
 	// gosec G204: the argv is the user's own command, typed on their own
 	// command line. Running it is the entire feature, and it is run as argv
 	// rather than through a shell precisely so that nothing else — a path, a

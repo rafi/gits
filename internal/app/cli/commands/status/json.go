@@ -1,0 +1,98 @@
+package status
+
+import (
+	"io"
+
+	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/runtime/command"
+	"github.com/rafi/gits/internal/runtime/json"
+	"github.com/rafi/gits/internal/service/status"
+)
+
+// renderJSON writes the run's results as the envelope `list -o json` shares,
+// with each probed repository's working-tree data nested under it. The
+// document's tree is the one the run visited — a whole project, or one
+// repository under its project.
+func renderJSON(w io.Writer, res command.Results[*status.Report], opts Options) error {
+	env := json.Envelope{}
+	if res.Project.Name == "" {
+		// The named project was skipped: nothing ran, nothing to document.
+		return json.Write(w, env)
+	}
+	if node, keep := buildNode(res.Project, newRows(res), opts); keep {
+		env[res.Project.Name] = node
+	}
+	return json.Write(w, env)
+}
+
+// buildNode converts one project subtree, returning the node and whether it
+// survived the active filters. A filtered run drops nodes left with nothing
+// under them, as the table drops a project whose every row was hidden.
+//
+// One divergence the tree forces: a project with no surviving repositories of
+// its own stays when a sub-project survived, because that sub-project has
+// nowhere else to hang. The table has no such constraint — it judges each
+// project alone and the emptied parent's table just goes. The node that stays
+// omits `repos` entirely, as any project with none does.
+func buildNode(p domain.Project, index rows, opts Options) (json.Project, bool) {
+	node := json.NewProject(p)
+	sts, _ := index.visible(p, opts)
+	for _, st := range sts {
+		node.Repos = append(node.Repos, buildRepo(st))
+	}
+	for _, sub := range p.SubProjects {
+		if child, keep := buildNode(sub, index, opts); keep {
+			node.SubProjects = append(node.SubProjects, child)
+		}
+	}
+	if !opts.filtered() {
+		return node, true
+	}
+	return node, len(node.Repos) > 0 || len(node.SubProjects) > 0
+}
+
+// buildRepo converts one repository's identity, state and — where git was
+// actually consulted — its working tree.
+func buildRepo(st *status.Report) json.Repository {
+	repo := json.NewRepository(st.Repo.Repository)
+	if st.Repo.State != domain.RepoStateOK {
+		// Nothing was probed: the state and its reason are the whole story.
+		return repo
+	}
+	if st.Err != nil {
+		repo.Status = json.FailedStatus(st.Err)
+		return repo
+	}
+
+	status := &json.Status{
+		Branch:    st.Branch,
+		Staged:    st.Staged,
+		Unstaged:  st.Unstaged,
+		Untracked: st.Untracked,
+		Ahead:     st.Ahead,
+		Behind:    st.Behind,
+		Compared:  st.Compared,
+		Version:   st.Version,
+	}
+	// The object's absence is what says no Upstream is configured, so a branch
+	// that was never pushed is structurally distinct from one whose Upstream
+	// went away.
+	if st.Upstream != "" {
+		status.Upstream = &json.Upstream{
+			Name:    st.Upstream,
+			Tracked: !st.GoneUpstream(),
+		}
+	}
+	if st.Stat != nil {
+		status.Head = &json.Head{Added: st.Stat.Added, Deleted: st.Stat.Deleted}
+	}
+	if st.Head.Hash != "" {
+		status.Commit = &json.Commit{
+			Hash:    st.Head.Hash,
+			Subject: st.Head.Subject,
+			Time:    st.Head.Time,
+		}
+	}
+	repo.Status = status
+	return repo
+}

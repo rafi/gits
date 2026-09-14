@@ -9,8 +9,8 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/format"
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/run"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // fakeGit stubs the status-relevant git methods. The probe only reads, and
@@ -53,9 +53,9 @@ func (f fakeGit) HeadInfo(context.Context, string) (git.Head, error) {
 
 // statusDeps builds the runtime the probe reads from: it writes no output,
 // so only the git client matters here.
-func statusDeps(t *testing.T, g git.Client) service.Runtime {
+func statusDeps(t *testing.T, g git.Client) coreruntime.Runtime {
 	t.Helper()
-	return service.Runtime{Ctx: t.Context(), Git: g}
+	return coreruntime.Runtime{Ctx: t.Context(), Git: g}
 }
 
 // probe drives the probe for one repository, assembling the bundled argument
@@ -63,13 +63,13 @@ func statusDeps(t *testing.T, g git.Client) service.Runtime {
 // path.
 func probe(
 	t *testing.T,
-	rt service.Runtime,
+	rt coreruntime.Runtime,
 	p Probe,
 	project domain.Project,
 	repo domain.Repository,
 ) (*Report, error) {
 	t.Helper()
-	return p.Repo(t.Context(), run.Repo{
+	return p.Repo(t.Context(), command.Repo{
 		Repository: repo,
 		Project:    project,
 		Path:       format.RepoRelPath(project, repo, rt.HomeDir),

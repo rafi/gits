@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/service"
+	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
 // Every test drives Check — the real entry point — with a nil git client,
@@ -16,12 +16,12 @@ import (
 // into a panic. Nothing here writes output either; the checks run headless.
 
 // runtime builds the business runtime the checks read from.
-func runtime(t *testing.T) service.Runtime {
+func runtime(t *testing.T) coreruntime.Runtime {
 	t.Helper()
 
 	settings := domain.Settings{WorkerCount: 1}
 	settings.Icons.ApplyDefaults()
-	return service.Runtime{
+	return coreruntime.Runtime{
 		Ctx:      t.Context(),
 		Settings: settings,
 		Projects: domain.ProjectListKeyed{},
@@ -30,7 +30,7 @@ func runtime(t *testing.T) service.Runtime {
 
 // findings returns the findings for the given subject, so a test asserts on
 // what was reported rather than on the whole rendered report.
-func findings(t *testing.T, rt service.Runtime, subject string) []Finding {
+func findings(t *testing.T, rt coreruntime.Runtime, subject string) []Finding {
 	t.Helper()
 
 	var out []Finding

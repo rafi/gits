@@ -6,8 +6,8 @@ import (
 	"context"
 
 	"github.com/rafi/gits/internal/format"
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/run"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // Report is what fetching one repository produced.
@@ -22,7 +22,7 @@ type Report struct {
 }
 
 // Repo fetches one repository.
-func Repo(ctx context.Context, repo run.Repo, rt service.Runtime) (Report, error) {
+func Repo(ctx context.Context, repo command.Repo, rt coreruntime.Runtime) (Report, error) {
 	out, err := rt.Git.Fetch(ctx, repo.AbsPath)
 	if err != nil {
 		return Report{}, err

@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/cli/render/style"
 )
 
 // TestWriteWarningRendersProse proves a downgraded warning reaches Diagnostic

@@ -7,8 +7,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/run"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // Report is what pulling one repository produced.
@@ -23,8 +23,8 @@ type Report struct {
 
 // Repo pulls one repository. A branch with nowhere to pull from is a
 // documented pass-over, returned as a warning so it shows on the
-// repository's line without failing the run.
-func Repo(ctx context.Context, repo run.Repo, rt service.Runtime) (Report, error) {
+// repository's line without failing the command.
+func Repo(ctx context.Context, repo command.Repo, rt coreruntime.Runtime) (Report, error) {
 	head, err := rt.Git.HeadUpstream(ctx, repo.AbsPath)
 	if err != nil {
 		return Report{}, err

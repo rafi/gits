@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/catalog"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/projects"
 )
 
-func completionDeps() service.Runtime {
+func completionDeps() coreruntime.Runtime {
 	// Shell completion discards any setting warnings: pressing Tab must stay
 	// silent, and a bad duration has already fallen back to its default.
 	deps, _ := newRuntime(context.Background())
@@ -76,7 +76,7 @@ func completeProjectRepo(cmd *cobra.Command, args []string, toComplete string) (
 	// Load cache-only: pressing Tab must never trigger a provider network
 	// fetch or a tokenCommand passphrase prompt. A remote project with a cold
 	// cache simply offers no repository candidates.
-	proj, err := catalog.LoadOne(args[0], deps, catalog.CacheOnly())
+	proj, err := projects.LoadOne(args[0], deps, projects.CacheOnly())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -106,7 +106,7 @@ func completeProjectRepoBranch(cmd *cobra.Command, args []string, toComplete str
 	deps := completionDeps()
 
 	// Get project (cache-only, so Tab never fetches or prompts — see above).
-	proj, err := catalog.LoadOne(args[0], deps, catalog.CacheOnly())
+	proj, err := projects.LoadOne(args[0], deps, projects.CacheOnly())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

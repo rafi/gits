@@ -180,12 +180,13 @@ linters:
           deny:
             - pkg: log$
               desc: Use log/slog instead, see https://go.dev/blog/slog
-        # The layer rule: app → service → infra → domain. Each layer may only
+        # The layer rule: app → runtime/service → infra → domain. Each layer may only
         # depend inwards, so the same business logic can serve a second view
         # without dragging the CLI along. See docs/adr/0007.
         "service layer":
           files:
             - "**/internal/service/**"
+            - "**/internal/runtime/**"
           deny:
             - pkg: github.com/rafi/gits/internal/app
               desc: the service layer may not import a view; return a report and let the view render it
@@ -201,6 +202,8 @@ linters:
               desc: infrastructure may not import a view
             - pkg: github.com/rafi/gits/internal/service
               desc: infrastructure may not import business logic; it is called by it
+            - pkg: github.com/rafi/gits/internal/runtime
+              desc: infrastructure may not import runtime orchestration; it is called by it
         "domain layer":
           files:
             - "**/domain/**"
@@ -450,12 +453,12 @@ linters:
       # The command wiring constructs the runtime, so it is where the process
       # streams are named, and `gits --version` prints before one exists.
       - linters: [forbidigo]
-        path: ^internal/app/cli/(root|all|completion)\.go$
+        path: ^internal/app/cli/(cli|registry|commands|completion)\.go$
       # The --color toggle sets the colour profile on the global styled
       # writer: it is a process-wide setting applied at startup, before any
       # runtime or per-command writer exists.
       - linters: [forbidigo]
-        path: ^internal/app/cli/style/color\.go$
+        path: ^internal/app/cli/render/style/color\.go$
       # A test may name a process stream — to pin what the loader does to the
       # global styled writer, or to hand a subprocess a real terminal. It may
       # not print: a test that wants output asserts on a buffer. Matched on

@@ -8,7 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service"
+	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
 // The service is the half of `gits checkout` that a test can reach without a
@@ -46,9 +46,9 @@ func (c *fakeGit) Checkout(_ context.Context, _, branch string) error {
 	return c.checkoutErr
 }
 
-func runtime(t *testing.T, gitClient git.Client) service.Runtime {
+func runtime(t *testing.T, gitClient git.Client) coreruntime.Runtime {
 	t.Helper()
-	return service.Runtime{Ctx: t.Context(), Git: gitClient}
+	return coreruntime.Runtime{Ctx: t.Context(), Git: gitClient}
 }
 
 var repo = domain.Repository{Name: "api", AbsPath: "/src/api"}
@@ -74,7 +74,7 @@ func TestBranchesListsAndReportsCurrent(t *testing.T) {
 
 // TestBranchesErrors covers the three ways listing fails. Each returns rather
 // than exiting: a repository that cannot be read fails alone, leaving the rest
-// of a traversal to run.
+// of a traversal to command.
 func TestBranchesErrors(t *testing.T) {
 	t.Parallel()
 

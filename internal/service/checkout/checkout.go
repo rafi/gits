@@ -9,12 +9,12 @@ import (
 	"fmt"
 
 	"github.com/rafi/gits/domain"
-	"github.com/rafi/gits/internal/service"
+	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
 // Branches returns the branches available in a repository, and the one
 // currently checked out.
-func Branches(ctx context.Context, repo domain.Repository, rt service.Runtime) (
+func Branches(ctx context.Context, repo domain.Repository, rt coreruntime.Runtime) (
 	[]string, string, error,
 ) {
 	current, err := rt.Git.CurrentBranch(ctx, repo.AbsPath)
@@ -37,7 +37,7 @@ func Branches(ctx context.Context, repo domain.Repository, rt service.Runtime) (
 // Switch checks a branch out. A no-op when the branch is already the one
 // checked out, so a caller that did not compare cannot produce a spurious
 // checkout.
-func Switch(ctx context.Context, repo domain.Repository, want string, rt service.Runtime) error {
+func Switch(ctx context.Context, repo domain.Repository, want string, rt coreruntime.Runtime) error {
 	current, err := rt.Git.CurrentBranch(ctx, repo.AbsPath)
 	if err != nil {
 		return fmt.Errorf("unable to get branch: %w", err)

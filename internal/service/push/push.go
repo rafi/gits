@@ -9,8 +9,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/run"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // Report is what pushing one repository produced.
@@ -26,9 +26,9 @@ type Report struct {
 
 // Repo pushes one repository. A branch with nowhere to push to is a
 // documented pass-over, returned as a warning so it shows on the
-// repository's line without failing the run.
+// repository's line without failing the command.
 func Repo(
-	ctx context.Context, repo run.Repo, opts git.PushOptions, rt service.Runtime,
+	ctx context.Context, repo command.Repo, opts git.PushOptions, rt coreruntime.Runtime,
 ) (Report, error) {
 	// A ref-selecting flag already says which refs to push, so the upstream
 	// lookup — and the skip hanging off it — is suspended and git resolves
@@ -55,7 +55,7 @@ func Repo(
 		// Pushing a branch with no Upstream is undefined, and this command is
 		// documented to pass over it — so it is wrapped here as a warning,
 		// which the engine leaves alone: it shows on the line without failing
-		// the run.
+		// the command.
 		return Report{}, domain.NewWarning("skipped: %s", git.ErrNoUpstream)
 	case head.Gone:
 		// Pushing here would succeed and re-create the branch someone deleted

@@ -25,12 +25,12 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/cache"
-	"github.com/rafi/gits/internal/service"
+	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
 // Check runs every diagnostic and returns the findings in the order they were
 // made, which groups them by the thing inspected.
-func Check(rt service.Runtime) []Finding {
+func Check(rt coreruntime.Runtime) []Finding {
 	var findings []Finding
 	add := func(level Level, scope Scope, subject, format string, args ...any) {
 		findings = append(findings, Finding{
@@ -56,7 +56,7 @@ type addFunc func(level Level, scope Scope, subject, format string, args ...any)
 // loading it — unknown keys among them. Those are already surfaced on every
 // run; repeating them here is deliberate, since this is what someone asks
 // when they want everything at once.
-func checkConfig(rt service.Runtime, add addFunc) {
+func checkConfig(rt coreruntime.Runtime, add addFunc) {
 	if rt.ConfigPath == "" {
 		add(LevelWarning, ScopeConfig, "config",
 			"no config file found; gits is running with an empty configuration")
@@ -71,7 +71,7 @@ func checkConfig(rt service.Runtime, add addFunc) {
 
 // checkProjects inspects each configured project without loading any of them:
 // a Provider Source is never contacted, so this stays offline and prompt-free.
-func checkProjects(rt service.Runtime, add addFunc) {
+func checkProjects(rt coreruntime.Runtime, add addFunc) {
 	if len(rt.Projects) == 0 {
 		add(LevelWarning, ScopeConfig, "projects", "no projects are configured")
 		return
@@ -157,7 +157,7 @@ const versionProbeTimeout = 5 * time.Second
 // checkBinaries reports the external programs gits shells out to. git is
 // required by every command that touches a repository; the finder is needed
 // only to pick something interactively, so its absence is a warning.
-func checkBinaries(rt service.Runtime, add addFunc) {
+func checkBinaries(rt coreruntime.Runtime, add addFunc) {
 	if path, err := exec.LookPath("git"); err != nil {
 		add(LevelError, ScopeEnvironment, "git",
 			"not found on PATH; every repository operation will fail")
@@ -209,7 +209,7 @@ func binaryVersion(ctx context.Context, name string, args ...string) string {
 // checkCache reports where cache entries live and how each one stands against
 // cacheTTL — the answer to "why is gits still showing a repository I deleted
 // last week", which is otherwise invisible.
-func checkCache(rt service.Runtime, add addFunc) {
+func checkCache(rt coreruntime.Runtime, add addFunc) {
 	if rt.Settings.Cache != nil && !*rt.Settings.Cache {
 		add(LevelInfo, ScopeEnvironment, "cache", "disabled by `settings.cache: false`")
 		return

@@ -9,8 +9,8 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/format"
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/run"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // Report is what cloning one repository produced.
@@ -40,8 +40,8 @@ func Accepts() []domain.RepoState {
 
 // Repo clones one repository. A repository already cloned, or one with
 // nowhere to clone into, is a documented pass-over: a warning that shows on
-// the repository's line without failing the run.
-func Repo(ctx context.Context, repo run.Repo, rt service.Runtime) (Report, error) {
+// the repository's line without failing the command.
+func Repo(ctx context.Context, repo command.Repo, rt coreruntime.Runtime) (Report, error) {
 	// A remote-only repository is provider-backed with no local home, so
 	// there is nothing to clone into. Pass over it with a warning that names
 	// the config keys that would give it one, rather than handing git an

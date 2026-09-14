@@ -10,7 +10,7 @@ import (
 // TestConfigLoadErrorGatesCommands proves a captured config parse/read failure
 // aborts before any command runs: the root's PersistentPreRunE returns it, so
 // the process exits non-zero instead of running against an empty config and
-// misreporting the reason. A nil errConfigLoad lets commands run.
+// misreporting the reason. A nil errConfigLoad lets commands command.
 //
 //nolint:paralleltest // mutates the package-level errConfigLoad; must stay serial.
 func TestConfigLoadErrorGatesCommands(t *testing.T) {

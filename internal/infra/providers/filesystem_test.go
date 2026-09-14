@@ -32,7 +32,7 @@ func TestNewFilesystemRepo(t *testing.T) {
 
 	// An empty Repo Src is left empty rather than resolved from the clone's
 	// own remote: reading it costs a git subprocess, deferred to the commands
-	// that display Src (see catalog.FillSources). No git client is consulted here.
+	// that display Src (see projects.FillSources). No git client is consulted here.
 	t.Run("empty src stays empty, no git subprocess", func(t *testing.T) {
 		t.Parallel()
 

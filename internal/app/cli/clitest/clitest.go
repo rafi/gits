@@ -24,7 +24,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/app/cli/style"
+	"github.com/rafi/gits/internal/app/cli/render/style"
 	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/logging"
 )

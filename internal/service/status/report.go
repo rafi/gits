@@ -4,7 +4,7 @@ package status
 
 import (
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service/run"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // Report is one repository's probed state, or the error that stood in for it.
@@ -15,7 +15,7 @@ type Report struct {
 
 	// Repo is the repository the probe ran on, with the display path the
 	// engine derived for it.
-	Repo run.Repo
+	Repo command.Repo
 	// Stat is the uncommitted line diff vs HEAD; nil unless the probe was
 	// asked for it and git answered.
 	Stat *git.DiffStat

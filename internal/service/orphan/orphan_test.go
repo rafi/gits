@@ -8,7 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/git"
-	"github.com/rafi/gits/internal/service"
+	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
 // fakeGit answers the one question a work-tree scan asks of git. It embeds a
@@ -46,7 +46,7 @@ func TestInWorkTree(t *testing.T) {
 		"vendor/embedded/sub",  // inside the embedded repo: not descended
 	)
 
-	repos, err := InWorkTree(root, service.Runtime{Ctx: t.Context(), Git: fakeGit{}})
+	repos, err := InWorkTree(root, coreruntime.Runtime{Ctx: t.Context(), Git: fakeGit{}})
 	if err != nil {
 		t.Fatalf("InWorkTree: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestInWorkTree(t *testing.T) {
 func TestInProjectNeedsPath(t *testing.T) {
 	t.Parallel()
 
-	_, err := InProject(domain.Project{Name: "acme"}, service.Runtime{Ctx: t.Context(), Git: fakeGit{}})
+	_, err := InProject(domain.Project{Name: "acme"}, coreruntime.Runtime{Ctx: t.Context(), Git: fakeGit{}})
 	if err == nil {
 		t.Fatal("InProject error = nil, want a pathless project to be refused")
 	}

@@ -3,8 +3,8 @@ package status
 import (
 	"context"
 
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/run"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/command"
 )
 
 // Probe is what the status probe is asked to measure. Stat costs an extra
@@ -17,8 +17,8 @@ type Probe struct {
 // concurrently and writes no output itself.
 func (p Probe) Repo(
 	ctx context.Context,
-	repo run.Repo,
-	rt service.Runtime,
+	repo command.Repo,
+	rt coreruntime.Runtime,
 ) (*Report, error) {
 	rep := &Report{Repo: repo}
 

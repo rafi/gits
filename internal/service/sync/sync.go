@@ -11,8 +11,8 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/providers"
-	"github.com/rafi/gits/internal/service"
-	"github.com/rafi/gits/internal/service/catalog"
+	coreruntime "github.com/rafi/gits/internal/runtime"
+	"github.com/rafi/gits/internal/runtime/projects"
 )
 
 // Result is what refreshing one Project produced: where its repositories
@@ -36,7 +36,7 @@ type Result struct {
 //
 // A name matching nothing is a warning rather than a failure, and it is
 // reported here — before any cache is dropped — so a typo costs nothing.
-func Targets(names []string, rt service.Runtime) ([]string, error) {
+func Targets(names []string, rt coreruntime.Runtime) ([]string, error) {
 	targets := []string{}
 	for _, name := range rt.Projects.SortedNames() {
 		if len(names) > 0 && !slices.Contains(names, name) {
@@ -57,7 +57,7 @@ func Targets(names []string, rt service.Runtime) ([]string, error) {
 
 // One drops the Project's cache and reloads it, which repopulates that cache
 // from its Provider Source.
-func One(name string, rt service.Runtime) (Result, error) {
+func One(name string, rt coreruntime.Runtime) (Result, error) {
 	var result Result
 	project := rt.Projects[name]
 	if providers.HasCache(project.Source) {
@@ -67,7 +67,7 @@ func One(name string, rt service.Runtime) (Result, error) {
 		result.Flushed = true
 	}
 
-	loaded, err := catalog.LoadOne(name, rt)
+	loaded, err := projects.LoadOne(name, rt)
 	if err != nil {
 		return result, err
 	}

@@ -1,0 +1,47 @@
+// Package runtime is the heart of command execution: it loads and resolves
+// projects, traverses repositories, runs bulk commands, and defines JSON output.
+// Runtime holds the dependencies every operation is handed, independent of how
+// the user reached it.
+package runtime
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/rafi/gits/domain"
+	"github.com/rafi/gits/internal/infra/cache"
+	"github.com/rafi/gits/internal/infra/git"
+)
+
+// Runtime is the runtime dependencies for the application.
+type Runtime struct {
+	// Ctx is the SIGINT-aware root context. Local git operations and the
+	// GitHub and GitLab remote fetches derive from it, so Ctrl-C cancels that
+	// in-flight work. Bitbucket repository listing is the exception: its SDK
+	// accepts no context and cannot be interrupted.
+	Ctx        context.Context
+	Projects   domain.ProjectListKeyed
+	Cache      cache.Cacher
+	ConfigPath string
+	Git        git.Client
+	Settings   domain.Settings
+
+	// HomeDir is the user's home directory, used to shorten displayed paths
+	// to ~. It is an environment fact rather than a view choice, so every
+	// client renders the same path for the same repository.
+	HomeDir string
+
+	// ConfigWarnings are the non-fatal notices gathered while loading the
+	// config file — an unknown key, a deprecated one, a setting that fell
+	// back to its default. Every command already shows them once on
+	// Diagnostic Output; they are carried here so `gits doctor` can report
+	// them as findings rather than re-reading and re-parsing the file to
+	// rediscover what the loader already knows.
+	ConfigWarnings []string
+
+	// Log is the debug tracer: page fetches, cache hits and misses, git's
+	// stderr. It is never how a user is told something — that is Diagnostic
+	// Output on Err, as prose. Constructed once by the command wiring and passed here
+	// so no package reaches for a global logger.
+	Log *slog.Logger
+}

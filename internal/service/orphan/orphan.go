@@ -15,13 +15,13 @@ import (
 	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/infra/providers"
 	"github.com/rafi/gits/internal/logging"
-	"github.com/rafi/gits/internal/service"
+	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
 // InProject scans a Project's path for repositories its config does not
 // declare. A Project with no path cannot be scanned: every repository under
 // it has an absolute path of its own, so there is no directory to walk.
-func InProject(project domain.Project, rt service.Runtime) ([]domain.Repository, error) {
+func InProject(project domain.Project, rt coreruntime.Runtime) ([]domain.Repository, error) {
 	if project.AbsPath == "" {
 		return nil, fmt.Errorf(
 			"project %q has no path, so every repository has an absolute path, aborting",
@@ -53,7 +53,7 @@ func InProject(project domain.Project, rt service.Runtime) ([]domain.Repository,
 // InWorkTree scans one repository's work tree for git repositories nested
 // inside it. Detection is by `.git` presence rather than by asking git:
 // inside a work tree every subdirectory reports --is-inside-work-tree.
-func InWorkTree(root string, rt service.Runtime) ([]domain.Repository, error) {
+func InWorkTree(root string, rt coreruntime.Runtime) ([]domain.Repository, error) {
 	logger := logging.Or(rt.Log)
 	found := []domain.Repository{}
 	err := godirwalk.Walk(root, &godirwalk.Options{

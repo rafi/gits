@@ -26,7 +26,7 @@ func newFilesystemProvider(opts Options) *filesystemProvider {
 // NewFilesystemRepo describes the repository cloned at path, with the Repo Src
 // it was handed. When that is empty the source is left unresolved: reading it
 // from the clone's own remote costs a git subprocess, which only the commands
-// that display Repo Src should pay (see catalog.FillSources). Callers that show
+// that display Repo Src should pay (see projects.FillSources). Callers that show
 // the source immediately — `orphan` — resolve it themselves.
 func NewFilesystemRepo(path, remote string) (domain.Repository, error) {
 	repo := domain.Repository{
