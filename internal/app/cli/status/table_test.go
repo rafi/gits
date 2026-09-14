@@ -143,6 +143,44 @@ func TestRenderTablesFooter(t *testing.T) {
 	}
 }
 
+// TestRenderTablesSingleRepoHasNoFooter: one visible row summarizes itself, so
+// the `○ Showing 1 repo` footer would only restate the table.
+func TestRenderTablesSingleRepoHasNoFooter(t *testing.T) {
+	t.Parallel()
+
+	st := fixtureStatuses()[0]
+	deps := clitest.New(t, nil)
+	renderTables(resultsOf(project("acme", st), st), Options{}, deps.RuntimeCLI)
+
+	if got := deps.Result(); !strings.Contains(got, "api") {
+		t.Errorf("Result Output = %q, want the repository's row", got)
+	}
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want no footer for a single repository", got)
+	}
+}
+
+// TestRenderTablesSingleRepoWithHiddenKeepsFooter: a filtered view still needs
+// the footer, because the hidden count is the only thing that reports the rows
+// the filter removed.
+func TestRenderTablesSingleRepoWithHiddenKeepsFooter(t *testing.T) {
+	t.Parallel()
+
+	sts := fixtureStatuses()
+	clean := fixture("tidy", domain.RepoStateOK, status.Report{Branch: "main"})
+	root := project("acme", sts[0], clean)
+
+	deps := clitest.New(t, nil)
+	renderTables(resultsOf(root, sts[0], clean), Options{Dirty: true}, deps.RuntimeCLI)
+
+	footer := deps.Diagnostic()
+	for _, want := range []string{"○ Showing 1 repo", "1 hidden"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer %q missing %q", footer, want)
+		}
+	}
+}
+
 // TestRenderTablesSeparatesAndSkips: the tables of two projects are separated
 // by a blank line, a project with no rows prints nothing, and a repository
 // the run never started leaves no row at all.

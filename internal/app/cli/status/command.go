@@ -3,11 +3,18 @@
 package status
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/mitchellh/go-homedir"
+
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/output"
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/app/cli/progress"
+	"github.com/rafi/gits/internal/service/catalog"
 	"github.com/rafi/gits/internal/service/run"
 	"github.com/rafi/gits/internal/service/status"
 )
@@ -87,7 +94,13 @@ func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI)
 
 	// What the command runs on is settled — prompting included — before the
 	// engine is handed anything, so nothing it does can fail over an argument.
-	target, err := pick.Target(args, deps)
+	target, ok, err := pathTarget(args, deps)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		target, err = pick.Target(args, deps)
+	}
 	if err != nil {
 		return err
 	}
@@ -112,4 +125,61 @@ func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI)
 	}
 	renderTables(res, opts, deps)
 	return output.Epilogue(res, deps)
+}
+
+// pathTarget returns a live filesystem target for `gits status <path>`. Status
+// is intentionally usable without a config entry: a path names the repository at
+// that directory, or every repository underneath it; a file path names its
+// containing repository. Bare words still prefer configured projects, so an
+// existing directory does not shadow a project of the same name.
+func pathTarget(args []string, deps app.RuntimeCLI) (run.Target, bool, error) {
+	if len(args) != 1 {
+		return run.Target{}, false, nil
+	}
+	_, configuredProject := deps.Projects[args[0]]
+	if !isPath(args[0]) && configuredProject {
+		return run.Target{}, false, nil
+	}
+	path, err := homedir.Expand(args[0])
+	if err != nil {
+		return run.Target{}, true, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if isPath(args[0]) {
+			return run.Target{}, true, err
+		}
+		return run.Target{}, false, nil
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return run.Target{}, true, err
+	}
+	if !info.IsDir() {
+		path = containingRepo(path, deps)
+	}
+	project, err := catalog.LoadOne(path, deps.Runtime)
+	if err != nil {
+		return run.Target{}, true, err
+	}
+	return run.Target{Project: project}, true, nil
+}
+
+func isPath(arg string) bool {
+	return arg == "." || strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") ||
+		strings.HasPrefix(arg, "~/") || filepath.IsAbs(arg)
+}
+
+func containingRepo(path string, deps app.RuntimeCLI) string {
+	dir := filepath.Dir(path)
+	for {
+		if deps.Git.IsRepo(deps.Ctx, dir) {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Dir(path)
+		}
+		dir = parent
+	}
 }

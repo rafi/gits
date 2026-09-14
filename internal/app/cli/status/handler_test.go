@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -62,6 +63,16 @@ func (g execGit) Diff(context.Context, string, string, string) (int, int, error)
 // the version column has something to render.
 func (execGit) HeadInfo(_ context.Context, path string) (git.Head, error) {
 	return git.Head{Hash: "abc1234", Subject: "Add " + filepath.Base(path), Describe: "v1.0.0"}, nil
+}
+
+// pathGit answers IsRepo from the filesystem, so path-based status tests drive
+// the same live discovery shape as a real run: only directories with .git are
+// repositories, and walking stops below each one.
+type pathGit struct{ execGit }
+
+func (pathGit) IsRepo(_ context.Context, path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
 }
 
 // countingGit records every git method the status probe reaches, so a test can
@@ -188,8 +199,89 @@ func TestExecStatusSingleRepo(t *testing.T) {
 	if strings.Contains(result, "web") {
 		t.Errorf("Result Output = %q, want nothing about the other repository", result)
 	}
-	if got := deps.Diagnostic(); !strings.Contains(got, "○ Showing 1 repo") {
-		t.Errorf("Diagnostic Output = %q, want a one-repository footer", got)
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want no footer for a single repository", got)
+	}
+}
+
+// TestExecStatusPathDiscoversLiveRepos covers the status-specific path mode:
+// a directory argument is a live group independent of the config, containing the
+// argument itself when it is a repository or every repository below it.
+//
+//nolint:paralleltest // t.Chdir changes process-wide state.
+func TestExecStatusPathDiscoversLiveRepos(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"single", "fleet/api", "fleet/web", "fleet/nested/worker"} {
+		gitDir := filepath.Join(root, path, ".git")
+		if err := os.MkdirAll(gitDir, 0o750); err != nil {
+			t.Fatalf("create repo %s: %v", path, err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "fleet", "not-repo"), 0o750); err != nil {
+		t.Fatalf("create non-repo: %v", err)
+	}
+
+	t.Run("current directory repository", func(t *testing.T) {
+		deps := clitest.New(t, pathGit{})
+		t.Chdir(filepath.Join(root, "single"))
+
+		if err := ExecStatus("table", Options{}, []string{"."}, deps.RuntimeCLI); err != nil {
+			t.Fatalf("ExecStatus error = %v, want nil", err)
+		}
+
+		if got := deps.Result(); !strings.Contains(got, "single") || !strings.Contains(got, "Add single") {
+			t.Errorf("Result Output = %q, want current repository status", got)
+		}
+		if got := deps.Diagnostic(); got != "" {
+			t.Errorf("Diagnostic Output = %q, want no footer for a single repository", got)
+		}
+	})
+
+	t.Run("relative directory group", func(t *testing.T) {
+		deps := clitest.New(t, pathGit{})
+		t.Chdir(root)
+
+		if err := ExecStatus("table", Options{}, []string{"fleet"}, deps.RuntimeCLI); err != nil {
+			t.Fatalf("ExecStatus error = %v, want nil", err)
+		}
+
+		result := deps.Result()
+		for _, want := range []string{"api", "web", "worker", "Add api", "Add web", "Add worker"} {
+			if !strings.Contains(result, want) {
+				t.Errorf("Result Output = %q, want it to contain %q", result, want)
+			}
+		}
+		if strings.Contains(result, "not-repo") {
+			t.Errorf("Result Output = %q, want non-repository directories skipped", result)
+		}
+		if got := deps.Diagnostic(); !strings.Contains(got, "○ Showing 3 repos") {
+			t.Errorf("Diagnostic Output = %q, want three-repository footer", got)
+		}
+	})
+}
+
+// TestExecStatusFilePathUsesContainingRepository covers a file path argument:
+// it resolves to its containing directory, then discovers the repository there.
+//
+//nolint:paralleltest // t.Chdir changes process-wide state.
+func TestExecStatusFilePathUsesContainingRepository(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "api")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o750); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("# api\n"), 0o640); err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	deps := clitest.New(t, pathGit{})
+	t.Chdir(root)
+
+	if err := ExecStatus("table", Options{}, []string{filepath.Join("api", "README.md")}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecStatus error = %v, want nil", err)
+	}
+
+	if got := deps.Result(); !strings.Contains(got, "api") || !strings.Contains(got, "Add api") {
+		t.Errorf("Result Output = %q, want containing repository status", got)
 	}
 }
 
@@ -324,17 +416,16 @@ func defaultIcons() domain.Icons {
 }
 
 // statusRow drives `gits status acme` over one repository and returns its
-// Result Output, asserting the footer counted the row without an error — a
-// Gone Upstream is a condition of the branch, not a failed probe.
+// Result Output, asserting a one-row status has no footer — a Gone Upstream is
+// a condition of the branch, not a failed probe.
 func statusRow(t *testing.T, g execGit) string {
 	t.Helper()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 	if err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
-	if got := deps.Diagnostic(); !strings.Contains(got, "○ Showing 1 repo") ||
-		strings.Contains(got, "error") {
-		t.Errorf("Diagnostic Output = %q, want one repository counted and no error", got)
+	if got := deps.Diagnostic(); got != "" {
+		t.Errorf("Diagnostic Output = %q, want no footer for a single repository", got)
 	}
 	return deps.Result()
 }

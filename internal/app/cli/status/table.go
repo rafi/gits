@@ -17,11 +17,11 @@ import (
 	"github.com/rafi/gits/internal/service/status"
 )
 
-// renderTables prints one compact table per project as Result Output and a
-// summary footer as Diagnostic Output. It walks the tree the run visited —
-// depth-first, a project's own repositories before its sub-projects — and
-// looks each repository's row up; a project left with no rows prints
-// nothing, and consecutive tables are separated by a blank line.
+// renderTables prints one compact table per project as Result Output and, for
+// multi-repository views, a summary footer as Diagnostic Output. It walks the
+// tree the run visited — depth-first, a project's own repositories before its
+// sub-projects — and looks each repository's row up; a project left with no
+// rows prints nothing, and consecutive tables are separated by a blank line.
 func renderTables(res run.Results[*status.Report], opts Options, deps app.RuntimeCLI) {
 	out := deps.Out
 	termWidth, _ := style.TermWidth(out)
@@ -457,6 +457,9 @@ func shortAge(t, now time.Time) string {
 // Output, after a blank separator.
 func renderFooter(w io.Writer, sts []*status.Report, hidden int, th style.Theme) {
 	repos := len(sts)
+	if repos == 1 && hidden == 0 {
+		return
+	}
 	changed, ahead, errCount := 0, 0, 0
 	for _, st := range sts {
 		if st.Changed() {

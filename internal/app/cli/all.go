@@ -313,7 +313,7 @@ var repoOverviewCmd = &cobra.Command{
 }
 
 var statusCmd = &cobra.Command{
-	Use:               "status [project] [repo]",
+	Use:               "status [project|path] [repo]",
 	Short:             "Show Git repositories short status",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
