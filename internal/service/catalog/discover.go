@@ -14,15 +14,17 @@ import (
 // its repositories. A sub-project with no source of its own is left alone,
 // along with everything beneath it.
 func loadSubProjectSources(project *domain.Project, deps service.Runtime, o options) error {
-	filesystemType := string(providers.ProviderFilesystem)
 	for idx := range project.SubProjects {
 		sub := &project.SubProjects[idx]
+		// Only a source the Sub-project declares itself: the one it inherits
+		// is copied later, by expandPaths, and discovering through it would
+		// walk the parent's search a second time. So the defaults are applied
+		// to what is already there rather than derived from the path, which
+		// would turn every pathed Sub-project into a filesystem search.
 		if sub.Source == nil || sub.Source.Type == "" {
 			continue
 		}
-		if sub.Source.Search == "" && sub.Source.Type == filesystemType {
-			sub.Source.Search = sub.Path
-		}
+		applySourceDefaults(sub)
 		if err := getSource(sub, deps, o); err != nil {
 			return err
 		}

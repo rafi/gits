@@ -174,3 +174,13 @@ func (p *Project) CalculateHash() error {
 	p.Hash = hex.EncodeToString(hash[:])
 	return nil
 }
+
+// CountRepos returns how many repositories the project holds, its
+// Sub-projects included at any depth.
+func (p *Project) CountRepos() int {
+	total := len(p.Repos)
+	for idx := range p.SubProjects {
+		total += p.SubProjects[idx].CountRepos()
+	}
+	return total
+}

@@ -1,6 +1,7 @@
 // Package sync refreshes each Project's cached repository list from its
-// Provider Source. It writes nothing: which projects were flushed is
-// returned, so the caller decides whether and how to say so.
+// Provider Source. It writes nothing: the work is exposed one Project at a
+// time — Targets says which Projects a run will visit, One visits a single
+// Project — so the caller drives the loop and narrates it.
 package sync
 
 import (
@@ -14,33 +15,66 @@ import (
 	"github.com/rafi/gits/internal/service/catalog"
 )
 
-// Sync drops the cache for the named projects — every cacheable one when no
-// name is given — and reloads them, which repopulates the cache from each
-// Provider Source. It returns the projects whose cache it dropped, in the
-// order it dropped them.
-func Sync(names []string, rt service.Runtime) ([]string, error) {
-	flushed := []string{}
-	for name, project := range rt.Projects {
-		if !providers.HasCache(project.Source) {
-			continue
-		}
+// Result is what refreshing one Project produced: where its repositories
+// were discovered from, where they live locally, and how many came back with
+// Sub-projects included.
+type Result struct {
+	Source  domain.ProviderSource
+	Path    string
+	Repos   int
+	Flushed bool
+}
+
+// Targets returns the Projects a sync run will visit, in alphabetical order:
+// the ones named, or every remote-backed Project when no name is given.
+//
+// Only Projects discovered from a remote code forge are visited. A
+// filesystem project is read from disk every time a command runs, so there
+// is no stale copy of it to refresh, and one that lists its repositories by
+// hand has nothing to discover at all. Naming such a project explicitly is
+// the same as naming one that does not exist: there is nothing to sync.
+//
+// A name matching nothing is a warning rather than a failure, and it is
+// reported here — before any cache is dropped — so a typo costs nothing.
+func Targets(names []string, rt service.Runtime) ([]string, error) {
+	targets := []string{}
+	for _, name := range rt.Projects.SortedNames() {
 		if len(names) > 0 && !slices.Contains(names, name) {
 			continue
 		}
-		if err := rt.Cache.Flush(project); err != nil {
-			return flushed, fmt.Errorf("unable to remove cache: %w", err)
+		source := rt.Projects[name].Source
+		if source == nil || !providers.IsRemote(source.Type) {
+			continue
 		}
-		flushed = append(flushed, name)
+		targets = append(targets, name)
+	}
+	if len(names) > 0 && len(targets) == 0 {
+		return nil, domain.NewWarning(
+			"no remote projects found matching %q", strings.Join(names, ", "))
+	}
+	return targets, nil
+}
+
+// One drops the Project's cache and reloads it, which repopulates that cache
+// from its Provider Source.
+func One(name string, rt service.Runtime) (Result, error) {
+	var result Result
+	project := rt.Projects[name]
+	if providers.HasCache(project.Source) {
+		if err := rt.Cache.Flush(project); err != nil {
+			return result, fmt.Errorf("unable to remove cache: %w", err)
+		}
+		result.Flushed = true
 	}
 
-	projects, err := catalog.Load(names, rt)
+	loaded, err := catalog.LoadOne(name, rt)
 	if err != nil {
-		return flushed, fmt.Errorf("unable to list projects: %w", err)
+		return result, err
 	}
-	// A name that matched nothing is a warning rather than a failure: the
-	// caches that did match were still dropped and reloaded.
-	if len(names) > 0 && len(projects) == 0 {
-		return flushed, domain.NewWarning("no projects found matching %q", strings.Join(names, ", "))
+	if loaded.Source != nil {
+		result.Source = *loaded.Source
 	}
-	return flushed, nil
+	result.Path = loaded.AbsPath
+	result.Repos = loaded.CountRepos()
+	return result, nil
 }

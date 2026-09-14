@@ -144,41 +144,42 @@ func newFilesystemProject(path string) domain.Project {
 	}
 }
 
-// populateProject populates a project with repositories, metadata and state.
-func populateProject(project *domain.Project, deps service.Runtime, o options) error {
+// applySourceDefaults fills in the parts of a project's Provider Source the
+// config lets it leave out, and reports whether the project has one to
+// discover from at all.
+//
+// A project with a path and no repositories of its own is searched on the
+// filesystem, and a filesystem source with no search term searches the
+// project path. Everything else is left exactly as written: a project that
+// lists its own repositories needs no discovery and keeps the identity the
+// config gave them, and a project with neither a path nor repositories only
+// groups Sub-projects, each of which states its own location. Defaulting
+// those to filesystem discovery anyway failed validation, telling the user to
+// set `search:` on a source they never declared.
+func applySourceDefaults(project *domain.Project) bool {
 	filesystemType := string(providers.ProviderFilesystem)
-	emptySource := (project.Source == nil || project.Source.Type == "")
 
-	switch {
-	case emptySource && len(project.Repos) > 0 && project.Path == "":
-		// Repositories that state their own location need no discovery, and
-		// keep the identity the config gave them. Pinned by
-		// TestPathlessProjectKeepsRepoIdentity.
-
-	case emptySource && len(project.Repos) == 0 && project.Path != "":
-		// Default source type of a project _with_ path is "filesystem".
-		// Without a path there is nothing to search: such a project either
-		// only groups Sub-projects, each of which states its own location,
-		// or is empty. Defaulting it to filesystem discovery anyway failed
-		// validation, telling the user to set `search:` on a source they
-		// never declared.
+	if project.Source == nil || project.Source.Type == "" {
+		if len(project.Repos) > 0 || project.Path == "" {
+			return project.Source != nil && project.Source.Type != ""
+		}
 		if project.Source == nil {
 			project.Source = &domain.ProviderSource{}
 		}
 		project.Source.Type = filesystemType
 	}
 
-	if project.Source != nil {
-		// Default search path for "filesystem" is the project path.
-		if project.Source.Search == "" && project.Source.Type == filesystemType {
-			project.Source.Search = project.Path
-		}
+	if project.Source.Search == "" && project.Source.Type == filesystemType {
+		project.Source.Search = project.Path
+	}
+	return true
+}
 
-		// Populate repos from source.
-		if project.Source.Type != "" {
-			if err := getSource(project, deps, o); err != nil {
-				return err
-			}
+// populateProject populates a project with repositories, metadata and state.
+func populateProject(project *domain.Project, deps service.Runtime, o options) error {
+	if applySourceDefaults(project) {
+		if err := getSource(project, deps, o); err != nil {
+			return err
 		}
 	}
 

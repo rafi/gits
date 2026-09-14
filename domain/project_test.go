@@ -249,3 +249,25 @@ func TestProjectCalculateHash(t *testing.T) {
 		t.Error("hash did not change after adding a repo")
 	}
 }
+
+// TestProjectCountRepos: the count spans the whole tree, since a project's
+// repositories include those of its Sub-projects at any depth.
+func TestProjectCountRepos(t *testing.T) {
+	t.Parallel()
+
+	project := Project{
+		Repos: []Repository{{Name: "api"}, {Name: "web"}},
+		SubProjects: []Project{{
+			Name:        "tools",
+			Repos:       []Repository{{Name: "cli"}},
+			SubProjects: []Project{{Name: "deep", Repos: []Repository{{Name: "nested"}}}},
+		}},
+	}
+
+	if got := project.CountRepos(); got != 4 {
+		t.Errorf("CountRepos() = %d, want 4", got)
+	}
+	if got := (&Project{}).CountRepos(); got != 0 {
+		t.Errorf("CountRepos() on an empty project = %d, want 0", got)
+	}
+}
