@@ -2,6 +2,61 @@
 
 - - -
 
+## [v0.25.0](https://github.com/rafi/gits/compare/v0.11.2...v0.25.0) - 2026-09-14
+
+### Features
+
+- **(core)** subprocess git client, worker pool and charm.land v2 UI - (6fc6898) - Rafael Bodill
+- **(status)** compact table with --stat, --dirty and --unsynced - (4fd9dbd) - Rafael Bodill
+- **(push,status,config)** [**breaking**] push command, JSON status and provider tokens - (6d1db3c) - Rafael Bodill
+- **(exec,doctor,completion)** run commands, diagnose setup, complete flags - (5e02f63) - Rafael Bodill
+- **(sync)** say what each project refreshed - (8401582) - Rafael Bodill
+- **(add)** take many repositories, keep the file intact - (46ae168) - Rafael Bodill
+- **(status)** report as it goes, drop a lone footer - (99ec386) - Rafael Bodill
+
+### Bug Fixes
+
+- **(providers,cache,config)** harden discovery, caching and configuration - (b4c25bc) - Rafael Bodill
+- **(cli,loader)** exit codes, ordering and an injected slog logger - (472d5f8) - Rafael Bodill
+
+### Performance Improvements
+
+- one snapshot per repository and fewer subprocesses - (d409d31) - Rafael Bodill
+
+### Refactoring
+
+- **(bulk)** one module behind every bulk command - (5c049f4) - Rafael Bodill
+- **(wire)** move JSON envelope to service - (5165c61) - Rafael Bodill
+- separate view deps from business deps - (d260f72) - Rafael Bodill
+- split config loading from CLI styling - (a90845d) - Rafael Bodill
+- dismantle the shared cli helpers package - (ea8b0cf) - Rafael Bodill
+- split argument resolution from prompting - (51ab59f) - Rafael Bodill
+- retire the internal/types grab-bag - (a13f6aa) - Rafael Bodill
+- separate execution from rendering - (a33e4b9) - Rafael Bodill
+- **(pull)** report a result instead of a line - (0b46ef3) - Rafael Bodill
+- **(fetch)** report a result instead of a line - (cb931d2) - Rafael Bodill
+- **(clone)** report a result instead of a line - (b29d96a) - Rafael Bodill
+- **(exec)** report a result instead of a line - (2c169c8) - Rafael Bodill
+- **(push)** report a result, drop the ANSI stripper - (768e93a) - Rafael Bodill
+- **(status)** split the probe from its renderers - (f7196ce) - Rafael Bodill
+- **(catalog)** rename and split the project loader - (79ff432) - Rafael Bodill
+- **(doctor)** split the checks from the table - (ee63723) - Rafael Bodill
+- **(checkout)** split branch listing from the prompt - (17b834a) - Rafael Bodill
+- complete the layer tree and enforce it - (c6c7f80) - Rafael Bodill
+- **(orphan,sync)** move the work into the service - (946dc2c) - Rafael Bodill
+- organize the codebase by responsibility - (3a599ba) - Rafael Bodill
+
+### Documentation
+
+- state each rule where the code relies on it - (b622947) - Rafael Bodill
+- rewrite the README around getting started - (2659106) - Rafael Bodill
+
+### Build System
+
+- require Go 1.27 - (4faedd5) - Rafael Bodill
+
+- - -
+
 ## v0.11.2 - 2026-01-06
 
 ### Features

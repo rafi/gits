@@ -11,7 +11,7 @@ var (
 	//
 	// GetMajorMinor derives the cache-file key from this value, so a major or
 	// minor bump invalidates every cache; a patch bump does not.
-	version = "v0.11.2"
+	version = "v0.25.0"
 
 	// metadata is extra build time data.
 	metadata = ""
