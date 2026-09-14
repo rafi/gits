@@ -45,6 +45,16 @@ func completeProject(_ *cobra.Command, _ []string, toComplete string) ([]string,
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeAddArgs completes `gits add`: the project name first, then
+// directories for every repository argument after it, since those name
+// clones on disk rather than repositories the project already knows.
+func completeAddArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) < 1 {
+		return completeProject(cmd, args, toComplete)
+	}
+	return nil, cobra.ShellCompDirectiveFilterDirs
+}
+
 const (
 	// The positional argument counts past which a completion function has
 	// nothing left to offer: project, repo, branch.

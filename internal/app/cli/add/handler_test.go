@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
@@ -168,5 +169,208 @@ func TestExecAddCloneFailureReportsOnDiagnostic(t *testing.T) {
 	}
 	if string(after) != string(before) {
 		t.Errorf("config file changed after a failed clone:\n%s", after)
+	}
+}
+
+// repoDirs creates a directory per name under cwd, each of which the fake git
+// reports as a repository, and returns their paths keyed by name.
+func repoDirs(t *testing.T, cwd string, names ...string) map[string]string {
+	t.Helper()
+	paths := make(map[string]string, len(names))
+	for _, name := range names {
+		path := filepath.Join(cwd, name)
+		if err := os.Mkdir(path, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+		paths[name] = path
+	}
+	return paths
+}
+
+// TestExecAddGlobAddsEveryMatch covers `gits add myproj 'backend*'`: the
+// pattern is expanded by gits itself, every matching repository is written
+// to the config, and each gets its own Result Output line. Nothing is cloned.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddGlobAddsEveryMatch(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, cwd := addDeps(t, g)
+	dirs := repoDirs(t, cwd, "backend-api", "backend-worker", "frontend")
+
+	if err := ExecAdd([]string{"myproj", "backend*"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil", err)
+	}
+
+	if g.clonedTo != "" {
+		t.Errorf("cloned into %q, want nothing cloned for a glob", g.clonedTo)
+	}
+	config, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	for _, name := range []string{"backend-api", "backend-worker"} {
+		if !strings.Contains(string(config), "dir: "+dirs[name]) {
+			t.Errorf("config file is missing %q:\n%s", dirs[name], config)
+		}
+		if !strings.Contains(deps.Result(), dirs[name]) {
+			t.Errorf("Result Output = %q, want a line for %q", deps.Result(), dirs[name])
+		}
+	}
+	if strings.Contains(string(config), dirs["frontend"]) {
+		t.Errorf("config file lists %q, which the pattern did not match:\n%s", dirs["frontend"], config)
+	}
+	if got := strings.Count(deps.Result(), "Added "); got != 2 {
+		t.Errorf("Result Output has %d Added lines, want 2:\n%s", got, deps.Result())
+	}
+}
+
+// TestExecAddSeveralDirectories covers `gits add myproj a b`, the shape a
+// shell-expanded glob arrives in: every directory is added once, in argument
+// order, and one named twice is recorded once.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddSeveralDirectories(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, cwd := addDeps(t, g)
+	repoDirs(t, cwd, "alpha", "bravo")
+
+	if err := ExecAdd([]string{"myproj", "alpha", "bravo", "alpha"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil", err)
+	}
+
+	config, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	if got := strings.Count(string(config), "dir: "+cwd); got != 2 {
+		t.Errorf("config gained %d repositories, want 2 (alpha once, bravo once):\n%s", got, config)
+	}
+	if a, b := strings.Index(deps.Result(), "alpha"), strings.Index(deps.Result(), "bravo"); a < 0 || b < a {
+		t.Errorf("Result Output = %q, want alpha before bravo", deps.Result())
+	}
+}
+
+// TestExecAddSkipsAlreadyListed covers a target the project already lists:
+// it is passed over with a note on Diagnostic Output, the others are added,
+// and when nothing is left to add the command ends with a warning rather
+// than a failure, and the config file is untouched.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddSkipsAlreadyListed(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, _ := addDeps(t, g)
+	existing := filepath.Join(deps.Projects["myproj"].Path, "existing")
+
+	before, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	err = ExecAdd([]string{"myproj", existing}, deps.RuntimeCLI)
+	if err == nil || !domain.IsWarning(err) {
+		t.Fatalf("ExecAdd error = %v, want a downgradeable warning", err)
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "already in project") {
+		t.Errorf("Diagnostic Output = %q, want the skip explained", got)
+	}
+	after, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("config file changed with nothing to add:\n%s", after)
+	}
+}
+
+// TestExecAddRefusesUnknownTarget covers a bare word that names nothing on
+// disk: it is neither a directory nor a pattern, and does not look like a
+// clone URL, so it is refused before git is asked to clone it.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddRefusesUnknownTarget(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, _ := addDeps(t, g)
+
+	err := ExecAdd([]string{"myproj", "typo"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecAdd error = nil, want a refusal")
+	}
+	if g.clonedTo != "" {
+		t.Errorf("cloned into %q, want nothing cloned for a bare word", g.clonedTo)
+	}
+	if !strings.Contains(err.Error(), "typo") {
+		t.Errorf("error = %q, want it to name the argument", err)
+	}
+}
+
+// TestExecAddGlobWithoutRepositoriesFails covers a pattern that matches
+// directories none of which are repositories, and one that matches nothing:
+// both are failures naming the pattern, so a typo is not a silent success.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddGlobWithoutRepositoriesFails(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, _ := addDeps(t, g)
+
+	err := ExecAdd([]string{"myproj", "nothing-here*"}, deps.RuntimeCLI)
+	if err == nil || !strings.Contains(err.Error(), "nothing-here*") {
+		t.Errorf("ExecAdd error = %v, want a failure naming the pattern", err)
+	}
+}
+
+// TestExecAddRefusesDiscoveredProject covers naming a project whose
+// repositories come from a Provider Source. The implicit filesystem source a
+// project with only a `path:` gets is the case a user is most likely to hit,
+// so the refusal points at `gits orphan` rather than at a source type they
+// never wrote.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddRefusesDiscoveredProject(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, _ := addDeps(t, g)
+	root := t.TempDir()
+	repoDirs(t, root, "found")
+	deps.Projects["walked"] = domain.Project{Path: root}
+
+	err := ExecAdd([]string{"walked"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecAdd error = nil, want a refusal for a discovered project")
+	}
+	for _, want := range []string{"walked", "gits orphan"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "filesystem") {
+		t.Errorf("error = %q, want the path named, not a source type the user never wrote", err)
+	}
+}
+
+// TestExecAddStartsAnEmptyConfig covers the first `gits add` against a config
+// file that is empty: the project and repository are written rather than the
+// command failing on a document with nothing in it.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddStartsAnEmptyConfig(t *testing.T) {
+	const src = "git@example.com:fixture/here.git"
+	g := &fakeGit{remote: src}
+	deps, cwd := addDeps(t, g)
+	deps.Projects = domain.ProjectListKeyed{}
+	if err := os.WriteFile(deps.ConfigPath, nil, 0o644); err != nil {
+		t.Fatalf("empty config: %v", err)
+	}
+
+	if err := ExecAdd([]string{"fresh"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil", err)
+	}
+
+	config, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	for _, line := range []string{"fresh:", "dir: " + cwd, "src: " + src} {
+		if !strings.Contains(string(config), line) {
+			t.Errorf("config file is missing %q:\n%s", line, config)
+		}
 	}
 }

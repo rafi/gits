@@ -2,100 +2,93 @@ package add
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml/ast"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/pick"
 	"github.com/rafi/gits/internal/format"
+	"github.com/rafi/gits/internal/infra/providers"
 )
 
-// ExecAdd adds the current repository to a project in the config file.
+// ExecAdd records one or more already-cloned repositories under a project's
+// `repos:` in the config file. It is for a project that lists its
+// repositories by hand: a project discovered from a Provider Source already
+// knows its repositories, and `gits orphan` is the command that asks what
+// such a project's directory holds that the source did not report.
 //
 // Args: (optional)
-//   - project name
+//   - project name; created when it does not exist
+//   - repositories: each a directory, a glob pattern such as `backend*`, or
+//     a clone URL, which is cloned into the current directory first. With
+//     none, the current directory is the repository.
 func ExecAdd(args []string, deps app.RuntimeCLI) error {
-	// Load the config file.
-	rootNode, err := load(deps.ConfigPath)
+	config, err := load(deps.ConfigPath)
 	if err != nil {
 		return err
 	}
 
-	project, err := ensureProject(args, &rootNode, deps)
+	project, projNode, err := ensureProject(args, config, deps)
 	if err != nil {
 		return err
 	}
 
-	projNode, err := findProject(project.Name, &rootNode)
-	if err != nil {
-		return err
+	var targets []string
+	if len(args) > 1 {
+		targets = args[1:]
 	}
-	reposNode, err := findScalarMapping("repos", projNode)
-	if err != nil {
-		return err
-	}
-
-	cwd, err := ensureRepository(args, deps)
+	paths, err := resolveTargets(targets, deps)
 	if err != nil {
 		return err
 	}
 
-	remoteURL, err := deps.Git.Remote(deps.Ctx, cwd)
-	if err != nil {
-		return fmt.Errorf("failed adding repo: %w", err)
-	}
-
+	known := make(map[string]bool, len(project.Repos))
 	for _, r := range project.Repos {
-		if r.AbsPath == cwd {
-			return fmt.Errorf("repository already in project %q", project.Name)
-		}
+		known[filepath.Clean(r.AbsPath)] = true
 	}
 
-	nicePath := format.Path(cwd, deps.HomeDir)
-	appendRepo(nicePath, remoteURL, reposNode)
+	added := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if known[path] {
+			// Naming a repository the project already lists is a no-op, not
+			// a failure: a glob is expected to sweep up a few of those.
+			fmt.Fprintf(deps.Err, "%s is already in project %q, skipping\n",
+				format.Path(path, deps.HomeDir), project.Name)
+			continue
+		}
+		remoteURL, err := deps.Git.Remote(deps.Ctx, path)
+		if err != nil {
+			return fmt.Errorf("unable to read the remote of %s: %w", path, err)
+		}
+		nicePath := format.Path(path, deps.HomeDir)
+		if err := config.addRepo(projNode, nicePath, remoteURL); err != nil {
+			return err
+		}
+		added = append(added, nicePath)
+		known[path] = true
+	}
 
-	if err := save(deps.ConfigPath, rootNode); err != nil {
+	if len(added) == 0 {
+		return domain.NewWarning("nothing to add to project %q", project.Name)
+	}
+	if err := config.save(deps.ConfigPath); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(deps.Out, "Added %q repository to project %q\n", nicePath, project.Name)
+	for _, path := range added {
+		fmt.Fprintf(deps.Out, "Added %q repository to project %q\n", path, project.Name)
+	}
 	return nil
 }
 
-// ensureRepository returns the current repository path, and clones it if it
-// doesn't exist.
-func ensureRepository(args []string, deps app.RuntimeCLI) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("unable to get current directory: %w", err)
-	}
-
-	if len(args) > 1 {
-		// Clone repository if address has been provided.
-		remoteURL := args[1]
-		cwd = filepath.Join(cwd, domain.RepoDirName(remoteURL))
-		output, err := deps.Git.Clone(deps.Ctx, remoteURL, cwd)
-		if err != nil {
-			// git's own account of the failure, which explains the error
-			// returned below rather than being anything the command was
-			// asked for.
-			fmt.Fprintln(deps.Err, output)
-			return "", err
-		}
-	}
-
-	if !deps.Git.IsRepo(deps.Ctx, cwd) {
-		return "", fmt.Errorf("not a git repository: %s", cwd)
-	}
-	return cwd, nil
-}
-
-// ensureProject returns project by name, and creates it if it doesn't exist.
-// If no project name is provided, user will be prompted to select one.
-func ensureProject(args []string, node *yaml.Node, deps app.RuntimeCLI) (domain.Project, error) {
+// ensureProject returns a project by name along with its mapping in the
+// config file, and creates both when the project doesn't exist. If no project
+// name is provided, user will be prompted to select one.
+func ensureProject(
+	args []string, config *configDoc, deps app.RuntimeCLI,
+) (domain.Project, *ast.MappingNode, error) {
 	if len(args) > 0 {
 		if _, foundProject := deps.Projects[args[0]]; !foundProject {
 			// Create the project if it doesn't exist.
@@ -103,8 +96,8 @@ func ensureProject(args []string, node *yaml.Node, deps app.RuntimeCLI) (domain.
 				Name:  args[0],
 				Repos: []domain.Repository{},
 			}
-			appendProject(project.Name, node.Content[0])
-			return project, nil
+			node, err := config.addProject(project.Name)
+			return project, node, err
 		}
 		// Only the project name is relevant for selection.
 		args = args[:1]
@@ -113,16 +106,32 @@ func ensureProject(args []string, node *yaml.Node, deps app.RuntimeCLI) (domain.
 	// Get the project we'll be adding to.
 	project, _, err := pick.ParseArgs(args, true, deps)
 	if err != nil {
-		return project, err
+		return project, nil, err
 	}
+	if err := rejectDiscovered(project); err != nil {
+		return project, nil, err
+	}
+	node, err := config.findProject(project.Name)
+	return project, node, err
+}
 
-	// Disallow cloud projects.
-	if project.Source != nil {
-		return project, fmt.Errorf(
-			"project %q is sourced from %s, choose a regular non-cloud project",
-			project.Name,
-			project.Source.Type,
-		)
+// rejectDiscovered refuses a project whose repositories come from a Provider
+// Source. Its `repos:` are discovered, not written, so there is nothing for
+// `add` to record; the loader gives a project with a path and no `repos:` a
+// filesystem source implicitly, so that case gets a hint rather than the
+// name of a source the user never wrote.
+func rejectDiscovered(project domain.Project) error {
+	if project.Source == nil {
+		return nil
 	}
-	return project, nil
+	if project.Source.Type == string(providers.ProviderFilesystem) {
+		return fmt.Errorf(
+			"project %q discovers its repositories from %s, so there is nothing to add: "+
+				"`gits orphan %s` lists what it holds that no project declares",
+			project.Name, project.Path, project.Name)
+	}
+	return fmt.Errorf(
+		"project %q discovers its repositories from %s, so there is nothing to add; "+
+			"`gits add` records repositories on a project that lists them by hand",
+		project.Name, project.Source.Type)
 }

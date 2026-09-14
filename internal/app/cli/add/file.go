@@ -3,90 +3,286 @@
 package add
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 
 	"github.com/rafi/gits/internal/infra/fsutil"
 )
 
-// load loads a yaml file into an abstract node.
-func load(filePath string) (yaml.Node, error) {
-	var node yaml.Node
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return node, err
-	}
-	err = yaml.Unmarshal(data, &node)
-	return node, err
+// configDoc is a config file held as a YAML syntax tree, so that writing it
+// back changes only the lines `gits add` appends: comments, blank lines,
+// quoting, and indentation the user chose all survive as they were.
+type configDoc struct {
+	file *ast.File
+	// original is the file as read, and pristine is the syntax tree printed
+	// back before any change. Where the two differ only in whitespace, save
+	// keeps the original's spelling of lines the edit did not touch.
+	original []byte
+	pristine string
+	// root is the top-level mapping of project names. It is nil for a file
+	// with nothing in it but whitespace or comments, and is created by the
+	// first addProject.
+	root *ast.MappingNode
 }
 
-// yamlIndent is the indentation the config file is written back with.
+// load parses a yaml file into a configDoc. A file that is empty, or absent
+// at a path the caller chose, is one to append to rather than a failure — the
+// first `gits add` is exactly how a config gets started.
+func load(filePath string) (*configDoc, error) {
+	if filePath == "" {
+		return nil, errors.New("no config file found: pass one with `-c`")
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	file, err := parser.ParseBytes(data, parser.ParseComments)
+	if err != nil {
+		return nil, err
+	}
+	switch len(file.Docs) {
+	case 0:
+		file.Docs = append(file.Docs, &ast.DocumentNode{})
+	case 1:
+	default:
+		return nil, errNotAMapping
+	}
+	cf := &configDoc{file: file, original: data, pristine: file.String()}
+	switch body := file.Docs[0].Body.(type) {
+	case nil, *ast.CommentGroupNode:
+		// Nothing but whitespace or comments: the first addProject makes the
+		// root mapping, and keeps the comments above it.
+	case *ast.MappingNode:
+		cf.root = body
+	default:
+		return nil, errNotAMapping
+	}
+	return cf, nil
+}
+
+// errNotAMapping is what load reports for a config file whose top level is not
+// a mapping of project names, which nothing here could append to.
+var errNotAMapping = errors.New("config file is not a mapping of projects")
+
+// yamlIndent is the indentation new blocks are written with, when the file has
+// no block of its own to copy the style from.
 const yamlIndent = 2
 
-// save saves a yaml node into a file, atomically: the original file mode is
+// save writes the config file back, atomically: the original file mode is
 // preserved, and any failure leaves no temp file behind.
-func save(filePath string, node yaml.Node) error {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(yamlIndent)
-	if err := enc.Encode(&node); err != nil {
-		return err
+func (cf *configDoc) save(filePath string) error {
+	data := []byte(splice(string(cf.original), cf.pristine, cf.file.String()))
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		data = append(data, '\n')
 	}
-	if err := enc.Close(); err != nil {
-		return err
+	return fsutil.WriteFileAtomicPreserve(filePath, data, 0o644)
+}
+
+// splice rewrites edited, the printed syntax tree after an edit, so that every
+// line the edit left alone reads exactly as it did in original. The printer
+// normalizes whitespace it does not track, such as the run of spaces before an
+// inline comment, so lines common to pristine (the tree printed before the
+// edit) and edited are looked up in original by line number. That holds when
+// original and pristine have the same number of lines and each pair differs
+// only in whitespace; otherwise edited is returned as printed.
+func splice(original, pristine, edited string) string {
+	origLines := strings.Split(strings.TrimSuffix(original, "\n"), "\n")
+	oldLines := strings.Split(strings.TrimSuffix(pristine, "\n"), "\n")
+	newLines := strings.Split(strings.TrimSuffix(edited, "\n"), "\n")
+	if len(origLines) != len(oldLines) {
+		return edited
 	}
-	return fsutil.WriteFileAtomicPreserve(filePath, buf.Bytes(), 0o644)
-}
-
-// appendProject appends a project node to the root node.
-func appendProject(projectName string, node *yaml.Node) {
-	node.Content = append(node.Content, &yaml.Node{
-		Kind:  yaml.ScalarNode,
-		Value: projectName,
-	})
-	node.Content = append(node.Content, &yaml.Node{
-		Kind: yaml.MappingNode,
-		Content: []*yaml.Node{
-			{Kind: yaml.ScalarNode, Value: "repos"},
-			{Kind: yaml.SequenceNode, Content: []*yaml.Node{}},
-		},
-	})
-}
-
-// appendRepo appends a repository to a project node.
-func appendRepo(path, remoteSrc string, node *yaml.Node) {
-	node.Content = append(node.Content, &yaml.Node{
-		Kind: yaml.MappingNode,
-		Content: []*yaml.Node{
-			{Kind: yaml.ScalarNode, Value: "dir"},
-			{Kind: yaml.ScalarNode, Value: path},
-			{Kind: yaml.ScalarNode, Value: "src"},
-			{Kind: yaml.ScalarNode, Value: remoteSrc},
-		},
-	})
-}
-
-// findProject finds a project node in the config file.
-func findProject(projectName string, rootNode *yaml.Node) (*yaml.Node, error) {
-	for i := range len(rootNode.Content[0].Content) {
-		node := rootNode.Content[0].Content[i]
-		if node.Kind == yaml.ScalarNode && node.Value == projectName {
-			return rootNode.Content[0].Content[i+1], nil
+	for i := range oldLines {
+		if !sameIgnoringSpace(origLines[i], oldLines[i]) {
+			return edited
 		}
 	}
-	return nil, fmt.Errorf("unable to find project %q in config", projectName)
-}
 
-// findScalarMapping finds a scalar mapping in a node.
-func findScalarMapping(nodeName string, nodes *yaml.Node) (*yaml.Node, error) {
-	for i := range len(nodes.Content) {
-		node := nodes.Content[i]
-		if node.Kind == yaml.ScalarNode && node.Value == nodeName {
-			return nodes.Content[i+1], nil
+	// Longest common subsequence of lines between the tree before and after
+	// the edit, so a line is only taken from original when it is truly the
+	// same line and not one the edit rewrote.
+	lcs := make([][]int, len(oldLines)+1)
+	for i := range lcs {
+		lcs[i] = make([]int, len(newLines)+1)
+	}
+	for i := range slices.Backward(oldLines) {
+		for j := range slices.Backward(newLines) {
+			if oldLines[i] == newLines[j] {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			} else {
+				lcs[i][j] = max(lcs[i+1][j], lcs[i][j+1])
+			}
 		}
 	}
-	return nil, fmt.Errorf("unable to find node %q in config", nodeName)
+	out := make([]string, 0, len(newLines))
+	i, j := 0, 0
+	for i < len(oldLines) && j < len(newLines) {
+		switch {
+		case oldLines[i] == newLines[j]:
+			out = append(out, origLines[i])
+			i++
+			j++
+		case lcs[i+1][j] >= lcs[i][j+1]:
+			i++ // a line the edit removed
+		default:
+			out = append(out, newLines[j]) // a line the edit added
+			j++
+		}
+	}
+	out = append(out, newLines[j:]...)
+	return strings.Join(out, "\n") + "\n"
+}
+
+// sameIgnoringSpace reports whether two lines differ in nothing but spaces.
+func sameIgnoringSpace(a, b string) bool {
+	return strings.ReplaceAll(a, " ", "") == strings.ReplaceAll(b, " ", "")
+}
+
+// repoEntry is one item under a project's `repos:`, in the key order the
+// config file documents.
+type repoEntry struct {
+	Dir string `yaml:"dir"`
+	Src string `yaml:"src"`
+}
+
+// findProject finds a project's mapping by name.
+func (cf *configDoc) findProject(projectName string) (*ast.MappingNode, error) {
+	if cf.root == nil {
+		return nil, fmt.Errorf("unable to find project %q in config", projectName)
+	}
+	value := findKey(cf.root, projectName)
+	if value == nil {
+		return nil, fmt.Errorf("unable to find project %q in config", projectName)
+	}
+	project, ok := value.Value.(*ast.MappingNode)
+	if !ok {
+		return nil, fmt.Errorf("project %q in config is not a mapping", projectName)
+	}
+	return project, nil
+}
+
+// addProject appends a project with an empty `repos:` to the root mapping,
+// and returns its mapping node.
+func (cf *configDoc) addProject(projectName string) (*ast.MappingNode, error) {
+	frag, err := mappingFragment(map[string]any{projectName: map[string]any{"repos": nil}})
+	if err != nil {
+		return nil, err
+	}
+	if cf.root == nil {
+		// The root mapping is new. When the file was comments only, they
+		// stay above it.
+		if comments, ok := cf.file.Docs[0].Body.(*ast.CommentGroupNode); ok {
+			if err := frag.SetComment(comments); err != nil {
+				return nil, err
+			}
+		}
+		cf.file.Docs[0].Body = frag
+		cf.root = frag
+	} else if err := ast.Merge(cf.root, frag); err != nil {
+		return nil, err
+	}
+	return cf.findProject(projectName)
+}
+
+// addRepo appends a repository to a project's `repos:`. The new item takes
+// the style of the list it joins: a flow list `[...]` gets another flow item;
+// a block list gets another `- dir:` at its own indentation; a `repos:` that
+// is missing, null, or `[]` becomes a block list indented like the rest of
+// the file.
+func (cf *configDoc) addRepo(project *ast.MappingNode, dir, src string) error {
+	entry := repoEntry{Dir: dir, Src: src}
+	repos := findKey(project, "repos")
+	if repos == nil {
+		frag, err := mappingFragment(map[string]any{"repos": []repoEntry{entry}})
+		if err != nil {
+			return err
+		}
+		return ast.Merge(project, frag)
+	}
+
+	switch list := repos.Value.(type) {
+	case *ast.SequenceNode:
+		if len(list.Values) > 0 {
+			frag, err := fragment([]repoEntry{entry}, yaml.Flow(list.IsFlowStyle))
+			if err != nil {
+				return err
+			}
+			return ast.Merge(list, frag)
+		}
+	case *ast.NullNode:
+	default:
+		return fmt.Errorf("`repos` of project %q in config is not a list",
+			keyName(project))
+	}
+
+	// `repos: []` or `repos:` with nothing: start a block list. A comment
+	// that sat after the old value moves to the key, so it is not lost.
+	frag, err := fragment([]repoEntry{entry})
+	if err != nil {
+		return err
+	}
+	// Indent the list one level past its key, as the file would have had it.
+	wantColumn := repos.Key.GetToken().Position.Column + yamlIndent
+	frag.AddColumn(wantColumn - frag.GetToken().Position.Column)
+	if comment := repos.Value.GetComment(); comment != nil && repos.Key.GetComment() == nil {
+		if err := repos.Key.SetComment(comment); err != nil {
+			return err
+		}
+	}
+	repos.Value = frag
+	return nil
+}
+
+// findKey finds a key's entry in a mapping.
+func findKey(mapping *ast.MappingNode, key string) *ast.MappingValueNode {
+	for _, value := range mapping.Values {
+		if value.Key.String() == key {
+			return value
+		}
+	}
+	return nil
+}
+
+// keyName is the name a project mapping sits under, for error messages.
+func keyName(mapping *ast.MappingNode) string {
+	if path := mapping.GetPath(); path != "" {
+		return path
+	}
+	return "?"
+}
+
+// fragment marshals a value and parses it back as a syntax tree, so the new
+// nodes are quoted and laid out by the same rules as a whole document, then
+// re-indented by whoever grafts them onto the config file.
+func fragment(value any, opts ...yaml.EncodeOption) (ast.Node, error) {
+	opts = append([]yaml.EncodeOption{yaml.Indent(yamlIndent), yaml.IndentSequence(true)}, opts...)
+	data, err := yaml.MarshalWithOptions(value, opts...)
+	if err != nil {
+		return nil, err
+	}
+	file, err := parser.ParseBytes(data, 0)
+	if err != nil {
+		return nil, err
+	}
+	return file.Docs[0].Body, nil
+}
+
+// mappingFragment is fragment for a value that marshals to a mapping.
+func mappingFragment(value any) (*ast.MappingNode, error) {
+	node, err := fragment(value)
+	if err != nil {
+		return nil, err
+	}
+	mapping, ok := node.(*ast.MappingNode)
+	if !ok {
+		return nil, fmt.Errorf("yaml fragment is %T, want a mapping", node)
+	}
+	return mapping, nil
 }
