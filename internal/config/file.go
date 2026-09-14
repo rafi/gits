@@ -41,7 +41,7 @@ type File struct {
 	// Warnings are non-fatal notices gathered while loading (e.g. a deprecated
 	// key). They are surfaced as prose on Diagnostic Output by the caller that
 	// has a theme and a writer, rather than printed from here — this runs in
-	// cobra's initializer, before a runtime exists. See ADR-0004.
+	// cobra's initializer, before a runtime exists.
 	Warnings []string
 }
 
@@ -193,7 +193,7 @@ func (f *File) loadConfig(filePath string) error {
 	if err := f.Convert(); err != nil {
 		// A deprecation is a warning, not a failure: record it for the caller
 		// to render on Diagnostic Output rather than printing to os.Stderr
-		// here — see the Warnings field and ADR-0004.
+		// here; the Warnings field carries them to command wiring.
 		f.Warnings = append(f.Warnings, fmt.Sprintf("%s from %s", err, f.Filename))
 	}
 
@@ -209,7 +209,7 @@ func (f *File) loadConfig(filePath string) error {
 	// anything is wrong, so a check they must first suspect and then run is
 	// the wrong place for it to be the only mention. It stays a warning, not
 	// a failure — the rest of the config is valid and every command still
-	// runs. See ADR-0004 for where these are rendered.
+	// command runs. The command wiring renders them on Diagnostic Output.
 	for _, key := range f.unknownKeys() {
 		f.Warnings = append(f.Warnings, fmt.Sprintf(
 			"unknown config key %q in %s, ignored", key, f.Filename))

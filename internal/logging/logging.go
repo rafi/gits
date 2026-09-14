@@ -1,7 +1,7 @@
 // Package logging constructs the one [slog.Logger] gits uses. The logger is
 // for debug tracing — page fetches, cache hits and misses, git's stderr —
 // not for anything the user is meant to read: user-facing messages are
-// Diagnostic Output, written as prose to deps.Err (see ADR-0004).
+// Diagnostic Output, written as prose to deps.Err.
 //
 // Nothing here is global. The logger is built by the command wiring and travels on
 // runtime.Runtime, so a test can hand any component a logger of its own.

@@ -311,7 +311,7 @@ func TestExecListWide(t *testing.T) {
 	}
 }
 
-// TestExecListJSON covers the envelope ADR-0001 fixed: one document of
+// TestExecListJSON covers the shared JSON envelope: one document of
 // projects keyed by name, each repository carrying its Repo State, and a
 // Reason on the `error` one.
 func TestExecListJSON(t *testing.T) {

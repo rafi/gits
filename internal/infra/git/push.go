@@ -7,7 +7,8 @@ import (
 )
 
 // PushOptions is the vetted subset of `git push` flags gits passes through.
-// See docs/adr/0002-push-safety-model.md.
+// Bulk push is safe by construction: force, mirror, and upstream creation are
+// unreachable.
 type PushOptions struct {
 	All        bool // push all branches
 	Branches   bool // git's synonym for --all

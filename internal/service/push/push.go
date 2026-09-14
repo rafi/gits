@@ -1,6 +1,6 @@
 // Package push pushes one repository's current branch to its upstream,
 // reporting what it found rather than a line to print.
-// See: docs/adr/0002-push-safety-model.md.
+// Bulk push is safe by construction.
 package push
 
 import (
@@ -59,9 +59,9 @@ func Repo(
 		return Report{}, domain.NewWarning("skipped: %s", git.ErrNoUpstream)
 	case head.Gone:
 		// Pushing here would succeed and re-create the branch someone deleted
-		// on the Remote — the creative, ref-scattering behavior ADR-0002
-		// exists to prevent — so it is passed over instead, with the Upstream
-		// named to tell this skip from the one above.
+		// on the Remote. Bulk push must not recreate deleted branches, so this
+		// Repository is passed over with the Upstream named to distinguish it
+		// from the no-Upstream skip above.
 		return Report{}, domain.NewWarning("skipped: %s: %s", head.Upstream, git.ErrUpstreamGone)
 	}
 

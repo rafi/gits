@@ -308,9 +308,9 @@ func TestExecStatusSingleRepoState(t *testing.T) {
 	}
 }
 
-// TestExecStatusJSON covers `gits status -o json acme`: the envelope ADR-0001
-// fixed, with the working-tree data nested under each repository git was asked
-// about — and no such object on one it never saw. Diagnostic Output stays empty
+// TestExecStatusJSON covers `gits status -o json acme`: the shared envelope,
+// with the working-tree data nested under each repository git was asked about
+// — and no such object on one it never saw. Diagnostic Output stays empty
 // because the json form prints no footer at all: the whole document is Result
 // Output, so it can be piped as one line.
 func TestExecStatusJSON(t *testing.T) {

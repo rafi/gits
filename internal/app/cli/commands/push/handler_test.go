@@ -19,7 +19,7 @@ import (
 // code all run for real, and the interactive finder is never reached.
 
 // pushCall records one push: the repository it went to, and the destination and
-// options gits named. The destination is a requirement of ADR-0002, not an
+// options gits named. The destination is a requirement of safe bulk push, not an
 // implementation detail, so it is asserted on rather than inferred from output.
 type pushCall struct {
 	Repo   string
@@ -215,7 +215,7 @@ func TestExecPushFailureReportsEpilogue(t *testing.T) {
 	}
 }
 
-// TestExecPushUnpushableIsSkipped covers the two skips ADR-0002 requires:
+// TestExecPushUnpushableIsSkipped covers the two skips safe bulk push requires:
 // pushing a branch with no Upstream is undefined, and pushing one whose
 // Upstream is gone would re-create the branch someone deleted on the Remote.
 // Both are passed over with a rendered line, nothing is pushed, and — unlike

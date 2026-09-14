@@ -1,7 +1,7 @@
 // Package checkout is the view side of `gits checkout`: it walks a project's
 // repositories, asks the user which branch each should be on, and reports the
-// outcome. It is not a Bulk Command: it asks the user per repository. See
-// docs/adr/0005-bulk-commands-share-one-module.md.
+// outcome. It is not a Bulk Command: it asks the user per repository, which
+// the shared command engine deliberately does not allow.
 package checkout
 
 import (

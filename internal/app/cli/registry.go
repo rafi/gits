@@ -36,7 +36,7 @@ var (
 	pushOutput   = "table"
 )
 
-// pushOpts is the vetted passthrough set from docs/adr/0002-push-safety-model.md.
+// pushOpts is the vetted passthrough set for safe bulk push.
 // Nothing here reaches --force, -u or --mirror, and nothing should be added
 // that does.
 var pushOpts git.PushOptions

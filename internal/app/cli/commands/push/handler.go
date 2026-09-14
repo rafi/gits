@@ -16,8 +16,8 @@ import (
 )
 
 // ExecPush pushes project repositories, or a specific repo, to their
-// Upstream, rendering the results as lines or as the JSON envelope. See
-// docs/adr/0002-push-safety-model.md for what it deliberately cannot do.
+// Upstream, rendering the results as lines or as the JSON envelope. Bulk push
+// is safe by construction: it cannot force, mirror, or create upstreams.
 //
 // Args: (optional)
 //   - project name

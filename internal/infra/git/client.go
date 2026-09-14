@@ -82,8 +82,7 @@ const (
 // Reader is the read-only half of the git seam: every operation answers a
 // question about a repository and changes nothing in it. A helper or command
 // that takes a Reader states at compile time that it never writes — the same
-// narrowest-useful-operation rule ADR-0002 applies to `push`, applied to the
-// seam itself.
+// narrowest-useful-operation rule `push` follows, applied to the seam itself.
 type Reader interface {
 	IsRepo(ctx context.Context, path string) bool
 	Remote(ctx context.Context, path string) (string, error)

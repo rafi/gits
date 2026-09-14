@@ -472,7 +472,7 @@ func TestRunSkipsProjects(t *testing.T) {
 // TestRunSkipsSubProjects: the skip reaches a sub-project too, taking
 // everything beneath it — and naming a repository inside one explicitly does
 // not override it, which is the defect the single-repository path used to
-// carry by branching before the pruning step (ADR-0005).
+// carry by branching before the pruning step.
 func TestRunSkipsSubProjects(t *testing.T) {
 	t.Parallel()
 

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestPushOptionsValidate covers the mutual exclusion ADR-0002 requires: the
+// TestPushOptionsValidate covers the mutual exclusion bulk push requires: the
 // three ref-selecting flags may not be combined, in any pairing, while every
 // other flag composes freely. gits is stricter than git here on purpose —
 // git accepts --all with its --branches synonym.
