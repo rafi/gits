@@ -578,3 +578,58 @@ func TestLoadConfigUnknownKeysAreCaseInsensitive(t *testing.T) {
 		t.Errorf("cacheTTL = %q, want %q — the value must still have bound", f.Settings.CacheTTL, "1h")
 	}
 }
+
+// TestNewFilePath covers where a config file is created for a user who has
+// none: `~/.gits.yaml` normally, and inside an XDG gits directory the user
+// already made, so a new file joins whatever config layout is in use.
+func TestNewFilePath(t *testing.T) {
+	disableHomedirCache(t)
+
+	t.Run("home by default", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+		got, err := NewFilePath()
+		if err != nil {
+			t.Fatalf("NewFilePath: %v", err)
+		}
+		if want := filepath.Join(home, ".gits.yaml"); got != want {
+			t.Errorf("NewFilePath = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("existing xdg gits directory wins", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		xdg := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		if err := os.MkdirAll(filepath.Join(xdg, "gits"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+
+		got, err := NewFilePath()
+		if err != nil {
+			t.Fatalf("NewFilePath: %v", err)
+		}
+		if want := filepath.Join(xdg, "gits", "config.yaml"); got != want {
+			t.Errorf("NewFilePath = %q, want %q", got, want)
+		}
+	})
+}
+
+// TestExistingPathFindsNothing proves the search a caller uses to tell "no
+// config file" apart from "this one failed" reports empty rather than a path
+// that does not exist.
+func TestExistingPathFindsNothing(t *testing.T) {
+	disableHomedirCache(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	got, err := ExistingPath()
+	if err != nil {
+		t.Fatalf("ExistingPath: %v", err)
+	}
+	if got != "" {
+		t.Errorf("ExistingPath = %q, want empty", got)
+	}
+}

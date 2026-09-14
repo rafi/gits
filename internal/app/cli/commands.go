@@ -28,7 +28,8 @@ var addCmd = &cobra.Command{
 	Use:   "add [project] [repository]...",
 	Short: "Add cloned repositories to a project's list",
 	Long: `Record already-cloned repositories under a project's ` + "`repos:`" + ` in the
-config file. The project is created when it does not exist.
+config file. The project is created when it does not exist, and so is the
+config file itself when you have none.
 
 Each repository argument is a directory, a glob pattern, or a clone URL:
 
@@ -36,10 +37,6 @@ Each repository argument is a directory, a glob pattern, or a clone URL:
   gits add acme ./api ../shared/tools        # directories
   gits add acme 'backend*'                   # every repository matching a glob
   gits add acme git@github.com:acme/api.git  # cloned here first, then added
-
-A glob is expanded by gits when quoted and by the shell otherwise; either way
-only the matches that are git repositories are added, and one the project
-already lists is skipped.
 
 This is for a project that lists its repositories by hand. A project that
 discovers them from a source (github, gitlab, bitbucket, or a filesystem path)

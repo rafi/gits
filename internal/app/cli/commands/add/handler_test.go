@@ -5,8 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mitchellh/go-homedir"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
@@ -28,6 +31,9 @@ type fakeGit struct {
 	remote   string
 	out      string
 	cloneErr error
+	// notRepos are the base names IsRepo denies, so a glob can sweep up a
+	// plain directory beside the repositories.
+	notRepos []string
 
 	clonedTo string
 }
@@ -39,6 +45,10 @@ func (f *fakeGit) Clone(_ context.Context, _, path string) (string, error) {
 
 func (f *fakeGit) Remote(context.Context, string) (string, error) {
 	return f.remote, nil
+}
+
+func (f *fakeGit) IsRepo(_ context.Context, path string) bool {
+	return !slices.Contains(f.notRepos, filepath.Base(path))
 }
 
 // configFile writes a config file holding one project with one repository, and
@@ -250,6 +260,57 @@ func TestExecAddSeveralDirectories(t *testing.T) {
 	}
 }
 
+// TestExecAddSeveralDirectoriesSkipsNonRepositories covers a shell-expanded
+// glob, which arrives as one directory per match. A plain directory among them
+// is skipped with a note, not a failure.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddSeveralDirectoriesSkipsNonRepositories(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git", notRepos: []string{"neovims"}}
+	deps, cwd := addDeps(t, g)
+	dirs := repoDirs(t, cwd, "api", "neovims", "worker")
+
+	err := ExecAdd([]string{"myproj", dirs["api"], dirs["neovims"], dirs["worker"]}, deps.RuntimeCLI)
+	if err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil — a plain directory among many is skipped", err)
+	}
+
+	config, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	for _, name := range []string{"api", "worker"} {
+		if !strings.Contains(string(config), "dir: "+dirs[name]) {
+			t.Errorf("config file is missing %q:\n%s", name, config)
+		}
+	}
+	if strings.Contains(string(config), dirs["neovims"]) {
+		t.Errorf("config file lists %q, which is not a git repository:\n%s", "neovims", config)
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "neovims") ||
+		!strings.Contains(got, "not a git repository") {
+		t.Errorf("Diagnostic Output = %q, want the skipped directory named with a reason", got)
+	}
+}
+
+// TestExecAddSingleNonRepositoryFails is the other half: one directory named
+// on its own is refused rather than passed over in silence.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddSingleNonRepositoryFails(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git", notRepos: []string{"plain"}}
+	deps, cwd := addDeps(t, g)
+	repoDirs(t, cwd, "plain")
+
+	err := ExecAdd([]string{"myproj", "plain"}, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecAdd error = nil, want a refusal for a directory named on its own")
+	}
+	if !strings.Contains(err.Error(), "plain") {
+		t.Errorf("error = %q, want it to name the directory", err)
+	}
+}
+
 // TestExecAddSkipsAlreadyListed covers a target the project already lists:
 // it is passed over with a note on Diagnostic Output, the others are added,
 // and when nothing is left to add the command ends with a warning rather
@@ -303,18 +364,113 @@ func TestExecAddRefusesUnknownTarget(t *testing.T) {
 	}
 }
 
-// TestExecAddGlobWithoutRepositoriesFails covers a pattern that matches
-// directories none of which are repositories, and one that matches nothing:
-// both are failures naming the pattern, so a typo is not a silent success.
+// TestExecAddGlobSkipsNonRepositories covers a pattern that over-matches: the
+// plain directories are skipped with a note naming them, and the repositories
+// it did match are added.
 //
 //nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
-func TestExecAddGlobWithoutRepositoriesFails(t *testing.T) {
+func TestExecAddGlobSkipsNonRepositories(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git", notRepos: []string{"src-docs", "src-assets"}}
+	deps, cwd := addDeps(t, g)
+	dirs := repoDirs(t, cwd, "src-api", "src-docs", "src-assets")
+
+	if err := ExecAdd([]string{"myproj", "src-*"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil — a skipped match is not a failure", err)
+	}
+
+	config, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	if !strings.Contains(string(config), "dir: "+dirs["src-api"]) {
+		t.Errorf("config file is missing the repository that did match:\n%s", config)
+	}
+	for _, name := range []string{"src-docs", "src-assets"} {
+		if strings.Contains(string(config), dirs[name]) {
+			t.Errorf("config file lists %q, which is not a git repository:\n%s", name, config)
+		}
+		if !strings.Contains(deps.Diagnostic(), name) {
+			t.Errorf("Diagnostic Output = %q, want it to name the skipped %q", deps.Diagnostic(), name)
+		}
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "not git repositories") {
+		t.Errorf("Diagnostic Output = %q, want the reason for the skip", got)
+	}
+}
+
+// TestExecAddGlobWithoutRepositoriesWarns covers a pattern that yields no
+// repository: it is reported and the command ends in the downgradeable
+// "nothing to add" warning, leaving the config file alone.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddGlobWithoutRepositoriesWarns(t *testing.T) {
 	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
 	deps, _ := addDeps(t, g)
+	before, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
 
-	err := ExecAdd([]string{"myproj", "nothing-here*"}, deps.RuntimeCLI)
-	if err == nil || !strings.Contains(err.Error(), "nothing-here*") {
-		t.Errorf("ExecAdd error = %v, want a failure naming the pattern", err)
+	err = ExecAdd([]string{"myproj", "nothing-here*"}, deps.RuntimeCLI)
+	if err == nil || !domain.IsWarning(err) {
+		t.Fatalf("ExecAdd error = %v, want a downgradeable warning", err)
+	}
+	if got := deps.Diagnostic(); !strings.Contains(got, "nothing-here*") {
+		t.Errorf("Diagnostic Output = %q, want it to name the pattern that matched nothing", got)
+	}
+	after, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("config file changed with nothing to add:\n%s", after)
+	}
+}
+
+// TestExecAddGlobKeepsGoingAcrossPatterns proves one fruitless pattern does
+// not derail the arguments beside it.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddGlobKeepsGoingAcrossPatterns(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, cwd := addDeps(t, g)
+	dirs := repoDirs(t, cwd, "keeper")
+
+	if err := ExecAdd([]string{"myproj", "gone*", "keep*"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil", err)
+	}
+
+	config, err := os.ReadFile(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	if !strings.Contains(string(config), "dir: "+dirs["keeper"]) {
+		t.Errorf("config file is missing the repository the second pattern matched:\n%s", config)
+	}
+}
+
+// TestExecAddWithoutProjectsFails covers `gits add` with no project named and
+// nothing configured: the command refuses with a message saying what to type.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, which is incompatible with t.Parallel.
+func TestExecAddWithoutProjectsFails(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
+	deps, _ := addDeps(t, g)
+	deps.Projects = domain.ProjectListKeyed{}
+	home := emptyConfigHome(t)
+	deps.ConfigPath = ""
+	deps.HomeDir = home
+
+	err := ExecAdd(nil, deps.RuntimeCLI)
+	if err == nil {
+		t.Fatal("ExecAdd error = nil, want a refusal naming what to do")
+	}
+	if !strings.Contains(err.Error(), "gits add") {
+		t.Errorf("error = %q, want it to show naming a project", err)
+	}
+	// No project could be added, so no config file should have been created.
+	if _, statErr := os.Stat(filepath.Join(home, ".gits.yaml")); statErr == nil {
+		t.Error("a config file was created for a command that could not go on")
 	}
 }
 
@@ -373,4 +529,102 @@ func TestExecAddStartsAnEmptyConfig(t *testing.T) {
 			t.Errorf("config file is missing %q:\n%s", line, config)
 		}
 	}
+}
+
+// TestExecAddCreatesConfigWhenNoneExists covers a user with no config file at
+// all: `gits add` writes one at the default path rather than refusing, and the
+// project and repository land in it.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, and t.Setenv must stay serial.
+func TestExecAddCreatesConfigWhenNoneExists(t *testing.T) {
+	const src = "git@example.com:fixture/here.git"
+	g := &fakeGit{remote: src}
+	deps, cwd := addDeps(t, g)
+	deps.Projects = domain.ProjectListKeyed{}
+	// No config file anywhere: an empty ConfigPath is what the loader leaves
+	// when its search over HOME and XDG_CONFIG_HOME found nothing.
+	home := emptyConfigHome(t)
+	deps.ConfigPath = ""
+	deps.HomeDir = home
+
+	if err := ExecAdd([]string{"fresh"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil", err)
+	}
+
+	created := filepath.Join(home, ".gits.yaml")
+	data, err := os.ReadFile(created)
+	if err != nil {
+		t.Fatalf("read created config %s: %v", created, err)
+	}
+	for _, line := range []string{"fresh:", "dir: " + cwd, "src: " + src} {
+		if !strings.Contains(string(data), line) {
+			t.Errorf("created config is missing %q:\n%s", line, data)
+		}
+	}
+	if diag := deps.Diagnostic(); !strings.Contains(diag, created) &&
+		!strings.Contains(diag, ".gits.yaml") {
+		t.Errorf("Diagnostic Output = %q, want it to report the config file it created", diag)
+	}
+}
+
+// TestExecAddKeepsAnExistingConfig is the safety half of creating one: when a
+// config file already exists at the default location, `gits add` appends to it
+// and every line the user wrote survives.
+//
+//nolint:paralleltest // addDeps calls t.Chdir, and t.Setenv must stay serial.
+func TestExecAddKeepsAnExistingConfig(t *testing.T) {
+	g := &fakeGit{remote: "git@example.com:fixture/here.git"}
+	deps, _ := addDeps(t, g)
+	deps.Projects = domain.ProjectListKeyed{}
+	home := emptyConfigHome(t)
+	deps.ConfigPath = ""
+	deps.HomeDir = home
+
+	existing := filepath.Join(home, ".gits.yaml")
+	const content = "# my notes\nmyproj:\n  repos:\n    - dir: ~/code/existing\n      src: git@x:a/existing.git\n"
+	if err := os.WriteFile(existing, []byte(content), 0o600); err != nil {
+		t.Fatalf("write existing config: %v", err)
+	}
+
+	if err := ExecAdd([]string{"fresh"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecAdd error = %v, want nil", err)
+	}
+
+	data, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatalf("read config back: %v", err)
+	}
+	for line := range strings.SplitSeq(strings.TrimSpace(content), "\n") {
+		if !strings.Contains(string(data), line) {
+			t.Fatalf("existing config lost %q, it was overwritten:\n%s", line, data)
+		}
+	}
+	if !strings.Contains(string(data), "fresh:") {
+		t.Errorf("config is missing the added project:\n%s", data)
+	}
+	fi, err := os.Stat(existing)
+	if err != nil {
+		t.Fatalf("stat config: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Errorf("mode = %v, want the existing file's %v preserved", got, os.FileMode(0o600))
+	}
+}
+
+// emptyConfigHome points the config search at empty directories, so a test
+// runs against a machine with no gits config file, and returns the home it
+// made. go-homedir's process-wide cache is disabled for the test's duration,
+// or $HOME set here would not be the home it answers with.
+func emptyConfigHome(t *testing.T) string {
+	t.Helper()
+	//nolint:reassign // go-homedir exposes its cache toggle as a package variable.
+	homedir.DisableCache = true
+	t.Cleanup(func() {
+		//nolint:reassign // restore the package default this test changed.
+		homedir.DisableCache = false
+	})
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	return home
 }

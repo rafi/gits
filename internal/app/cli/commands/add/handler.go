@@ -1,7 +1,9 @@
 package add
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/goccy/go-yaml/ast"
@@ -9,6 +11,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	pick "github.com/rafi/gits/internal/app/cli/interaction/select"
+	"github.com/rafi/gits/internal/config"
 	"github.com/rafi/gits/internal/format"
 	"github.com/rafi/gits/internal/infra/providers"
 )
@@ -25,12 +28,24 @@ import (
 //     a clone URL, which is cloned into the current directory first. With
 //     none, the current directory is the repository.
 func ExecAdd(args []string, deps app.RuntimeCLI) error {
-	config, err := load(deps.ConfigPath)
+	if len(args) == 0 && len(deps.Projects) == 0 {
+		// Without a project name the project is picked interactively, and an
+		// empty list gives nothing to pick. Fail before creating a config file.
+		return errors.New(
+			"no projects are configured, so there is nothing to add to: " +
+				"name the project to create, as in `gits add myproject`")
+	}
+
+	configPath, err := ensureConfigFile(deps)
+	if err != nil {
+		return err
+	}
+	doc, err := load(configPath)
 	if err != nil {
 		return err
 	}
 
-	project, projNode, err := ensureProject(args, config, deps)
+	project, projNode, err := ensureProject(args, doc, deps)
 	if err != nil {
 		return err
 	}
@@ -63,7 +78,7 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 			return fmt.Errorf("unable to read the remote of %s: %w", path, err)
 		}
 		nicePath := format.Path(path, deps.HomeDir)
-		if err := config.addRepo(projNode, nicePath, remoteURL); err != nil {
+		if err := doc.addRepo(projNode, nicePath, remoteURL); err != nil {
 			return err
 		}
 		added = append(added, nicePath)
@@ -73,7 +88,7 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 	if len(added) == 0 {
 		return domain.NewWarning("nothing to add to project %q", project.Name)
 	}
-	if err := config.save(deps.ConfigPath); err != nil {
+	if err := doc.save(configPath); err != nil {
 		return err
 	}
 
@@ -81,6 +96,50 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 		fmt.Fprintf(deps.Out, "Added %q repository to project %q\n", path, project.Name)
 	}
 	return nil
+}
+
+// ensureConfigFile returns the config file `add` should write to, creating an
+// empty one for a user who has none. A user with a config file always gets
+// that file: the empty ConfigPath this acts on means the loader searched every
+// default location and found nothing, and the new file is created with
+// O_EXCL, so a file that appeared in the meantime is used as it is rather than
+// truncated. Nothing here ever writes over a config that already exists.
+func ensureConfigFile(deps app.RuntimeCLI) (string, error) {
+	if deps.ConfigPath != "" {
+		return deps.ConfigPath, nil
+	}
+	// Re-run the loader's own search: ConfigPath is empty both for a user with
+	// no config file and for a test that left the field unset.
+	existing, err := config.ExistingPath()
+	if err != nil {
+		return "", err
+	}
+	if existing != "" {
+		return existing, nil
+	}
+
+	path, err := config.NewFilePath()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("unable to create config directory: %w", err)
+	}
+	// A config file can hold provider tokens, so a file gits creates is the
+	// user's own to read; one that already exists keeps the mode they chose.
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	switch {
+	case os.IsExist(err):
+		// Another process wrote one between the search and now: append to it.
+		return path, nil
+	case err != nil:
+		return "", fmt.Errorf("unable to create config file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("unable to create config file: %w", err)
+	}
+	fmt.Fprintf(deps.Err, "Created config file %s\n", format.Path(path, deps.HomeDir))
+	return path, nil
 }
 
 // ensureProject returns a project by name along with its mapping in the

@@ -127,29 +127,62 @@ func validateProject(project domain.Project) error {
 
 // findDefaultPath reads in config file and ENV variables if set.
 func (f *File) findDefaultPath() (string, error) {
+	return ExistingPath()
+}
+
+// configDirs lists the directories and basenames a config file is looked for
+// under, in the order they win: `~/.gits` first, then the XDG config home.
+func configDirs() ([]string, error) {
 	home, err := homedir.Dir()
 	if err != nil {
-		return "", fmt.Errorf("unable to find home directory: %w", err)
+		return nil, fmt.Errorf("unable to find home directory: %w", err)
 	}
 
 	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfigHome == "" {
 		xdgConfigHome = filepath.Join(home, ".config")
 	}
-	configDirectories := []string{
+	return []string{
 		filepath.Join(home, ".gits"),
 		filepath.Join(xdgConfigHome, "gits", "config"),
+	}, nil
+}
+
+// ExistingPath reports the config file gits would load, or "" when the user
+// has none. It is the same search the loader performs, exposed for a command
+// that must tell "no config file exists" apart from "this one failed".
+func ExistingPath() (string, error) {
+	configDirectories, err := configDirs()
+	if err != nil {
+		return "", err
 	}
 	for _, configPath := range configDirectories {
 		for _, configExt := range []string{".json", ".yaml", ".yml", ".toml"} {
-			//nolint:gosec // the path is built from this user's own HOME and
-			// XDG_CONFIG_HOME; there is no untrusted input to traverse with.
 			if _, err := os.Stat(configPath + configExt); !os.IsNotExist(err) {
 				return configPath + configExt, nil
 			}
 		}
 	}
 	return "", nil
+}
+
+// NewFilePath is where a config file should be created for a user who has
+// none: `~/.gits.yaml`, unless an XDG config directory for gits already
+// exists, in which case the file belongs beside whatever is already there.
+// It only names a path; creating the file is the caller's business, and the
+// caller is expected to check ExistingPath first.
+func NewFilePath() (string, error) {
+	configDirectories, err := configDirs()
+	if err != nil {
+		return "", err
+	}
+	// configDirs returns basenames; the XDG one sits in a directory of its
+	// own, which is the one to honor when the user already made it.
+	xdgBase := configDirectories[len(configDirectories)-1]
+	if fi, err := os.Stat(filepath.Dir(xdgBase)); err == nil && fi.IsDir() {
+		return xdgBase + ".yaml", nil
+	}
+	return configDirectories[0] + ".yaml", nil
 }
 
 // loadConfig reads in config file and ENV variables if set.

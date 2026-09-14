@@ -115,7 +115,8 @@ Run `gits doctor` at any time to see which of these were found and where.
 ## Quick start
 
 **1. Write a config file** at `~/.gits.yaml` (or
-`$XDG_CONFIG_HOME/gits/config.yaml`):
+`$XDG_CONFIG_HOME/gits/config.yaml`). Running `gits add <project>` inside a
+cloned repository writes one for you when you have none:
 
 ```yaml
 ---
