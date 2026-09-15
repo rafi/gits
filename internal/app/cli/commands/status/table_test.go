@@ -323,12 +323,187 @@ func TestRenderTableClampsToTerminal(t *testing.T) {
 	if !strings.Contains(plain, "…") {
 		t.Errorf("expected truncated cells with …:\n%s", plain)
 	}
-	// Pinned columns must survive the squeeze intact: counts, flags, commit
-	// hashes, ages and their headers never truncate.
-	for _, want := range []string{"≠12", "?4K", "⇡2", "⇣1", "+!",
-		"f3a9c2d1", "0e631add", "2h", "1d", "Upstream⇅", "Commit"} {
+	// Pinned columns must survive the squeeze intact: counts, flags and
+	// their headers never truncate. Commit and Age are optional at this
+	// width and may have been dropped — TestRenderTableNarrowDropOrder
+	// covers that — but whatever remains is whole.
+	for _, want := range []string{"≠12", "?4K", "⇡2", "⇣1", "+!", "Upstream⇅"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("pinned column content %q lost in clamping:\n%s", want, plain)
+		}
+	}
+}
+
+// TestRenderTableNarrowKeepsRepoReadable: as the terminal narrows the table
+// sheds optional columns — age, then commit, then the counts, then branch —
+// instead of squeezing Repo and Message into unreadable stubs. Whatever is
+// dropped, every row still names its repository in full and keeps its status
+// glyphs and message.
+func TestRenderTableNarrowKeepsRepoReadable(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{70, 60, 50, 40} {
+		sts := fixtureStatuses()
+		sts[0].Repo.Path = "platform-api"
+		sts[0].Head.Subject = strings.Repeat("very long commit subject ", 4)
+
+		out := renderTable(sts, width, Options{}, statusDeps(t, fakeGit{}))
+		plain := ansi.Strip(out)
+		lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
+
+		if len(lines) != 4 {
+			t.Fatalf("width %d: expected 4 lines, got %d:\n%s", width, len(lines), plain)
+		}
+		for i, line := range lines {
+			if w := lipgloss.Width(line); w > width {
+				t.Errorf("width %d: line %d is %d wide:\n%s", width, i, w, line)
+			}
+		}
+		// The columns that survive at every width.
+		for _, want := range []string{"Repo", "Status", "Message",
+			"platform-api", "web", "infra", "not cloned"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("width %d: dropped essential content %q:\n%s", width, want, plain)
+			}
+		}
+	}
+}
+
+// TestRenderTableExtremelyNarrow: even at widths no table can honestly fill,
+// rows never wrap or overflow, and each still carries a stub of its
+// repository name to tell it from the others.
+func TestRenderTableExtremelyNarrow(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{30, 20, 10, 5, 1} {
+		sts := fixtureStatuses()
+		sts[0].Repo.Path = "acme/backend/platform-api"
+
+		plain := ansi.Strip(renderTable(sts, width, Options{}, statusDeps(t, fakeGit{})))
+		lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
+
+		if len(lines) != 4 {
+			t.Fatalf("width %d: expected 4 lines, got %d:\n%s", width, len(lines), plain)
+		}
+		for i, line := range lines {
+			if w := lipgloss.Width(line); w > width {
+				t.Errorf("width %d: line %d is %d wide:\n%s", width, i, w, line)
+			}
+		}
+		// Below this the gutter and padding alone consume the terminal.
+		if width >= 10 && !strings.Contains(plain, "-api") {
+			t.Errorf("width %d: no trace of the repository name:\n%s", width, plain)
+		}
+	}
+}
+
+// TestRenderTableNarrowDropOrder: the optional columns disappear in priority
+// order — age first, then the commit hash, the counts and finally branch — so
+// the set of columns a narrower terminal shows is always a subset of what a
+// wider one shows, and a wide terminal shows them all.
+func TestRenderTableNarrowDropOrder(t *testing.T) {
+	t.Parallel()
+
+	header := func(width int) string {
+		sts := fixtureStatuses()
+		sts[0].Repo.Path = "platform-api"
+		sts[0].Head.Subject = strings.Repeat("very long commit subject ", 4)
+		out := ansi.Strip(renderTable(sts, width, Options{}, statusDeps(t, fakeGit{})))
+		return strings.Split(out, "\n")[0]
+	}
+
+	// Widest to narrowest, in the order the columns are shed.
+	optional := []string{"Age", "Commit", "Upstream⇅", "Δ±", "Branch"}
+	if got := header(120); !strings.Contains(got, "Age") {
+		t.Errorf("a wide terminal should keep every column, got %q", got)
+	}
+
+	prev := 0 // how many optional columns the previous, wider table dropped
+	for _, width := range []int{120, 90, 70, 60, 50, 40, 30} {
+		got := header(width)
+		dropped := 0
+		for _, col := range optional {
+			if !strings.Contains(got, col) {
+				dropped++
+			}
+		}
+		// The dropped columns are always a prefix of the drop order: the
+		// first `dropped` optional columns are gone, the rest remain.
+		for i, col := range optional {
+			if missing := !strings.Contains(got, col); missing != (i < dropped) {
+				t.Errorf("width %d: %q out of drop order in %q", width, col, got)
+			}
+		}
+		if dropped < prev {
+			t.Errorf("width %d dropped %d columns, wider table dropped %d: %q",
+				width, dropped, prev, got)
+		}
+		prev = dropped
+		// Repo, Status and Message are never optional.
+		for _, want := range []string{"Repo", "Status", "Message"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("width %d: header %q lost %q", width, got, want)
+			}
+		}
+	}
+}
+
+// TestRenderTableRepoTruncatesFromTheLeft: repository paths share their
+// leading components and differ at the end, so a squeezed Repo cell keeps its
+// tail and marks the cut with a leading "…".
+func TestRenderTableRepoTruncatesFromTheLeft(t *testing.T) {
+	t.Parallel()
+
+	sts := fixtureStatuses()
+	sts[0].Repo.Path = "acme/backend/platform-api"
+
+	out := renderTable(sts, 60, Options{}, statusDeps(t, fakeGit{}))
+	plain := ansi.Strip(out)
+	row := strings.Split(strings.TrimRight(plain, "\n"), "\n")[1]
+
+	if !strings.Contains(row, "platform-api") {
+		t.Errorf("Repo cell lost its distinguishing tail:\n%s", row)
+	}
+	if !strings.Contains(row, "…") {
+		t.Errorf("expected a … marking the truncated head:\n%s", row)
+	}
+	if strings.Contains(row, "acme/backend") {
+		t.Errorf("Repo cell should have dropped its leading components:\n%s", row)
+	}
+}
+
+// TestTruncateHead: the left-truncation helper yields exactly the requested
+// width, keeps the tail, and degrades sensibly when there is no room.
+// ansi.TruncateLeft counts the cells to drop rather than the width to keep,
+// and returns "" once asked to drop everything, so the boundaries matter.
+func TestTruncateHead(t *testing.T) {
+	t.Parallel()
+
+	const s = "acme/platform-api" // 17 cells
+
+	cases := []struct {
+		w    int
+		want string
+	}{
+		{w: 25, want: s},                  // wider than the text: untouched
+		{w: 17, want: s},                  // exactly the text: untouched
+		{w: 16, want: "…me/platform-api"}, // one cell over: one dropped, one marked
+		{w: 6, want: "…m-api"},
+		{w: 2, want: "…i"},
+		{w: 1, want: "…"},
+		{w: 0, want: ""},
+		{w: -3, want: ""},
+	}
+	for _, c := range cases {
+		got := truncateHead(s, c.w)
+		if got != c.want {
+			t.Errorf("truncateHead(%q, %d) = %q, want %q", s, c.w, got, c.want)
+		}
+		if c.w > 0 && lipgloss.Width(got) > c.w {
+			t.Errorf("truncateHead(%q, %d) = %q, wider than %d", s, c.w, got, c.w)
+		}
+		if c.w > 1 && c.w < lipgloss.Width(s) && !strings.HasSuffix(got, "i") {
+			t.Errorf("truncateHead(%q, %d) = %q, want the tail kept", s, c.w, got)
 		}
 	}
 }

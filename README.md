@@ -16,10 +16,10 @@ directory and it works immediately, no config needed:
 
 ```console
 $ gits status ~/code
-    Repo  Branch  Status  Δ±  Upstream⇅  Version  Commit    Age  Message
-  + api   main     !  –   ≠1  ↑3                  c1abd2ef  now  Add feature
-    web   main        –                           4f2ba910  2d   Fix layout
-  / tools             –                                          not cloned
+    Repo  Branch  Status  Δ±  Upstream⇅  Commit    Age  Message
+  + api   main     !  –   ≠1  ↑3         c1abd2ef  now  Add feature
+    web   main        –                  4f2ba910  2d   Fix layout
+  / tools             –                                 not cloned
 
 ○ Showing 3 repos, 1 with changes, 1 error
 ```

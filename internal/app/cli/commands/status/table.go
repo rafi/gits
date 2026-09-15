@@ -3,12 +3,14 @@ package status
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
@@ -64,12 +66,20 @@ const (
 	countThousand    = 1000
 	countUncountable = 10000
 
-	// hoursPerDay converts the age of a commit into the coarser units
-	// shortAge renders it in.
-	hoursPerDay  = 24
-	daysPerWeek  = 7
-	daysPerMonth = 30
-	daysPerYear  = 365
+	// The coarser units shortAge renders the age of a commit in.
+	day   = 24 * time.Hour
+	week  = 7 * day
+	month = 30 * day
+	year  = 365 * day
+
+	// minTextCell is the narrowest the two text columns, Repo and Message,
+	// may become. Below it a cell is a stub like "ac…" that names nothing,
+	// so the table drops an optional column instead.
+	minTextCell = 12
+
+	// minTailCell is the stub a keepTail column keeps even when the terminal
+	// is too narrow for the table: "…-api" still tells two rows apart.
+	minTailCell = 5
 )
 
 // tableColumn describes one display-order column of the status table.
@@ -79,7 +89,45 @@ type tableColumn struct {
 	right  bool // right-aligned counts
 	flex   bool // may contract when the table is width-capped
 	bare   bool // no trailing padding (last column)
+	// keepTail truncates from the left, keeping the end of the text. Paths
+	// share their leading components and differ at the end, so "…/api" name
+	// a repository where "acme/pl…" does not.
+	keepTail bool
+	// drop orders the optional columns a narrow terminal sheds, lowest
+	// first; 0 means the column always renders.
+	drop int
 }
+
+// text reports whether the column holds prose or a path: the columns that can
+// give up width by truncating, rather than by being dropped entirely.
+func (c tableColumn) text() bool { return c.flex || c.keepTail }
+
+// columnPad returns the horizontal padding columnStyle gives a column, so
+// every measurement agrees with what is rendered.
+func columnPad(col tableColumn) int {
+	switch {
+	case col.gutter:
+		return gutterPadLeft + gutterPadRight
+	case col.bare:
+		return 0
+	default:
+		return cellPad
+	}
+}
+
+// The drop order of the optional columns, shed lowest first as the terminal
+// narrows. Age and the commit hash go first: they are reference data, not
+// state. The two count columns follow, because the Status glyphs already say
+// that a row is dirty or diverged — the counts only quantify it. Branch is
+// last. The gutter, Repo, Status and Message columns always render: they are
+// what makes a row identifiable and actionable.
+const (
+	dropAge = iota + 1
+	dropCommit
+	dropUpstream
+	dropDelta
+	dropBranch
+)
 
 // renderTable renders one project's repositories as a borderless aligned
 // table: bold header, gutter glyph, fixed status slots, right-aligned counts
@@ -94,33 +142,29 @@ func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.Run
 	// participates only with --stat.
 	cols := []tableColumn{
 		{title: "", gutter: true},
-		{title: "Repo", flex: true},
-		{title: "Branch"},
+		{title: "Repo", keepTail: true},
+		{title: "Branch", drop: dropBranch},
 		{title: "Status"},
 	}
 	if opts.Stat {
 		cols = append(cols, tableColumn{title: "HEAD±", right: true})
 	}
 	cols = append(cols,
-		tableColumn{title: "Δ±", right: true},
-		tableColumn{title: "Upstream⇅", right: true},
-		tableColumn{title: "Commit"},
-		tableColumn{title: "Age"},
+		tableColumn{title: "Δ±", right: true, drop: dropDelta},
+		tableColumn{title: "Upstream⇅", right: true, drop: dropUpstream},
+		tableColumn{title: "Commit", drop: dropCommit},
+		tableColumn{title: "Age", drop: dropAge},
 		tableColumn{title: "Message", flex: true, bare: true},
 	)
-	headers := make([]string, len(cols))
-	for c, col := range cols {
-		headers[c] = col.title
-	}
 
+	dim := func(s string) string {
+		if s == "" {
+			return ""
+		}
+		return th.StatusDim.Render(s)
+	}
 	rows := make([][]string, len(sts))
 	for i, st := range sts {
-		dim := func(s string) string {
-			if s == "" {
-				return ""
-			}
-			return th.StatusDim.Render(s)
-		}
 		title, branch := st.Repo.Path, st.Branch
 		if st.Repo.State != domain.RepoStateOK {
 			title, branch = dim(title), dim(branch)
@@ -141,60 +185,156 @@ func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.Run
 		)
 	}
 
-	pinned, natural := measureColumns(cols, rows)
+	// A narrow terminal sheds optional columns and left-truncates Repo, so
+	// Message is the only column lipgloss still has to contract.
+	cols, rows, colWidths := fitColumns(cols, rows, termWidth)
+
+	headers := make([]string, len(cols))
+	for c, col := range cols {
+		headers[c] = col.title
+	}
 
 	t := table.New().
-		Border(lipgloss.Border{}).
 		BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
 		BorderColumn(false).BorderHeader(false).BorderRow(false).
 		Wrap(false).
 		Headers(headers...).
 		Rows(rows...).
-		StyleFunc(columnStyle(cols, pinned, th))
+		StyleFunc(columnStyle(cols, colWidths, th))
 
 	// When the natural width overflows the terminal, hand the width cap to
 	// lipgloss, whose resizer contracts the widest flexible columns and
 	// …-truncates their cells (Wrap(false)) so rows never hard-wrap.
-	if termWidth > 0 && natural > termWidth {
+	if termWidth > 0 && sum(colWidths) > termWidth {
 		t = t.Width(termWidth)
 	}
 	return t.String()
 }
 
-// measureColumns measures every column once, returning the pinned widths
-// (style Width marks a column fixed for the resizer) and the table's natural
-// width. Only the flexible text columns (Repo, Message) stay
-// unpinned and may contract when the table is width-capped; sparse count
-// columns would otherwise be shrunk first — their median width is 0 — and
-// collapse to "…". The natural width is summed here so the cap decision
-// happens before the single render.
-func measureColumns(cols []tableColumn, rows [][]string) (map[int]int, int) {
-	pinned := map[int]int{}
-	natural := 0
-	for c, col := range cols {
-		w := lipgloss.Width(col.title)
-		for _, row := range rows {
-			w = max(w, lipgloss.Width(row[c]))
+// fitColumns sheds optional columns, lowest drop order first, until the text
+// columns fit termWidth without shrinking past minTextCell, then truncates the
+// keepTail columns to whatever the rest of the table leaves them. It returns
+// the surviving columns, their rows and their natural widths.
+//
+// This leaves Message as the only flexible column, so lipgloss' resizer has a
+// single column to contract. Left to itself it shares the shortfall between
+// Repo and Message in proportion to their width, which spends most of it on
+// Repo and renders rows named "ac…". An unknown width (0, not a terminal) or a
+// table that already fits keeps every column whole.
+func fitColumns(cols []tableColumn, rows [][]string, termWidth int) ([]tableColumn, [][]string, []int) {
+	widths := make([]int, len(cols))
+	for c := range cols {
+		widths[c] = naturalWidth(cols[c], rows, c)
+	}
+	if termWidth <= 0 {
+		return cols, rows, widths
+	}
+	for demand(cols, widths) > termWidth {
+		// The lowest surviving drop order is the next column to shed.
+		victim := -1
+		for c, col := range cols {
+			if col.drop > 0 && (victim < 0 || col.drop < cols[victim].drop) {
+				victim = c
+			}
 		}
-		pad := cellPad
-		switch {
-		case col.gutter:
-			pad = gutterPadLeft + gutterPadRight
-		case col.bare:
-			pad = 0
+		if victim < 0 {
+			break // nothing optional left; the text columns absorb the rest
 		}
-		natural += w + pad
-		if !col.flex {
-			pinned[c] = w + pad
+		cols = slices.Delete(cols, victim, victim+1)
+		widths = slices.Delete(widths, victim, victim+1)
+		for i, row := range rows {
+			rows[i] = slices.Delete(row, victim, victim+1)
 		}
 	}
-	return pinned, natural
+
+	// Trim the keepTail columns from the left to the width the other columns
+	// leave them. Cutting the head keeps the end of a path visible, so a
+	// squeezed cell still reads "…/gits".
+	for c, col := range cols {
+		if !col.keepTail {
+			continue
+		}
+		rest := demand(cols, widths) - demandOf(col, widths[c])
+		give := min(widths[c], termWidth-rest) - columnPad(col)
+		// Even a terminal too narrow for the other columns keeps a stub of
+		// the name: it is what tells one row from another.
+		give = max(give, minTailCell)
+		for _, row := range rows {
+			row[c] = truncateHead(row[c], give)
+		}
+		widths[c] = naturalWidth(col, rows, c)
+	}
+	return cols, rows, widths
+}
+
+// demand returns the width the table needs to render: every column at its
+// natural width, except the text columns, which can truncate to minTextCell.
+func demand(cols []tableColumn, widths []int) int {
+	total := 0
+	for c, col := range cols {
+		total += demandOf(col, widths[c])
+	}
+	return total
+}
+
+// demandOf returns the width a column of natural width w needs, padding
+// included.
+func demandOf(col tableColumn, w int) int {
+	if col.text() {
+		return min(w, minTextCell+columnPad(col))
+	}
+	return w
+}
+
+// naturalWidth returns the width column c needs to show every cell and its
+// header whole, padding included.
+func naturalWidth(col tableColumn, rows [][]string, c int) int {
+	w := lipgloss.Width(col.title)
+	for _, row := range rows {
+		w = max(w, lipgloss.Width(row[c]))
+	}
+	return w + columnPad(col)
+}
+
+// sum adds up the widths.
+func sum(widths []int) int {
+	total := 0
+	for _, w := range widths {
+		total += w
+	}
+	return total
+}
+
+// truncateHead truncates s from the left to exactly w cells, marking the cut
+// with a leading "…". ansi.TruncateLeft takes the number of cells to drop, and
+// returns nothing at all once asked to drop the whole string, so the count is
+// derived from the width wanted and the degenerate widths are handled here.
+func truncateHead(s string, w int) string {
+	switch width := lipgloss.Width(s); {
+	case w <= 0:
+		return ""
+	case width <= w:
+		return s
+	case w == 1:
+		// Room for the marker alone: the name cannot be shown at all.
+		return "…"
+	default:
+		// Dropping `width-w+1` cells leaves w-1, and the marker fills w.
+		return ansi.TruncateLeft(s, width-w+1, "…")
+	}
 }
 
 // columnStyle returns the table's per-cell style function: alignment and
-// padding from the column's declaration, its measured width when pinned, and
-// the header style on the header row.
-func columnStyle(cols []tableColumn, pinned map[int]int, th style.Theme) func(row, c int) lipgloss.Style {
+// padding from the column's declaration, its natural width unless it is
+// flexible, and the header style on the header row.
+//
+// A style Width marks a column fixed for lipgloss' resizer, which shrinks only
+// the columns it is free to shrink. Every column but Message is pinned: Repo
+// has already been truncated to fit, and the sparse count columns would
+// otherwise be shrunk first — their median width is 0 — and collapse to "…".
+// That leaves Message, the one column that can always say less, to absorb the
+// remaining overflow.
+func columnStyle(cols []tableColumn, widths []int, th style.Theme) func(row, c int) lipgloss.Style {
 	return func(row, c int) lipgloss.Style {
 		s := lipgloss.NewStyle().PaddingRight(cellPad)
 		if c < 0 || c >= len(cols) {
@@ -209,8 +349,8 @@ func columnStyle(cols []tableColumn, pinned map[int]int, th style.Theme) func(ro
 		case col.bare:
 			s = s.PaddingRight(0)
 		}
-		if w, ok := pinned[c]; ok {
-			s = s.Width(w)
+		if !col.flex {
+			s = s.Width(widths[c])
 		}
 		if row == table.HeaderRow {
 			s = s.Inherit(th.StatusHeader)
@@ -282,19 +422,34 @@ func newSlotWidths(icons domain.Icons) slotWidths {
 //
 //	1 staged  2 unstaged  3 untracked  4 error/not-cloned  5 upstream
 func statusSlots(st *status.Report, icons domain.Icons, th style.Theme, widths slotWidths) string {
-	slot := func(active bool, icon string, style lipgloss.Style) string {
+	// slot renders icon in style, right-filled to width; an empty icon is a
+	// blank slot.
+	slot := func(icon string, style lipgloss.Style, width int) string {
+		if icon == "" {
+			return strings.Repeat(" ", width)
+		}
+		return style.Render(icon) + strings.Repeat(" ", width-lipgloss.Width(icon))
+	}
+	// flag renders a change glyph in its own width, or blanks it.
+	flag := func(active bool, icon string) string {
 		if !active {
 			return strings.Repeat(" ", lipgloss.Width(icon))
 		}
-		return style.Render(icon)
-	}
-	// pad right-fills a rendered glyph to its slot's fixed width.
-	pad := func(rendered, icon string, width int) string {
-		return rendered + strings.Repeat(" ", width-lipgloss.Width(icon))
+		return th.StatusFlag.Render(icon)
 	}
 
-	upstreamIcon := icons.DiffClean
+	fourthIcon, fourthStyle := "", th.StatusDim
 	switch {
+	case st.Err != nil && st.Repo.State != domain.RepoStateNotCloned &&
+		st.Repo.State != domain.RepoStateRemoteOnly:
+		fourthIcon, fourthStyle = icons.DiffError, th.Error
+	case st.Repo.State != domain.RepoStateOK:
+		fourthIcon = icons.NA
+	}
+
+	upstreamIcon := ""
+	switch broken := st.Repo.State != domain.RepoStateOK || st.Err != nil; {
+	case broken:
 	case st.GoneUpstream():
 		// Ahead of the divergence glyphs: a Gone Upstream is what the row is
 		// about, and the counts — measured against a fallback ref, when one
@@ -308,28 +463,15 @@ func statusSlots(st *status.Report, icons domain.Icons, th style.Theme, widths s
 		upstreamIcon = icons.Ahead
 	case st.Behind > 0:
 		upstreamIcon = icons.Behind
+	default:
+		upstreamIcon = icons.DiffClean
 	}
 
-	broken := st.Repo.State != domain.RepoStateOK || st.Err != nil
-	fourth := pad(" ", " ", widths.fourth)
-	switch {
-	case st.Err != nil && st.Repo.State != domain.RepoStateNotCloned &&
-		st.Repo.State != domain.RepoStateRemoteOnly:
-		fourth = pad(th.Error.Render(icons.DiffError), icons.DiffError, widths.fourth)
-	case st.Repo.State != domain.RepoStateOK:
-		fourth = pad(th.StatusDim.Render(icons.NA), icons.NA, widths.fourth)
-	}
-
-	upstream := strings.Repeat(" ", widths.upstream)
-	if !broken {
-		upstream = pad(th.StatusDim.Render(upstreamIcon), upstreamIcon, widths.upstream)
-	}
-
-	return slot(st.Staged > 0, icons.Staged, th.StatusFlag) +
-		slot(st.Unstaged > 0, icons.Unstaged, th.StatusFlag) +
-		slot(st.Untracked > 0, icons.Untracked, th.StatusFlag) +
-		fourth +
-		upstream
+	return flag(st.Staged > 0, icons.Staged) +
+		flag(st.Unstaged > 0, icons.Unstaged) +
+		flag(st.Untracked > 0, icons.Untracked) +
+		slot(fourthIcon, fourthStyle, widths.fourth) +
+		slot(upstreamIcon, th.StatusDim, widths.upstream)
 }
 
 // countCells holds the HEAD±, Δ± and Upstream⇅ cell text per row.
@@ -339,69 +481,65 @@ type countCells struct {
 	upstream []string
 }
 
+// countPair is the two sub-cells of one count column, before padding.
+type countPair [2]string
+
 // buildCountCells renders the HEAD±, Δ± and Upstream⇅ cells with per-table
 // sub-cell padding, so counts right-align on the ones digit across the group.
-func buildCountCells(
-	sts []*status.Report,
-	icons domain.Icons,
-	th style.Theme,
-) countCells {
-	type sub struct{ add, del, mod, unt, ahead, behind string }
-	subs := make([]sub, len(sts))
-	var wAdd, wDel, wMod, wUnt, wAhead, wBehind int
+func buildCountCells(sts []*status.Report, icons domain.Icons, th style.Theme) countCells {
+	count := func(n int, prefix string, s lipgloss.Style) string {
+		if n <= 0 {
+			return ""
+		}
+		return s.Render(prefix + compactCount(n))
+	}
+	stat := make([]countPair, len(sts))
+	delta := make([]countPair, len(sts))
+	upstream := make([]countPair, len(sts))
 	for i, st := range sts {
 		if st.Err != nil || st.Repo.State != domain.RepoStateOK {
 			continue
 		}
-		if st.Stat != nil && st.Stat.Added > 0 {
-			subs[i].add = th.StatusAdded.Render("+" + compactCount(st.Stat.Added))
+		if st.Stat != nil {
+			stat[i] = countPair{
+				count(st.Stat.Added, "+", th.StatusAdded),
+				count(st.Stat.Deleted, "-", th.StatusDeleted),
+			}
 		}
-		if st.Stat != nil && st.Stat.Deleted > 0 {
-			subs[i].del = th.StatusDeleted.Render("-" + compactCount(st.Stat.Deleted))
+		delta[i] = countPair{
+			count(st.Staged+st.Unstaged, icons.Modified, th.StatusFlag),
+			count(st.Untracked, icons.Untracked, th.StatusFlag),
 		}
-		if n := st.Staged + st.Unstaged; n > 0 {
-			subs[i].mod = th.StatusFlag.Render(icons.Modified + compactCount(n))
+		upstream[i] = countPair{
+			count(st.Ahead, icons.Ahead, th.StatusAhead),
+			count(st.Behind, icons.Behind, th.StatusBehind),
 		}
-		if st.Untracked > 0 {
-			subs[i].unt = th.StatusFlag.Render(icons.Untracked + compactCount(st.Untracked))
-		}
-		if st.Ahead > 0 {
-			subs[i].ahead = th.StatusAhead.Render(icons.Ahead + compactCount(st.Ahead))
-		}
-		if st.Behind > 0 {
-			subs[i].behind = th.StatusBehind.Render(icons.Behind + compactCount(st.Behind))
-		}
-		wAdd = max(wAdd, lipgloss.Width(subs[i].add))
-		wDel = max(wDel, lipgloss.Width(subs[i].del))
-		wMod = max(wMod, lipgloss.Width(subs[i].mod))
-		wUnt = max(wUnt, lipgloss.Width(subs[i].unt))
-		wAhead = max(wAhead, lipgloss.Width(subs[i].ahead))
-		wBehind = max(wBehind, lipgloss.Width(subs[i].behind))
 	}
-	cells := countCells{
-		stat:     make([]string, len(sts)),
-		delta:    make([]string, len(sts)),
-		upstream: make([]string, len(sts)),
+	return countCells{
+		stat:     joinPairs(stat),
+		delta:    joinPairs(delta),
+		upstream: joinPairs(upstream),
 	}
-	for i := range sts {
-		cells.stat[i] = joinSubCells(
-			padLeft(subs[i].add, wAdd), padLeft(subs[i].del, wDel))
-		cells.delta[i] = joinSubCells(
-			padLeft(subs[i].mod, wMod), padLeft(subs[i].unt, wUnt))
-		cells.upstream[i] = joinSubCells(
-			padLeft(subs[i].ahead, wAhead), padLeft(subs[i].behind, wBehind))
-	}
-	return cells
 }
 
-// joinSubCells joins two padded sub-cells with a single-space gap, collapsing
-// to empty when both are blank so the column can shrink away.
-func joinSubCells(a, b string) string {
-	joined := strings.TrimRight(a+" "+b, " ")
-	if strings.TrimSpace(joined) == "" {
-		return ""
+// joinPairs pads each sub-cell to the widest in its position and joins the
+// two with a single-space gap. A row with neither collapses to empty so the
+// column can shrink away.
+func joinPairs(pairs []countPair) []string {
+	var widths [2]int
+	for _, p := range pairs {
+		for k, s := range p {
+			widths[k] = max(widths[k], lipgloss.Width(s))
+		}
 	}
-	return joined
+	cells := make([]string, len(pairs))
+	for i, p := range pairs {
+		joined := strings.TrimRight(padLeft(p[0], widths[0])+" "+padLeft(p[1], widths[1]), " ")
+		if strings.TrimSpace(joined) != "" {
+			cells[i] = joined
+		}
+	}
+	return cells
 }
 
 // padLeft pads s with leading spaces to the ANSI-aware width w.
@@ -437,17 +575,17 @@ func shortAge(t, now time.Time) string {
 	case d < time.Minute:
 		return "now"
 	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < hoursPerDay*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	case d < daysPerWeek*hoursPerDay*time.Hour:
-		return fmt.Sprintf("%dd", int(d.Hours()/hoursPerDay))
-	case d < daysPerMonth*hoursPerDay*time.Hour:
-		return fmt.Sprintf("%dw", int(d.Hours()/(hoursPerDay*daysPerWeek)))
-	case d < daysPerYear*hoursPerDay*time.Hour:
-		return fmt.Sprintf("%dmo", int(d.Hours()/(hoursPerDay*daysPerMonth)))
+		return strconv.Itoa(int(d/time.Minute)) + "m"
+	case d < day:
+		return strconv.Itoa(int(d/time.Hour)) + "h"
+	case d < week:
+		return strconv.Itoa(int(d/day)) + "d"
+	case d < month:
+		return strconv.Itoa(int(d/week)) + "w"
+	case d < year:
+		return strconv.Itoa(int(d/month)) + "mo"
 	default:
-		return fmt.Sprintf("%dy", int(d.Hours()/(hoursPerDay*daysPerYear)))
+		return strconv.Itoa(int(d/year)) + "y"
 	}
 }
 
