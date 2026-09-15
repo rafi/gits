@@ -104,7 +104,6 @@ func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.Run
 	cols = append(cols,
 		tableColumn{title: "Δ±", right: true},
 		tableColumn{title: "Upstream⇅", right: true},
-		tableColumn{title: "Version", flex: true},
 		tableColumn{title: "Commit"},
 		tableColumn{title: "Age"},
 		tableColumn{title: "Message", flex: true, bare: true},
@@ -136,7 +135,6 @@ func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.Run
 		rows[i] = append(row,
 			counts.delta[i],
 			counts.upstream[i],
-			dim(st.Version),
 			dim(st.Head.Hash),
 			dim(shortAge(st.Head.Time, now)),
 			message,
@@ -165,7 +163,7 @@ func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.Run
 
 // measureColumns measures every column once, returning the pinned widths
 // (style Width marks a column fixed for the resizer) and the table's natural
-// width. Only the flexible text columns (Repo, Version, Message) stay
+// width. Only the flexible text columns (Repo, Message) stay
 // unpinned and may contract when the table is width-capped; sparse count
 // columns would otherwise be shrunk first — their median width is 0 — and
 // collapse to "…". The natural width is summed here so the cap decision

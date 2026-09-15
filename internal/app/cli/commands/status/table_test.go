@@ -84,12 +84,15 @@ func TestRenderTableRows(t *testing.T) {
 		t.Fatalf("expected 4 lines (header + 3 rows), got %d:\n%s", len(lines), plain)
 	}
 	for _, want := range []string{"Repo", "Branch", "Status", "Δ±", "Upstream⇅",
-		"Version", "Commit", "Age", "Message"} {
+		"Commit", "Age", "Message"} {
 		if !strings.Contains(lines[0], want) {
 			t.Errorf("header %q missing %q", lines[0], want)
 		}
 	}
-	for _, want := range []string{"≠12", "?4K", "⇡2", "⇣1", "v2.1.0",
+	if strings.Contains(plain, "Version") || strings.Contains(plain, "v2.1.0") {
+		t.Errorf("table still renders the Version column:\n%s", plain)
+	}
+	for _, want := range []string{"≠12", "?4K", "⇡2", "⇣1",
 		"f3a9c2d1", "2h", "1d", "not cloned"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("table missing %q:\n%s", want, plain)
