@@ -7,37 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/rafi/gits.svg)](https://pkg.go.dev/github.com/rafi/gits)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE.txt)
 
-![gits animated overview](https://rafi.io/img/project/gits/overview.gif)
-
-<!-- vim-markdown-toc GFM -->
-
-- [What is gits?](#what-is-gits)
-- [Why gits?](#why-gits)
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Commands](#commands)
-- [Usage](#usage)
-  - [Addressing projects and repositories](#addressing-projects-and-repositories)
-  - [Status](#status)
-  - [Adding repositories to a project](#adding-repositories-to-a-project)
-  - [Pushing](#pushing)
-  - [Running a command everywhere](#running-a-command-everywhere)
-  - [Jumping to a repository](#jumping-to-a-repository)
-  - [Synchronizing caches](#synchronizing-caches)
-  - [Checking your configuration](#checking-your-configuration)
-  - [Shell completion](#shell-completion)
-- [JSON output](#json-output)
-- [Configuration](#configuration)
-  - [Filtering repositories](#filtering-repositories)
-  - [Skipping a project during clone](#skipping-a-project-during-clone)
-  - [Sub-projects](#sub-projects)
-  - [Settings](#settings)
-  - [Provider tokens](#provider-tokens)
-- [Config examples](#config-examples)
-- [Development](#development)
-- [License](#license)
-
-<!-- vim-markdown-toc -->
+![gits animated overview](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/demo.gif)
 
 ## What is gits?
 
@@ -63,7 +33,7 @@ gits clone acme      # clone the ones that aren't there yet
 ```
 
 A project is just a label for a group of repositories. It either lists them by
-hand or discovers them from GitHub, GitLab, Bitbucket or a local directory —
+hand or discovers them from GitHub, GitLab, Bitbucket or a local directory -
 cached, so day-to-day commands never wait on the network.
 
 It is a single static Go binary needing nothing but `git`.
@@ -85,6 +55,19 @@ It is a single static Go binary needing nothing but `git`.
 - **Safe by default.** `gits push` refuses to reach `--force` or `--mirror`, and
   skips branches it should not re-create. `gits doctor` tells you what is wrong
   with your setup before it bites.
+
+### What makes it different
+
+Most repo wranglers pick a lane: bulk cloner, read-only dashboard, or pull
+request cannon. `gits` covers the first two in one binary.
+
+- **Nothing to set up.** No manifest, no `init`, no registering repos one by
+  one. Point it at a directory and go. Bring a config later, if ever.
+- **Pipe-friendly by design.** `-o json` on every command that lists or reports,
+  clean stdout, progress on stderr. Your scripts, your CI, and your agents all
+  get a straiacme answer.
+- **Projects that nest.** GitHub, GitLab, and Bitbucket, grouped into
+  sub-projects and filtered down. Flat tag lists give up long before you do.
 
 ## Install
 
@@ -123,7 +106,7 @@ cloned repository writes one for you when you have none:
 # ~/.gits.yaml
 
 # Discovered from GitHub.
-gh:
+acme:
   path: ~/code/github
   source:
     type: github
@@ -157,10 +140,10 @@ gits doctor
 
 ```bash
 gits list              # every project
-gits list gh           # every repository in project 'gh'
-gits clone gh          # clone the ones not cloned yet
-gits status gh         # where does everything stand?
-gits pull gh           # bring them all up to date
+gits list acme         # every repository in project 'acme'
+gits clone acme        # clone the ones not cloned yet
+gits status acme       # where does everything stand?
+gits pull acme         # bring them all up to date
 ```
 
 **4. Or point it at a directory**, with no config at all:
@@ -214,7 +197,7 @@ Every command takes a project, and optionally one repository inside it:
 ```bash
 gits status acme      # the whole project
 gits status acme api  # one repository
-gits status acme api/ # the sub-project 'api' — note the trailing slash
+gits status acme api/ # the sub-project 'api' - note the trailing slash
 gits status ~/code    # a path instead of a project name
 gits list acme infra  # several projects at once
 ```
@@ -330,19 +313,6 @@ warning cache.github-acme written by gits v0.10, will be refetched (cached 9d ag
 info    cache.github-rafi cached 1d ago, valid for 168h0m0s
 ```
 
-It checks config keys, project paths, repositories with no local home, the `git`
-and finder binaries, and every cache against `settings.cacheTTL`. It never
-contacts a provider, takes `-o json`, and exits non-zero on any error so CI can
-gate on it.
-
-Misspelled config keys are reported on every ordinary run too, since YAML
-silently ignores them:
-
-```console
-$ gits list acme
-unknown config key "acme.pth" in ~/.gits.yaml, ignored
-```
-
 ### Shell completion
 
 `gits completion <bash|zsh|fish|powershell>` prints a completion script; the
@@ -402,10 +372,9 @@ anotherproject:
 
 ### Filtering repositories
 
-`include` and `exclude` narrow the repositories a project contributes, which is
-most useful against a `source` you do not control. Both lists match a repository
-three ways — its name, its namespace, or `namespace/name` — as exact strings,
-not patterns or globs:
+`include` and `exclude` trim what a project contributes, which is handy when the
+`source` isn't yours to curate. Both match a repository by name, namespace, or
+`namespace/name` - exact strings, no globs:
 
 ```yaml
 work:
@@ -421,24 +390,18 @@ work:
   #   - acme/web
 ```
 
-`exclude` always wins over `include`, and a non-empty `include` is exclusive:
-everything it does not name is dropped. Both apply to sub-projects too.
-
-### Skipping a project during clone
-
-`clone: false` passes over a project when `gits clone` runs, along with every
-sub-project beneath it. Every other command still sees the project normally:
-
-```yaml
-vendor:
-  path: ~/code/vendor
-  clone: false
-```
+`exclude` always wins. A non-empty `include` is a guest list: anything unnamed
+stays home. Sub-projects get filtered too, each by its own lists.
 
 ### Sub-projects
 
-A project can nest others under `subprojects`. Entries are a list rather than a
-map, so each one carries its own `name`:
+Real orgs don't keep their repositories in one tidy pile. GitLab groups nest as
+deep as you like, and sub-projects are how `gits` follows them down. Point a
+project at a GitLab group and the whole tree comes back with its shape
+intact - no flattening, no listing each subgroup by hand.
+
+You can also build that tree yourself. Nest projects under `subprojects`, as a
+list, so each carries its own `name`:
 
 ```yaml
 org:
@@ -458,17 +421,15 @@ org:
         search: myorg-backend
 ```
 
-A sub-project inherits what it does not declare: a `path` of
-`<parent path>/<name>`, and its parent's `source`. A parent with no `path`
-passes none down, so a sub-project under one needs absolute `dir` entries or a
-`path` of its own. A project that declares nothing but `subprojects` is fine —
-it groups them and contributes no repositories itself.
+A sub-project inherits what it doesn't declare: a `path` of
+`<parent path>/<name>`, and its parent's `source`. No parent `path` means
+nothing to inherit, so use absolute `dir` entries or give it a `path`. A project
+with only `subprojects` is fine - it's a folder, not a freeloader.
 
-An inherited `source` tells `gits` what kind of origin the sub-project's
-repositories have — so a provider-backed one with no local clone is reported as
-`remote-only` rather than as an error — but it does not discover anything a
-second time. Give a sub-project its own `source` when it should be discovered
-separately, or list its repositories under `repos`.
+An inherited `source` only says where repositories come from, so a
+provider-backed one you haven't cloned reads as `remote-only` instead of an
+error. It won't go discover anything twice. Want a sub-project fetched on its
+own? Give it its own `source`, or just list `repos`.
 
 > [!NOTE]
 > A project with a `path:` and no `repos:` is searched recursively, and that
@@ -477,8 +438,7 @@ separately, or list its repositories under `repos`.
 > `repos:` list, or point the sub-projects at directories outside the parent's
 > path.
 
-Address a sub-project by giving its name a trailing slash, which is what tells
-`gits` you mean a sub-project and not a repository:
+A trailing slash is how you say "sub-project, not repository":
 
 ```bash
 gits status org frontend/   # the sub-project 'frontend'
@@ -495,8 +455,8 @@ settings:
                    # syntax (e.g. "24h", "30m"). Default: 168h (7 days).
                    # Invalid or empty values fall back to the default.
   workerCount: 8   # Concurrent git workers. Default: max(NumCPU, 2).
-  verbose: false   # Trace what gits did on the way to an answer — provider
-                   # pages, cache hits, git's stderr — to stderr. Same as -v.
+  verbose: false   # Trace what gits did on the way to an answer - provider
+                   # pages, cache hits, git's stderr - to stderr. Same as -v.
   includeArchived: false  # Include archived repositories when listing
                           # from providers (GitHub, GitLab). Default: false.
                           # Bitbucket Cloud has no archived flag, so the
@@ -534,12 +494,12 @@ settings:
 
 For each provider the first of these wins:
 
-1. `token` — used as-is. Keep in mind your config file is plain text.
-2. `tokenCommand` (alias `token-cmd`) — run through the shell, so pipes and
+1. `token` - used as-is. Keep in mind your config file is plain text.
+2. `tokenCommand` (alias `token-cmd`) - run through the shell, so pipes and
    quoting work; the first non-empty output line is the token. It runs at most
    once per command per `gits` invocation, so a passphrase prompt appears once
    even with several projects on the same provider. A failing command is an
-   error — there is no silent fallback.
+   error - there is no silent fallback.
 3. Environment: `GITHUB_TOKEN` (or `HOMEBREW_GITHUB_API_TOKEN`),
    `GITLAB_TOKEN`, `BITBUCKET_TOKEN`.
 
@@ -653,7 +613,7 @@ just lint      # golangci-lint
 just release   # cross-compile for linux/darwin, amd64/arm64
 ```
 
-Contributions are welcome — please open an issue or pull request on
+Contributions are welcome - please open an issue or pull request on
 [GitHub](https://github.com/rafi/gits).
 
 ## License
