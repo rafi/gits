@@ -6,7 +6,19 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/rafi/gits/domain"
 )
+
+// githubType returns the github Provider Source type.
+func githubType(t *testing.T) domain.ProviderType {
+	t.Helper()
+	providerType, ok := domain.LookupProviderType(domain.ProviderGitHub)
+	if !ok {
+		t.Fatal("github provider type is not defined")
+	}
+	return providerType
+}
 
 // runtimeIsWindows reports whether the shell fixtures below (sh syntax) can
 // run on this platform.
@@ -30,8 +42,8 @@ func resetTokenCache(t *testing.T) {
 // fallback can't mask what a case is proving.
 func clearTokenEnv(t *testing.T) {
 	t.Helper()
-	for _, names := range tokenEnvVarNames {
-		for _, name := range names {
+	for _, providerType := range domain.ProviderTypes() {
+		for _, name := range providerType.TokenEnvVars {
 			t.Setenv(name, "")
 		}
 	}
@@ -170,7 +182,7 @@ func TestResolveTokenPrecedence(t *testing.T) {
 			resetTokenCache(t)
 			clearTokenEnv(t)
 			t.Setenv("GITHUB_TOKEN", tt.env)
-			got, err := resolveToken(t.Context(), ProviderGitHub, tt.opts)
+			got, err := resolveToken(t.Context(), githubType(t), tt.opts)
 			if err != nil {
 				t.Fatalf("resolveToken: %v", err)
 			}
@@ -192,7 +204,7 @@ func TestResolveTokenCommandFailureIsFatal(t *testing.T) {
 	clearTokenEnv(t)
 	t.Setenv("GITHUB_TOKEN", "from-env")
 
-	got, err := resolveToken(t.Context(), ProviderGitHub, Options{TokenCommand: "exit 1"})
+	got, err := resolveToken(t.Context(), githubType(t), Options{TokenCommand: "exit 1"})
 	if err == nil {
 		t.Fatalf("resolveToken(failing command) = %q, want error", got)
 	}

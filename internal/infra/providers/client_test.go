@@ -2,6 +2,8 @@ package providers
 
 import (
 	"testing"
+
+	"github.com/rafi/gits/domain"
 )
 
 func TestNewGitProvider(t *testing.T) {
@@ -38,6 +40,22 @@ func TestNewGitProvider(t *testing.T) {
 				t.Errorf("NewGitProvider(%q) type = %s, want %s", tt.provider, got, tt.wantType)
 			}
 		})
+	}
+}
+
+// TestConstructorsMatchProviderTypes proves every domain Provider Source type
+// can be built and nothing is built that validation would reject.
+func TestConstructorsMatchProviderTypes(t *testing.T) {
+	t.Parallel()
+
+	types := domain.ProviderTypes()
+	for _, providerType := range types {
+		if _, ok := constructors[providerType.Name]; !ok {
+			t.Errorf("provider type %q has no constructor", providerType.Name)
+		}
+	}
+	if len(constructors) != len(types) {
+		t.Errorf("%d constructors for %d provider types", len(constructors), len(types))
 	}
 }
 

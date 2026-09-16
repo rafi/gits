@@ -16,25 +16,43 @@ type Provider string
 
 // The Provider Source types a Project may be discovered from.
 const (
-	ProviderGitHub     Provider = "github"
-	ProviderGitLab     Provider = "gitlab"
-	ProviderBitbucket  Provider = "bitbucket"
-	ProviderFilesystem Provider = "filesystem"
+	ProviderGitHub     Provider = domain.ProviderGitHub
+	ProviderGitLab     Provider = domain.ProviderGitLab
+	ProviderBitbucket  Provider = domain.ProviderBitbucket
+	ProviderFilesystem Provider = domain.ProviderFilesystem
 )
 
-// tokenEnvVarNames are the per-provider environment variable fallbacks for
-// Options.Token. A provider with no names needs no token at all.
-var tokenEnvVarNames = map[Provider][]string{
-	ProviderGitHub:    {"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"},
-	ProviderGitLab:    {"GITLAB_TOKEN"},
-	ProviderBitbucket: {"BITBUCKET_TOKEN"},
-	// A filesystem project is read from disk and authenticates against
-	// nothing, so it has no environment fallback to name.
-	ProviderFilesystem: nil,
+// GitProvider discovers the repositories of one Provider Source.
+type GitProvider interface {
+	// LoadRepos fills project with the repositories id names.
+	LoadRepos(ctx context.Context, id string, project *domain.Project) error
 }
 
-type gitProvider interface {
-	LoadRepos(ctx context.Context, id string, project *domain.Project) error
+// constructors builds each domain.ProviderType, keyed by its Name.
+var constructors = map[string]func(Options) (GitProvider, error){
+	domain.ProviderGitHub:     infallible(newGitHubProvider),
+	domain.ProviderGitLab:     fallible(newGitLabProvider),
+	domain.ProviderBitbucket:  fallible(newBitbucketProvider),
+	domain.ProviderFilesystem: infallible(newFilesystemProvider),
+}
+
+// fallible adapts a constructor that can fail, keeping a failed construction
+// a nil interface rather than one holding a nil pointer.
+func fallible[P GitProvider](newProvider func(Options) (P, error)) func(Options) (GitProvider, error) {
+	return func(opts Options) (GitProvider, error) {
+		p, err := newProvider(opts)
+		if err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+}
+
+// infallible adapts a constructor that cannot fail.
+func infallible[P GitProvider](newProvider func(Options) P) func(Options) (GitProvider, error) {
+	return func(opts Options) (GitProvider, error) {
+		return newProvider(opts), nil
+	}
 }
 
 // Options carries user settings into provider construction. When Token is
@@ -55,30 +73,23 @@ type Options struct {
 
 // NewGitProvider returns the provider for providerName, resolving its token
 // first when that provider needs one.
-func NewGitProvider(ctx context.Context, providerName string, opts Options) (gitProvider, error) {
-	provider := Provider(providerName)
-	if names := tokenEnvVarNames[provider]; len(names) > 0 {
+func NewGitProvider(ctx context.Context, providerName string, opts Options) (GitProvider, error) {
+	providerType, ok := domain.LookupProviderType(providerName)
+	newProvider, known := constructors[providerName]
+	if !ok || !known {
+		return nil, fmt.Errorf("unknown provider: %s", providerName)
+	}
+	if providerType.TokenRequired {
 		var err error
-		opts.Token, err = resolveToken(ctx, provider, opts)
+		opts.Token, err = resolveToken(ctx, providerType, opts)
 		if err != nil {
 			return nil, err
 		}
 		if opts.Token == "" {
-			return nil, fmt.Errorf("token is required for %s", provider)
+			return nil, fmt.Errorf("token is required for %s", providerName)
 		}
 	}
-	switch provider {
-	case ProviderGitHub:
-		return newGitHubProvider(opts), nil
-	case ProviderGitLab:
-		return newGitLabProvider(opts)
-	case ProviderBitbucket:
-		return newBitbucketProvider(opts)
-	case ProviderFilesystem:
-		return newFilesystemProvider(opts), nil
-	default:
-		return nil, fmt.Errorf("unknown provider: %s", providerName)
-	}
+	return newProvider(opts)
 }
 
 // IsRemote reports whether a provider type lists repositories on a remote
