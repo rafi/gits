@@ -40,6 +40,7 @@ type Settings struct {
 	GitLab          ProviderSettings `json:"gitlab"`
 	Gitea           ProviderSettings `json:"gitea"`
 	Forgejo         ProviderSettings `json:"forgejo"`
+	Gerrit          ProviderSettings `json:"gerrit"`
 }
 
 // ProviderSettings holds the credentials and request rate of a single remote
@@ -55,6 +56,9 @@ type ProviderSettings struct {
 	// RateLimit caps requests per second to one host; 0 is unlimited. Unset
 	// means DefaultRateLimit. Read from settings only; a source has none.
 	RateLimit *float64 `json:"rateLimit,omitempty"`
+	// Username accompanies the token as its basic-auth user and names the
+	// SSH user in clone URLs. Read for gerrit only.
+	Username string `json:"username,omitempty"`
 }
 
 // RequestRate returns the rateLimit setting, or DefaultRateLimit when it is
@@ -105,6 +109,21 @@ func (s Settings) SourceAuth(source *ProviderSource) ProviderSettings {
 		return auth
 	}
 	return s.ProviderAuth(source.Type)
+}
+
+// SourceUsername returns the username a source authenticates and clones as:
+// its own, else the user in its url, else its provider's settings.
+func (s Settings) SourceUsername(source *ProviderSource) string {
+	if source == nil {
+		return ""
+	}
+	if source.Username != "" {
+		return source.Username
+	}
+	if user := source.URLUser(); user != "" {
+		return user
+	}
+	return s.ProviderAuth(source.Type).Username
 }
 
 // parseDurationOr parses a Go-duration setting value, falling back to def when

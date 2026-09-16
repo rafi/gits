@@ -3,6 +3,8 @@ package projects
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1087,11 +1089,12 @@ func TestInheritAuth(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		parent      *domain.ProviderSource
-		sub         *domain.ProviderSource
-		wantToken   string
-		wantCommand string
+		name         string
+		parent       *domain.ProviderSource
+		sub          *domain.ProviderSource
+		wantToken    string
+		wantCommand  string
+		wantUsername string
 	}{
 		{
 			name:      "sub with no credentials inherits the parent's",
@@ -1133,6 +1136,30 @@ func TestInheritAuth(t *testing.T) {
 			wantToken: "parent",
 		},
 		{
+			name:         "a username goes with the token",
+			parent:       &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Token: "pw", Username: "rafi"},
+			sub:          &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Search: "x"},
+			wantToken:    "pw",
+			wantUsername: "rafi",
+		},
+		{
+			name:         "a username alone is inherited",
+			parent:       &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Username: "rafi"},
+			sub:          &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Search: "x"},
+			wantUsername: "rafi",
+		},
+		{
+			name:         "sub's own username wins",
+			parent:       &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Username: "rafi"},
+			sub:          &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Username: "bot"},
+			wantUsername: "bot",
+		},
+		{
+			name:   "a username for another host is not passed down",
+			parent: &domain.ProviderSource{Type: "gerrit", URL: "https://review.test", Username: "rafi"},
+			sub:    &domain.ProviderSource{Type: "gerrit", URL: "https://other.test", Search: "x"},
+		},
+		{
 			name:   "an uncredentialed parent passes nothing down",
 			parent: &domain.ProviderSource{Type: "github"},
 			sub:    &domain.ProviderSource{Type: "github", Search: "x"},
@@ -1149,6 +1176,9 @@ func TestInheritAuth(t *testing.T) {
 			if got := tt.sub.Auth().Command(); got != tt.wantCommand {
 				t.Errorf("Command() = %q, want %q", got, tt.wantCommand)
 			}
+			if tt.sub.Username != tt.wantUsername {
+				t.Errorf("username = %q, want %q", tt.sub.Username, tt.wantUsername)
+			}
 		})
 	}
 
@@ -1162,6 +1192,43 @@ func TestInheritAuth(t *testing.T) {
 			t.Errorf("sub gained a credential: %+v", sub)
 		}
 	})
+}
+
+// TestGerritUsernameFromSettings checks that discovery authenticates and
+// clones as the settings username when the source and its url name none.
+func TestGerritUsernameFromSettings(t *testing.T) {
+	t.Parallel()
+
+	var auth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		fmt.Fprint(w, ")]}'\n")
+		if strings.Contains(r.URL.Path, "/config/server/info") {
+			fmt.Fprint(w, `{"download":{"schemes":{"ssh":{"url":"ssh://review.test:29418/${project}"}}}}`)
+			return
+		}
+		fmt.Fprint(w, `{"app":{"state":"ACTIVE"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	deps := coreruntime.Runtime{
+		Ctx:      context.Background(),
+		Git:      fakeGit{isRepo: true},
+		Settings: domain.Settings{Gerrit: domain.ProviderSettings{Username: "rafi"}},
+	}
+	project := domain.Project{
+		Name:   "review",
+		Source: &domain.ProviderSource{Type: "gerrit", Search: "a", URL: server.URL, Token: "pw"},
+	}
+	if err := loadFromProvider(&project, deps); err != nil {
+		t.Fatalf("loadFromProvider: %v", err)
+	}
+	if len(project.Repos) != 1 || project.Repos[0].Src != "ssh://rafi@review.test:29418/app" {
+		t.Errorf("repos = %+v, want Src with the settings username", project.Repos)
+	}
+	if !strings.HasPrefix(auth, "Basic ") {
+		t.Errorf("Authorization = %q, want basic auth", auth)
+	}
 }
 
 // TestSubProjectSourceInheritsCredentials checks that a sub-project source

@@ -106,6 +106,7 @@ func TestSettingsProviderAuth(t *testing.T) {
 		Bitbucket: ProviderSettings{TokenCmd: "pass tokens/bitbucket"},
 		Gitea:     ProviderSettings{Token: "gitea-token"},
 		Forgejo:   ProviderSettings{TokenCommand: "pass codeberg"},
+		Gerrit:    ProviderSettings{Token: "http-password", Username: "rafi"},
 	}
 	tests := []struct {
 		provider string
@@ -116,6 +117,7 @@ func TestSettingsProviderAuth(t *testing.T) {
 		{"bitbucket", s.Bitbucket},
 		{"gitea", s.Gitea},
 		{"forgejo", s.Forgejo},
+		{"gerrit", s.Gerrit},
 		{"GitHub", s.GitHub},
 		{"filesystem", ProviderSettings{}},
 		{"", ProviderSettings{}},
@@ -127,6 +129,39 @@ func TestSettingsProviderAuth(t *testing.T) {
 
 			if got := s.ProviderAuth(tt.provider); got != tt.want {
 				t.Errorf("ProviderAuth(%q) = %+v, want %+v", tt.provider, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSettingsSourceUsername(t *testing.T) {
+	t.Parallel()
+
+	settings := Settings{Gerrit: ProviderSettings{Username: "from-settings"}}
+	base := ProviderSource{Type: "gerrit", Search: "p", URL: "https://review.test"}
+	withURLUser := base
+	withURLUser.URL = "https://from-url@review.test"
+	withBoth := withURLUser
+	withBoth.Username = "from-source"
+
+	tests := []struct {
+		name     string
+		settings Settings
+		source   *ProviderSource
+		want     string
+	}{
+		{"source wins", settings, &withBoth, "from-source"},
+		{"url user next", settings, &withURLUser, "from-url"},
+		{"settings last", settings, &base, "from-settings"},
+		{"none", Settings{}, &base, ""},
+		{"nil source", settings, nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.settings.SourceUsername(tt.source); got != tt.want {
+				t.Errorf("SourceUsername() = %q, want %q", got, tt.want)
 			}
 		})
 	}

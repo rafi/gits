@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strconv"
-	"strings"
 
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
@@ -83,7 +81,7 @@ func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, project 
 		project.Name = root.Name
 	}
 
-	tree := newGitLabTree(root.FullPath)
+	tree := newRepoTree(root.FullPath)
 	groups, err := c.fetchDescendantGroups(ctx, groupID)
 	if err != nil {
 		return err
@@ -101,99 +99,10 @@ func (c *gitLabProvider) LoadRepos(ctx context.Context, groupID string, project 
 	return nil
 }
 
-// gitLabGroup is a descendant group reduced to what the tree needs.
-type gitLabGroup struct {
-	id       string
-	name     string
-	fullPath string
-}
-
-// gitLabNode is one node of the group tree while it is being assembled;
-// domain.Project stores children by value, which a partially built tree
-// cannot.
-type gitLabNode struct {
-	id       string
-	name     string
-	children []*gitLabNode
-	repos    []domain.Repository
-}
-
-// subProjects converts the node's children into domain Sub-projects,
-// depth-first, preserving the order they were added in.
-func (n *gitLabNode) subProjects() []domain.Project {
-	if len(n.children) == 0 {
-		return nil
-	}
-	projects := make([]domain.Project, 0, len(n.children))
-	for _, child := range n.children {
-		projects = append(projects, domain.Project{
-			ID:          child.id,
-			Name:        child.name,
-			Repos:       child.repos,
-			SubProjects: child.subProjects(),
-		})
-	}
-	return projects
-}
-
-// gitLabTree assembles a group tree from one flat list of descendant groups
-// and one flat list of projects, keyed by their GitLab full paths.
-type gitLabTree struct {
-	rootPath string
-	root     *gitLabNode
-	byPath   map[string]*gitLabNode
-}
-
-func newGitLabTree(rootPath string) *gitLabTree {
-	root := &gitLabNode{repos: []domain.Repository{}}
-	return &gitLabTree{
-		rootPath: rootPath,
-		root:     root,
-		byPath:   map[string]*gitLabNode{rootPath: root},
-	}
-}
-
-// addGroups attaches every descendant group to its parent. Groups are sorted
-// by depth first so a parent always exists before its children, while
-// siblings keep the order the API returned them in.
-func (t *gitLabTree) addGroups(groups []gitLabGroup) {
-	sorted := make([]gitLabGroup, len(groups))
-	copy(sorted, groups)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return strings.Count(sorted[i].fullPath, "/") <
-			strings.Count(sorted[j].fullPath, "/")
-	})
-
-	for _, g := range sorted {
-		parentPath := g.fullPath[:max(strings.LastIndex(g.fullPath, "/"), 0)]
-		parent, ok := t.byPath[parentPath]
-		if !ok {
-			// A group whose parent is outside the tree, or is invisible to
-			// this token: hang it off the root rather than dropping it.
-			parent = t.root
-		}
-		node := &gitLabNode{id: g.id, name: g.name, repos: []domain.Repository{}}
-		parent.children = append(parent.children, node)
-		t.byPath[g.fullPath] = node
-	}
-}
-
-// addRepos files each repository under the group named by its namespace,
-// falling back to the root group when that namespace is unknown.
-func (t *gitLabTree) addRepos(repos []domain.Repository) {
-	for _, repo := range repos {
-		node, ok := t.byPath[repo.Namespace]
-		if !ok {
-			node = t.root
-		}
-		node.repos = append(node.repos, repo)
-	}
-}
-
 // fetchDescendantGroups lists every group below groupID at any depth in one
 // paginated walk.
-func (c *gitLabProvider) fetchDescendantGroups(ctx context.Context, groupID string) ([]gitLabGroup, error) {
-	groups := []gitLabGroup{}
+func (c *gitLabProvider) fetchDescendantGroups(ctx context.Context, groupID string) ([]treeGroup, error) {
+	groups := []treeGroup{}
 	opt := &gitlab.ListDescendantGroupsOptions{ListOptions: gitLabListOptions}
 	options := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
 	what := fmt.Sprintf("GitLab subgroups from %s", groupID)
@@ -204,7 +113,7 @@ func (c *gitLabProvider) fetchDescendantGroups(ctx context.Context, groupID stri
 		}
 
 		for _, g := range gs {
-			groups = append(groups, gitLabGroup{
+			groups = append(groups, treeGroup{
 				id:       strconv.FormatInt(g.ID, 10),
 				name:     g.Path,
 				fullPath: g.FullPath,
