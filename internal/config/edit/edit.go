@@ -277,14 +277,35 @@ func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
 	return nil
 }
 
-// findKey finds a key's entry in a mapping.
+// findKey finds a key's entry in a mapping, by the name the key *means*
+// rather than the way it is spelled in the file.
+//
+// A project name that YAML would otherwise read as something other than a
+// string — `123`, `yes`, `no`, `null`, `1.5` — is written quoted, and
+// [ast.Node.String] gives back the quoted source, `"123"`. Comparing that to
+// the name the caller asked for would miss every such project: the key would
+// be written and then not found again, which is exactly what a directory
+// named `123` did. Scalar values are unquoted before they are compared, so
+// `"123"` in the file matches the name `123`.
 func findKey(mapping *ast.MappingNode, key string) *ast.MappingValueNode {
 	for _, value := range mapping.Values {
-		if value.Key.String() == key {
+		if keyString(value.Key) == key {
 			return value
 		}
 	}
 	return nil
+}
+
+// keyString is the string a mapping key denotes, with any quoting the file
+// spells it with removed. A non-scalar key — which no config file gits reads
+// would have — falls back to its source form, so it simply fails to match.
+func keyString(key ast.MapKeyNode) string {
+	if scalar, ok := key.(ast.ScalarNode); ok {
+		if str, ok := scalar.GetValue().(string); ok {
+			return str
+		}
+	}
+	return key.String()
 }
 
 // keyName is the name a project mapping sits under, for error messages.

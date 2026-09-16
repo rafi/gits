@@ -408,3 +408,92 @@ func TestSaveKeepsExamplesByteForByte(t *testing.T) {
 		})
 	}
 }
+
+// TestProjectNamesThatAreNotStrings covers a project whose name YAML would
+// read as something other than a string — a directory called `123`, `yes` or
+// `null`, which `gits discover` names a project after.
+//
+// Such a key is written quoted, and the syntax tree gives its source form
+// back with the quotes still on. Looking it up by the name the caller asked
+// for therefore has to compare what the key *means*, not how it is spelled:
+// before it did, AddProjectPath wrote the key and then failed to find the
+// project it had just written.
+func TestProjectNamesThatAreNotStrings(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"123", "yes", "no", "null", "on", "off", "true", "1.5", "my project", "dot.name"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			doc, err := Load(path)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if doc.HasProject(name) {
+				t.Errorf("HasProject(%q) = true on an empty config, want false", name)
+			}
+			if err := doc.AddProjectPath(name, "~/code/"+name, ""); err != nil {
+				t.Fatalf("AddProjectPath(%q): %v", name, err)
+			}
+			// The name must be found again by the name it was added under,
+			// which is what a second run's duplicate check relies on.
+			if !doc.HasProject(name) {
+				t.Errorf("HasProject(%q) = false after adding it, want true", name)
+			}
+			if _, err := doc.FindProject(name); err != nil {
+				t.Errorf("FindProject(%q) after adding it: %v", name, err)
+			}
+			if err := doc.Save(path); err != nil {
+				t.Fatalf("save: %v", err)
+			}
+
+			// And the file must still say so after a round trip.
+			reloaded, err := Load(path)
+			if err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+			if !reloaded.HasProject(name) {
+				data, _ := os.ReadFile(path)
+				t.Errorf("HasProject(%q) = false after a round trip, want true:\n%s", name, data)
+			}
+		})
+	}
+}
+
+// TestAddRepoToAQuotedProjectName proves `gits add` reaches a project whose
+// name is quoted in the file, so the two commands agree about what a project
+// is called.
+func TestAddRepoToAQuotedProjectName(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("\"123\":\n  repos:\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	doc, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	project, err := doc.FindProject("123")
+	if err != nil {
+		t.Fatalf("FindProject(123): %v", err)
+	}
+	if err := doc.AddRepo(project, "~/code/x", "git@h:o/x.git"); err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+	if err := doc.Save(path); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	want := "\"123\":\n  repos:\n    - dir: ~/code/x\n      src: git@h:o/x.git\n"
+	if string(got) != want {
+		t.Errorf("config = %q, want %q", got, want)
+	}
+}
