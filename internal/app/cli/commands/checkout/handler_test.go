@@ -35,7 +35,7 @@ func TestExecCheckoutAbortsOnNonOKState(t *testing.T) {
 
 	deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", clitest.Broken("bad"))
 
-	err := ExecCheckout([]string{"acme", "bad"}, deps.RuntimeCLI)
+	err := ExecCheckout(domain.TagSet{}, []string{"acme", "bad"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecCheckout error = nil, want the state to abort the command")
 	}
@@ -64,7 +64,7 @@ func TestExecCheckoutProjectSkipsNonOKRepositories(t *testing.T) {
 	deps := clitest.New(t, clitest.FakeGit{}).
 		WithProject("acme", clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecCheckout([]string{"acme"}, deps.RuntimeCLI)
+	err := ExecCheckout(domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecCheckout error = nil, want the skipped repositories to fail the run")
 	}
@@ -100,7 +100,7 @@ func TestExecCheckoutTitlesEverySubProject(t *testing.T) {
 	}}
 	deps.Projects["acme"] = project
 
-	if err := ExecCheckout([]string{"acme"}, deps.RuntimeCLI); err == nil {
+	if err := ExecCheckout(domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err == nil {
 		t.Fatal("ExecCheckout error = nil, want the skipped repositories to fail the run")
 	}
 
@@ -184,7 +184,7 @@ func TestCheckoutRepoSwitchesBranch(t *testing.T) {
 	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
 	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
 
-	if err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecCheckout(domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecCheckout: %v", err)
 	}
 	if gitClient.checkedOut != "feat" {
@@ -208,7 +208,7 @@ func TestCheckoutRepoKeepsCurrentBranch(t *testing.T) {
 	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
 	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
 
-	if err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecCheckout(domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecCheckout: %v", err)
 	}
 	if gitClient.checkedOut != "" {
@@ -231,7 +231,7 @@ func TestCheckoutRepoReportsFailure(t *testing.T) {
 	}
 	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI)
+	err := ExecCheckout(domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecCheckout error = nil, want the checkout failure")
 	}
@@ -253,7 +253,7 @@ func TestCheckoutRepoAbortIsAWarning(t *testing.T) {
 	gitClient := &checkoutGit{current: "main", branches: []string{"main", "feat"}}
 	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI)
+	err := ExecCheckout(domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecCheckout error = nil, want the abort reported")
 	}
@@ -278,7 +278,7 @@ func TestCheckoutProjectAbortStopsTraversal(t *testing.T) {
 	deps := clitest.New(t, gitClient).
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecCheckout([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecCheckout(domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecCheckout: %v — an abort is a warning, not a failed run", err)
 	}
 	if prompts != 1 {
@@ -294,7 +294,7 @@ func TestPromptRepoCurrentBranchErrorDoesNotExit(t *testing.T) {
 	gitClient := &checkoutGit{err: errBoom}
 	deps := clitest.New(t, gitClient).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecCheckout([]string{"acme", "api"}, deps.RuntimeCLI)
+	err := ExecCheckout(domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecCheckout error = nil, want the branch lookup failure")
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
@@ -63,7 +64,7 @@ func TestExecOrphanNestedInRepository(t *testing.T) {
 		"vendor/embedded/.git", // the nested repository, reported
 	)
 
-	if err := ExecOrphan([]string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecOrphan(domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecOrphan error = %v, want nil", err)
 	}
 
@@ -92,7 +93,7 @@ func TestExecOrphanUndeclaredInProject(t *testing.T) {
 	root := deps.Projects["acme"].Path
 	mkdirs(t, root, "api/.git", "stray/.git")
 
-	if err := ExecOrphan([]string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecOrphan(domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecOrphan error = %v, want nil", err)
 	}
 
@@ -113,7 +114,7 @@ func TestExecOrphanAbortsOnNonOKState(t *testing.T) {
 
 	deps := clitest.New(t, fakeGit{}).WithProject("acme", clitest.Broken("bad"))
 
-	err := ExecOrphan([]string{"acme", "bad"}, deps.RuntimeCLI)
+	err := ExecOrphan(domain.TagSet{}, []string{"acme", "bad"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecOrphan error = nil, want the state to abort the command")
 	}

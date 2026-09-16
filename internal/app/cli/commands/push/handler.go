@@ -5,6 +5,7 @@ package push
 import (
 	"context"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/interaction/progress"
 	pick "github.com/rafi/gits/internal/app/cli/interaction/select"
@@ -22,7 +23,10 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo
-func ExecPush(format string, opts git.PushOptions, args []string, deps app.RuntimeCLI) error {
+func ExecPush(
+	format string, opts git.PushOptions, tags domain.TagSet,
+	args []string, deps app.RuntimeCLI,
+) error {
 	// Validate before anything is loaded or selected, so a rejected flag
 	// combination or a typo'd format costs neither a provider round-trip nor
 	// a single remote.
@@ -35,7 +39,7 @@ func ExecPush(format string, opts git.PushOptions, args []string, deps app.Runti
 
 	// What the command runs on is settled — prompting included — before the
 	// engine is handed anything, so nothing it does can fail over an argument.
-	target, err := pick.Target(args, deps)
+	target, err := pick.TargetWithTags(args, tags, deps)
 	if err != nil {
 		return err
 	}

@@ -25,16 +25,16 @@ func TestPushOptionsValidate(t *testing.T) {
 		{"empty", PushOptions{}, false},
 		{"all", PushOptions{All: true}, false},
 		{"branches", PushOptions{Branches: true}, false},
-		{"tags", PushOptions{Tags: true}, false},
+		{"tags", PushOptions{AllTags: true}, false},
 		{"all+branches", PushOptions{All: true, Branches: true}, true},
-		{"all+tags", PushOptions{All: true, Tags: true}, true},
-		{"branches+tags", PushOptions{Branches: true, Tags: true}, true},
-		{"all three", PushOptions{All: true, Branches: true, Tags: true}, true},
+		{"all+tags", PushOptions{All: true, AllTags: true}, true},
+		{"branches+tags", PushOptions{Branches: true, AllTags: true}, true},
+		{"all three", PushOptions{All: true, Branches: true, AllTags: true}, true},
 		{"every other flag", PushOptions{
 			FollowTags: true, Atomic: true, Prune: true, DryRun: true,
 		}, false},
 		{"tags with the rest", PushOptions{
-			Tags: true, FollowTags: true, Atomic: true, Prune: true, DryRun: true,
+			AllTags: true, FollowTags: true, Atomic: true, Prune: true, DryRun: true,
 		}, false},
 	}
 	for _, tt := range tests {
@@ -65,7 +65,7 @@ func TestPushOptionsSelectsRefs(t *testing.T) {
 		{"empty", PushOptions{}, false},
 		{"all", PushOptions{All: true}, true},
 		{"branches", PushOptions{Branches: true}, true},
-		{"tags", PushOptions{Tags: true}, true},
+		{"tags", PushOptions{AllTags: true}, true},
 		{"only passthrough", PushOptions{
 			FollowTags: true, Atomic: true, Prune: true, DryRun: true,
 		}, false},
@@ -91,7 +91,7 @@ func TestPushOptionsArgs(t *testing.T) {
 	}
 
 	all := PushOptions{
-		All: true, Branches: true, Tags: true,
+		All: true, Branches: true, AllTags: true,
 		FollowTags: true, Atomic: true, Prune: true, DryRun: true,
 	}
 	got := all.args()
@@ -261,7 +261,7 @@ func TestPushTagsWithoutTarget(t *testing.T) {
 	work, bare := setupPushRepo(t)
 	before := remoteHead(t, bare, "refs/heads/main")
 
-	if _, err := g.Push(context.Background(), work, PushTarget{}, PushOptions{Tags: true}); err != nil {
+	if _, err := g.Push(context.Background(), work, PushTarget{}, PushOptions{AllTags: true}); err != nil {
 		t.Fatalf("Push(--tags) = %v, want nil", err)
 	}
 	if remoteHead(t, bare, "refs/tags/v1") == "" {
@@ -278,7 +278,7 @@ func TestPushRejectsInvalidOptions(t *testing.T) {
 	t.Parallel()
 
 	g := NewGit()
-	opts := PushOptions{All: true, Tags: true}
+	opts := PushOptions{All: true, AllTags: true}
 	if _, err := g.Push(context.Background(), t.TempDir(), PushTarget{}, opts); err == nil {
 		t.Fatal("Push with --all and --tags = nil, want an error before git runs")
 	}

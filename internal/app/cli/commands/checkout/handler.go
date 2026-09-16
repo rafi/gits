@@ -24,8 +24,8 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecCheckout(args []string, deps app.RuntimeCLI) error {
-	project, repo, err := pick.ParseArgs(args, true, deps)
+func ExecCheckout(tags domain.TagSet, args []string, deps app.RuntimeCLI) error {
+	project, repo, err := pick.ParseArgsWithTags(args, tags, true, deps)
 	if err != nil {
 		return err
 	}

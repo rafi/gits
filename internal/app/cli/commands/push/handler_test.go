@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
 	"github.com/rafi/gits/internal/infra/git"
 )
@@ -110,7 +111,7 @@ func TestExecPushProject(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecPush("table", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPush error = %v, want nil", err)
 	}
 
@@ -141,7 +142,7 @@ func TestExecPushSingleRepo(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecPush("table", git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPush error = %v, want nil", err)
 	}
 
@@ -168,7 +169,7 @@ func TestExecPushSkipsNonOKRepositories(t *testing.T) {
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecPush("table", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPush error = nil, want the skipped repositories to fail the run")
 	}
@@ -199,7 +200,7 @@ func TestExecPushFailureReportsEpilogue(t *testing.T) {
 	g.pushErr = errors.New("failed to push some refs: non-fast-forward")
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecPush("table", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPush error = nil, want the rejected push to fail the run")
 	}
@@ -249,7 +250,7 @@ func TestExecPushUnpushableIsSkipped(t *testing.T) {
 			g := &fakeGit{head: tc.head}
 			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-			if err := ExecPush("table", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecPush error = %v, want a skipped repository not to fail the run", err)
 			}
 			if got := g.Pushes(); len(got) != 0 {
@@ -285,7 +286,7 @@ func TestExecPushSkipsReadDifferently(t *testing.T) {
 		t.Helper()
 		deps := clitest.New(t, &fakeGit{head: head}).
 			WithProject("acme", clitest.Cloned("api"))
-		if err := ExecPush("table", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+		if err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 			t.Fatalf("ExecPush error = %v, want nil", err)
 		}
 		return deps.Result()
@@ -312,7 +313,7 @@ func TestExecPushRenamedUpstream(t *testing.T) {
 	}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	if err := ExecPush("table", git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPush error = %v, want nil", err)
 	}
 
@@ -335,7 +336,7 @@ func TestExecPushLocalUpstreamIsAnError(t *testing.T) {
 	g := &fakeGit{head: git.HeadRef{Branch: "feature", Upstream: "main"}}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecPush("table", git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI)
+	err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPush error = nil, want an Upstream that names no remote to fail")
 	}
@@ -355,7 +356,7 @@ func TestExecPushSelectsRefsSuspendsUpstream(t *testing.T) {
 	t.Parallel()
 
 	for _, opts := range []git.PushOptions{
-		{All: true}, {Branches: true}, {Tags: true},
+		{All: true}, {Branches: true}, {AllTags: true},
 	} {
 		// A fake that would fail if the branch or the Upstream were consulted.
 		g := &fakeGit{
@@ -364,7 +365,7 @@ func TestExecPushSelectsRefsSuspendsUpstream(t *testing.T) {
 		}
 		deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-		if err := ExecPush("table", opts, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+		if err := ExecPush("table", opts, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 			t.Fatalf("ExecPush(%+v) error = %v, want nil", opts, err)
 		}
 		want := []pushCall{{Repo: "api", Opts: opts}}
@@ -384,7 +385,7 @@ func TestExecPushSelectsRefsFailure(t *testing.T) {
 	g := &fakeGit{pushErr: errors.New("failed to push some refs")}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecPush("table", git.PushOptions{All: true}, []string{"acme", "api"}, deps.RuntimeCLI)
+	err := ExecPush("table", git.PushOptions{All: true}, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPush error = nil, want the rejected push to fail")
 	}
@@ -414,7 +415,7 @@ func TestExecPushHeadFailure(t *testing.T) {
 			g := &fakeGit{headErr: tc.err}
 			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-			err := ExecPush("table", git.PushOptions{}, []string{"acme", "api"}, deps.RuntimeCLI)
+			err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 			if err == nil {
 				t.Fatal("ExecPush error = nil, want the failed lookup to fail the run")
 			}
@@ -441,7 +442,7 @@ func TestExecPushPassthroughFlagsReachGit(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	if err := ExecPush("table", opts, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPush("table", opts, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPush error = %v, want nil", err)
 	}
 
@@ -462,7 +463,7 @@ func TestExecPushRejectsConflictingFlags(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecPush("table", git.PushOptions{All: true, Tags: true}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPush("table", git.PushOptions{All: true, AllTags: true}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPush with --all and --tags = nil, want an error")
 	}
@@ -479,7 +480,7 @@ func TestExecPushRejectsConflictingFlags(t *testing.T) {
 		t.Errorf("Diagnostic Output = %q, want nothing rendered", got)
 	}
 
-	if err := ExecPush("table", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPush("table", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPush error = %v, want nil", err)
 	}
 	if !g.Classified() {
@@ -515,7 +516,7 @@ func TestExecPushJSON(t *testing.T) {
 			deps := clitest.New(t, tc.git).
 				WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-			err := ExecPush("json", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI)
+			err := ExecPush("json", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 			if err != nil {
 				t.Fatalf("ExecPush error = %v, want nil: a repository's condition is data", err)
 			}
@@ -550,7 +551,7 @@ func TestExecPushUnknownFormat(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecPush("wide", git.PushOptions{}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPush("wide", git.PushOptions{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "unknown output format") {
 		t.Fatalf("ExecPush(\"wide\") error = %v, want the format rejected", err)
 	}

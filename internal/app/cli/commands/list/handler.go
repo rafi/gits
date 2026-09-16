@@ -21,7 +21,7 @@ type lister func(domain.ProjectListKeyed, app.RuntimeCLI) error
 type outputStyle struct {
 	// lister is chosen from the arguments, since `name` answers a different
 	// question when a project is named than when none is.
-	lister func(args []string) lister
+	lister func(args []string, tags domain.TagSet) lister
 	// showsSrc marks a style that prints each repository's Repo Src.
 	// Resolving one costs a git subprocess per Repository, so only the styles
 	// that display it pay for it.
@@ -50,7 +50,7 @@ func Formats() []string {
 //
 // Args: (optional)
 //   - project names
-func ExecList(format string, args []string, deps app.RuntimeCLI) error {
+func ExecList(format string, tags domain.TagSet, args []string, deps app.RuntimeCLI) error {
 	// Validated before anything is loaded, so a typo'd format never costs a
 	// provider round-trip or an interactive prompt.
 	st, ok := styles[format]
@@ -59,7 +59,7 @@ func ExecList(format string, args []string, deps app.RuntimeCLI) error {
 			format, strings.Join(Formats(), ", "))
 	}
 
-	loaded, err := projects.Load(args, deps.Runtime)
+	loaded, err := projects.Load(args, deps.Runtime, projects.WithTags(tags))
 	if err != nil {
 		return err
 	}
@@ -70,25 +70,54 @@ Either your %q is empty, or you misspelled the project name.`,
 			deps.ConfigPath,
 		)
 	}
+	// Warn when no repository carries the tag.
+	if !tags.Empty() && countRepos(loaded) == 0 {
+		return domain.NewWarning("no repository carries tag %s", tags)
+	}
+	// Hide projects the tag filter emptied.
+	if !tags.Empty() {
+		dropEmpty(loaded)
+	}
 	// Resolve each Repo Src now — lazily, only for the styles that show one.
 	// `name` and `tree` never print a source and so never pay the
 	// per-repository git subprocess resolution costs.
 	if st.showsSrc {
 		projects.FillSourcesKeyed(deps.Ctx, deps.Git, loaded)
 	}
-	return st.lister(args)(loaded, deps)
+	return st.lister(args, tags)(loaded, deps)
+}
+
+// countRepos returns the number of repositories in list, Sub-projects
+// included.
+func countRepos(list domain.ProjectListKeyed) int {
+	total := 0
+	for _, proj := range list {
+		total += proj.CountRepos()
+	}
+	return total
+}
+
+// dropEmpty removes projects holding no repositories.
+func dropEmpty(list domain.ProjectListKeyed) {
+	for name, proj := range list {
+		if proj.CountRepos() == 0 {
+			delete(list, name)
+		}
+	}
 }
 
 // fixed adapts a renderer that does not depend on the arguments.
-func fixed(l lister) func([]string) lister {
-	return func([]string) lister { return l }
+func fixed(l lister) func([]string, domain.TagSet) lister {
+	return func([]string, domain.TagSet) lister { return l }
 }
 
 // nameLister picks between the two name forms: with no project named, `name`
 // lists the project names; with one named, it lists that project's
 // repositories.
-func nameLister(args []string) lister {
-	if len(args) > 0 {
+//
+// With a `--tag`, it lists repositories.
+func nameLister(args []string, tags domain.TagSet) lister {
+	if len(args) > 0 || !tags.Empty() {
 		return listNameRepos
 	}
 	return listNameProjects

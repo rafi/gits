@@ -21,6 +21,9 @@ type Args struct {
 	Sub string
 	// Repo is a repository name.
 	Repo string
+	// Tags narrows the project to repositories carrying any of them. Empty
+	// keeps all.
+	Tags domain.TagSet
 	// RequireRepo demands a repository: without one the command cannot command.
 	RequireRepo bool
 }
@@ -42,11 +45,17 @@ func Parse(args []string, requireRepo bool) Args {
 	return a
 }
 
+// WithTags returns a copy of a narrowed to repositories carrying any of tags.
+func (a Args) WithTags(tags domain.TagSet) Args {
+	a.Tags = tags
+	return a
+}
+
 // Project loads the project named name, descending into the sub-project sub
 // when it is set. Naming something that does not exist is a real failure, not
 // a downgradeable warning: a script must be able to tell a typo from success.
-func Project(name, sub string, rt coreruntime.Runtime) (domain.Project, error) {
-	p, err := projects.LoadOne(name, rt)
+func Project(name, sub string, rt coreruntime.Runtime, opts ...projects.Option) (domain.Project, error) {
+	p, err := projects.LoadOne(name, rt, opts...)
 	if err != nil {
 		return p, fmt.Errorf("unable to load project: %w", err)
 	}
@@ -70,9 +79,18 @@ func Repo(p domain.Project, name string) (domain.Repository, error) {
 	return repo, nil
 }
 
+// tagList formats tags for an error message, or "no tags" when empty.
+func tagList(tags []domain.Tag) string {
+	if len(tags) == 0 {
+		return "no tags"
+	}
+	return strings.Join(tags, ",")
+}
+
 // Resolve returns the project and, when asked for, the repository. The
 // repository comes back nil only when the command does not require one and no
 // second argument named one.
+// Tags that match no repository yield a warning.
 func Resolve(a Args, s Selector, rt coreruntime.Runtime) (
 	domain.Project, *domain.Repository, error,
 ) {
@@ -88,9 +106,13 @@ func Resolve(a Args, s Selector, rt coreruntime.Runtime) (
 		}
 	}
 
-	project, err := Project(name, a.Sub, rt)
+	project, err := Project(name, a.Sub, rt, projects.WithTags(a.Tags))
 	if err != nil {
 		return project, nil, err
+	}
+	if !a.Tags.Empty() && project.CountRepos() == 0 {
+		return project, nil, domain.NewWarning(
+			"no repository in project %q carries tag %s", project.Name, a.Tags)
 	}
 
 	if !a.RequireRepo && a.Repo == "" {
@@ -115,9 +137,31 @@ func Resolve(a Args, s Selector, rt coreruntime.Runtime) (
 		}
 	}
 
-	repo, err := Repo(project, repoName)
+	repo, err := lookup(project, repoName, name, a, rt)
 	if err != nil {
 		return project, nil, err
 	}
 	return project, &repo, nil
+}
+
+// lookup finds the named repository in project. With tags, a repository
+// filtered out by them is reported as untagged rather than not found.
+func lookup(
+	project domain.Project, repoName, name string, a Args, rt coreruntime.Runtime,
+) (domain.Repository, error) {
+	if a.Tags.Empty() {
+		return Repo(project, repoName)
+	}
+	if repo, found := project.GetRepo(repoName, ""); found {
+		return repo, nil
+	}
+	full, err := Project(name, a.Sub, rt)
+	if err != nil {
+		return domain.Repository{}, err
+	}
+	if missed, ok := full.GetRepo(repoName, ""); ok {
+		return domain.Repository{}, fmt.Errorf("repo %q does not carry tag %s (it has %s)",
+			repoName, a.Tags, tagList(missed.Tags))
+	}
+	return domain.Repository{}, fmt.Errorf("repo %q not found", repoName)
 }

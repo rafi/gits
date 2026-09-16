@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/domain"
+
 	"github.com/rafi/gits/internal/app/cli/commands/discover"
 	"github.com/rafi/gits/internal/app/cli/commands/list"
 	"github.com/rafi/gits/internal/app/cli/commands/status"
@@ -39,6 +41,9 @@ var (
 
 // discoverOpts are the flags of `gits discover`.
 var discoverOpts discover.Options
+
+// tagValues holds each command's raw `--tag` values, keyed by command name.
+var tagValues = map[string]*[]string{}
 
 // pushOpts is the vetted passthrough set for safe bulk push.
 // Nothing here reaches --force, -u or --mirror, and nothing should be added
@@ -84,10 +89,24 @@ func init() {
 	discoverFlags.BoolVarP(&discoverOpts.DryRun, "dry-run", "n", false,
 		"report what would be added, write nothing")
 
+	// `add` sets tags; the other commands filter by them.
+	for _, cmd := range []*cobra.Command{
+		checkoutCmd, cloneCmd, execCmd, fetchCmd, listCmd,
+		orphanCmd, pullCmd, pushCmd, statusCmd,
+	} {
+		registerTagFlag(cmd, "only repositories carrying one of these tags (comma-separated)")
+	}
+	registerTagFlag(addCmd, "tag the recorded repositories (comma-separated)")
+
 	pushFlags := pushCmd.PersistentFlags()
 	pushFlags.BoolVar(&pushOpts.All, "all", false, "push all branches")
 	pushFlags.BoolVar(&pushOpts.Branches, "branches", false, "push all branches (synonym of --all)")
-	pushFlags.BoolVar(&pushOpts.Tags, "tags", false, "push all tags instead of the current branch")
+	pushFlags.BoolVar(&pushOpts.AllTags, "all-tags", false,
+		"push all git tags instead of the current branch")
+	// Deprecated alias of --all-tags.
+	pushFlags.BoolVar(&pushOpts.AllTags, "tags", false,
+		"push all git tags instead of the current branch")
+	mustDeprecateFlag(pushCmd, "tags", "use --all-tags instead")
 	pushFlags.BoolVar(&pushOpts.FollowTags, "follow-tags", false, "also push reachable annotated tags")
 	pushFlags.BoolVar(&pushOpts.Atomic, "atomic", false, "push all refs in one remote transaction")
 	pushFlags.BoolVar(&pushOpts.Prune, "prune", false, "remove remote refs matching the pushed refspec")
@@ -122,12 +141,37 @@ func registerOutputFlag(cmd *cobra.Command, dst *string, styles []string) {
 	mustRegisterFlagCompletion(cmd, "output", completeValues(styles))
 }
 
+// registerTagFlag registers a command's repeatable, comma-separated `--tag/-t`
+// flag and its completion.
+func registerTagFlag(cmd *cobra.Command, usage string) {
+	dst := new([]string)
+	tagValues[cmd.Name()] = dst
+	cmd.PersistentFlags().StringSliceVarP(dst, "tag", "t", nil, usage)
+	mustRegisterFlagCompletion(cmd, "tag", completeTags)
+}
+
+// tagSet returns the parsed `--tag` values of the named command.
+func tagSet(cmd string) domain.TagSet {
+	dst, ok := tagValues[cmd]
+	if !ok {
+		return domain.TagSet{}
+	}
+	return domain.NewTagSet(*dst)
+}
+
 // mustRegisterFlagCompletion panics on a failure to register, which cobra
 // reports only for a misspelled flag name or a second registration of the
 // same flag. Both are wiring mistakes in this file, not runtime conditions,
 // and either would otherwise show up as silently absent completion.
 func mustRegisterFlagCompletion(cmd *cobra.Command, flag string, f cobra.CompletionFunc) {
 	if err := cmd.RegisterFlagCompletionFunc(flag, f); err != nil {
+		panic(err)
+	}
+}
+
+// mustDeprecateFlag marks a persistent flag deprecated, panicking on failure.
+func mustDeprecateFlag(cmd *cobra.Command, flag, msg string) {
+	if err := cmd.PersistentFlags().MarkDeprecated(flag, msg); err != nil {
 		panic(err)
 	}
 }

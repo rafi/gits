@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/goccy/go-yaml/ast"
 
@@ -22,12 +23,14 @@ import (
 // knows its repositories, and `gits orphan` is the command that asks what
 // such a project's directory holds that the source did not report.
 //
+// A `--tag` labels every named repository, including already-listed ones.
+//
 // Args: (optional)
 //   - project name; created when it does not exist
 //   - repositories: each a directory, a glob pattern such as `backend*`, or
 //     a clone URL, which is cloned into the current directory first. With
 //     none, the current directory is the repository.
-func ExecAdd(args []string, deps app.RuntimeCLI) error {
+func ExecAdd(tags domain.TagSet, args []string, deps app.RuntimeCLI) error {
 	if len(args) == 0 && len(deps.Projects) == 0 {
 		// Without a project name the project is picked interactively, and an
 		// empty list gives nothing to pick. Fail before creating a config file.
@@ -62,43 +65,88 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 		return err
 	}
 
-	known := make(map[string]bool, len(project.Repos))
+	// Listed repositories keyed by absolute path.
+	known := make(map[string]domain.Repository, len(project.Repos))
 	for _, r := range project.Repos {
-		known[filepath.Clean(r.AbsPath)] = true
+		known[filepath.Clean(r.AbsPath)] = r
 	}
 
-	added := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if known[path] {
-			// Naming a repository the project already lists is a no-op, not
-			// a failure: a glob is expected to sweep up a few of those.
-			fmt.Fprintf(deps.Err, "%s is already in project %q, skipping\n",
-				format.Path(path, deps.HomeDir), project.Name)
-			continue
-		}
-		remoteURL, err := deps.Git.Remote(deps.Ctx, path)
-		if err != nil {
-			return fmt.Errorf("unable to read the remote of %s: %w", path, err)
-		}
-		nicePath := format.Path(path, deps.HomeDir)
-		if err := doc.AddRepo(projNode, nicePath, remoteURL); err != nil {
-			return err
-		}
-		added = append(added, nicePath)
-		known[path] = true
+	added, tagged, err := ensureRepo(doc, projNode, paths, known, tags, project, deps)
+	if err != nil {
+		return err
 	}
 
-	if len(added) == 0 {
+	if len(added) == 0 && len(tagged) == 0 {
 		return domain.NewWarning("nothing to add to project %q", project.Name)
 	}
 	if err := doc.Save(configPath); err != nil {
 		return err
 	}
 
+	tagNames := tags.Names()
 	for _, path := range added {
+		if len(tagNames) > 0 {
+			fmt.Fprintf(deps.Out, "Added %q repository to project %q, tagged %s\n",
+				path, project.Name, tags)
+			continue
+		}
 		fmt.Fprintf(deps.Out, "Added %q repository to project %q\n", path, project.Name)
 	}
+	for _, path := range tagged {
+		fmt.Fprintf(deps.Out, "Tagged %q in project %q with %s\n", path, project.Name, tags)
+	}
 	return nil
+}
+
+// ensureRepo records each path in the project's `repos:` and returns the
+// repositories it added and the listed ones it tagged. It updates known.
+func ensureRepo(
+	doc *edit.Doc,
+	projNode *ast.MappingNode,
+	paths []string,
+	known map[string]domain.Repository,
+	tags domain.TagSet,
+	project domain.Project,
+	deps app.RuntimeCLI,
+) (added, tagged []string, err error) {
+	tagNames := tags.Names()
+	added = make([]string, 0, len(paths))
+	tagged = make([]string, 0, len(paths))
+	for _, path := range paths {
+		nicePath := format.Path(path, deps.HomeDir)
+		if entry, listed := known[path]; listed {
+			if len(tagNames) == 0 {
+				fmt.Fprintf(deps.Err, "%s is already in project %q, skipping\n",
+					nicePath, project.Name)
+				continue
+			}
+			changed, err := doc.TagRepo(projNode, entry.Dir, entry.Src, tagNames)
+			switch {
+			case errors.Is(err, edit.ErrRepoNotListed):
+				fmt.Fprintf(deps.Err,
+					"%s is in project %q, but not as an entry of its own `repos:`, not tagged\n",
+					nicePath, project.Name)
+			case err != nil:
+				return nil, nil, err
+			case changed:
+				tagged = append(tagged, nicePath)
+			default:
+				fmt.Fprintf(deps.Err, "%s in project %q already carries %s\n",
+					nicePath, project.Name, strings.Join(tagNames, ","))
+			}
+			continue
+		}
+		remoteURL, err := deps.Git.Remote(deps.Ctx, path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to read the remote of %s: %w", path, err)
+		}
+		if err := doc.AddRepo(projNode, nicePath, remoteURL, tagNames...); err != nil {
+			return nil, nil, err
+		}
+		added = append(added, nicePath)
+		known[path] = domain.Repository{Dir: nicePath, Src: remoteURL}
+	}
+	return added, tagged, nil
 }
 
 // ensureProject returns a project by name along with its mapping in the
@@ -135,9 +183,7 @@ func ensureProject(
 
 // rejectDiscovered refuses a project whose repositories come from a Provider
 // Source. Its `repos:` are discovered, not written, so there is nothing for
-// `add` to record; the loader gives a project with a path and no `repos:` a
-// filesystem source implicitly, so that case gets a hint rather than the
-// name of a source the user never wrote.
+// `add` to record.
 func rejectDiscovered(project domain.Project) error {
 	if project.Source == nil {
 		return nil

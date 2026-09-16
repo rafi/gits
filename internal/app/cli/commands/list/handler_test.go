@@ -99,7 +99,7 @@ func TestExecListWritesResultOutput(t *testing.T) {
 			t.Parallel()
 
 			deps := testDeps(t)
-			if err := ExecList(format, []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecList(format, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
 			}
 			if deps.Result() == "" {
@@ -118,7 +118,7 @@ func TestExecListNameRepos(t *testing.T) {
 	t.Parallel()
 
 	deps := testDeps(t)
-	if err := ExecList("name", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("name", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -188,7 +188,7 @@ func TestExecListSrcResolutionIsLazy(t *testing.T) {
 			deps.Cache = hitCache{}
 			deps.Projects = domain.ProjectListKeyed{"acme": fsProject(t)}
 
-			if err := ExecList(format, []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecList(format, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
 			}
 			if got := g.calls(); got != 0 {
@@ -206,7 +206,7 @@ func TestExecListSrcResolutionIsLazy(t *testing.T) {
 			deps.Cache = hitCache{}
 			deps.Projects = domain.ProjectListKeyed{"acme": fsProject(t)}
 
-			if err := ExecList(format, []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecList(format, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
 			}
 			if got := g.calls(); got != 2 {
@@ -224,7 +224,7 @@ func TestExecListNameProjects(t *testing.T) {
 	deps := testDeps(t)
 	deps.Projects["beta"] = fixtureProject()
 
-	if err := ExecList("name", nil, deps.RuntimeCLI); err != nil {
+	if err := ExecList("name", domain.TagSet{}, nil, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -246,7 +246,7 @@ func TestExecListTree(t *testing.T) {
 	t.Parallel()
 
 	deps := testDeps(t)
-	if err := ExecList("tree", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("tree", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -274,7 +274,7 @@ func TestExecListTable(t *testing.T) {
 	t.Parallel()
 
 	deps := testDeps(t)
-	if err := ExecList("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -298,7 +298,7 @@ func TestExecListWide(t *testing.T) {
 	t.Parallel()
 
 	deps := testDeps(t)
-	if err := ExecList("wide", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("wide", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -318,7 +318,7 @@ func TestExecListJSON(t *testing.T) {
 	t.Parallel()
 
 	deps := testDeps(t)
-	if err := ExecList("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("json", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -406,7 +406,7 @@ func TestExecListDeterministicOrder(t *testing.T) {
 			var first string
 			for i := range 8 {
 				deps := build(t)
-				if err := ExecList(format, []string{"alpha", "bravo", "charlie"}, deps.RuntimeCLI); err != nil {
+				if err := ExecList(format, domain.TagSet{}, []string{"alpha", "bravo", "charlie"}, deps.RuntimeCLI); err != nil {
 					t.Fatalf("ExecList(%q) error = %v, want nil", format, err)
 				}
 				got := deps.Result()
@@ -443,7 +443,7 @@ func TestExecListUnknownFormat(t *testing.T) {
 		Repos:  []domain.Repository{{Name: "api"}},
 	}}
 
-	err := ExecList("yaml", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecList("yaml", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatalf("ExecList(%q) error = nil, want a rejected format", "yaml")
 	}
@@ -459,7 +459,7 @@ func TestExecListUnknownFormat(t *testing.T) {
 
 	// The same dependencies with a known format do reach the loader and fail
 	// there, which is what makes the assertion above meaningful.
-	if err := ExecList("name", []string{"acme"}, deps.RuntimeCLI); err == nil ||
+	if err := ExecList("name", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err == nil ||
 		strings.Contains(err.Error(), "unknown output format") {
 		t.Errorf("ExecList(\"name\") error = %v, want the load to have been attempted", err)
 	}
@@ -475,7 +475,7 @@ func TestExecListTracingStaysOutOfOutput(t *testing.T) {
 	deps := clitest.New(t, &countingGit{remote: "git@x:a/b.git"})
 	deps.Projects = domain.ProjectListKeyed{"acme": fsProject(t)}
 
-	if err := ExecList("name", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("name", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -514,7 +514,7 @@ func TestExecListPathlessProjectKeepsIdentity(t *testing.T) {
 		}},
 	}
 
-	if err := ExecList("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("json", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 
@@ -546,7 +546,7 @@ func TestExecListPathlessRepoNamedFromSrc(t *testing.T) {
 		Repos: []domain.Repository{{Src: "git@example.com:acme/one.git"}},
 	}
 
-	if err := ExecList("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecList("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecList error = %v, want nil", err)
 	}
 

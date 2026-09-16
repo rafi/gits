@@ -3,6 +3,7 @@
 package fetch
 
 import (
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/interaction/progress"
 	pick "github.com/rafi/gits/internal/app/cli/interaction/select"
@@ -17,7 +18,7 @@ import (
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecFetch(format string, args []string, deps app.RuntimeCLI) error {
+func ExecFetch(format string, tags domain.TagSet, args []string, deps app.RuntimeCLI) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
 	// costs a provider round-trip or an interactive prompt.
 	if err := output.ValidateFormat(format); err != nil {
@@ -26,7 +27,7 @@ func ExecFetch(format string, args []string, deps app.RuntimeCLI) error {
 
 	// What the command runs on is settled — prompting included — before the
 	// engine is handed anything, so nothing it does can fail over an argument.
-	target, err := pick.Target(args, deps)
+	target, err := pick.TargetWithTags(args, tags, deps)
 	if err != nil {
 		return err
 	}

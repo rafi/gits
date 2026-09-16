@@ -94,7 +94,7 @@ func TestExecAddDerivesDirFromRepoSrc(t *testing.T) {
 	g := &fakeGit{remote: src}
 	deps, cwd := addDeps(t, g)
 
-	if err := ExecAdd([]string{"myproj", src}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj", src}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -130,7 +130,7 @@ func TestExecAddCurrentDirectory(t *testing.T) {
 	g := &fakeGit{remote: src}
 	deps, cwd := addDeps(t, g)
 
-	if err := ExecAdd([]string{"myproj"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -163,7 +163,7 @@ func TestExecAddCloneFailureReportsOnDiagnostic(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	if err := ExecAdd([]string{"myproj", "git@example.com:fixture/api.git"}, deps.RuntimeCLI); err == nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj", "git@example.com:fixture/api.git"}, deps.RuntimeCLI); err == nil {
 		t.Fatal("ExecAdd error = nil, want the failed clone to fail the command")
 	}
 
@@ -207,7 +207,7 @@ func TestExecAddGlobAddsEveryMatch(t *testing.T) {
 	deps, cwd := addDeps(t, g)
 	dirs := repoDirs(t, cwd, "backend-api", "backend-worker", "frontend")
 
-	if err := ExecAdd([]string{"myproj", "backend*"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj", "backend*"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -244,7 +244,7 @@ func TestExecAddSeveralDirectories(t *testing.T) {
 	deps, cwd := addDeps(t, g)
 	repoDirs(t, cwd, "alpha", "bravo")
 
-	if err := ExecAdd([]string{"myproj", "alpha", "bravo", "alpha"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj", "alpha", "bravo", "alpha"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -270,7 +270,7 @@ func TestExecAddSeveralDirectoriesSkipsNonRepositories(t *testing.T) {
 	deps, cwd := addDeps(t, g)
 	dirs := repoDirs(t, cwd, "api", "neovims", "worker")
 
-	err := ExecAdd([]string{"myproj", dirs["api"], dirs["neovims"], dirs["worker"]}, deps.RuntimeCLI)
+	err := ExecAdd(domain.TagSet{}, []string{"myproj", dirs["api"], dirs["neovims"], dirs["worker"]}, deps.RuntimeCLI)
 	if err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil — a plain directory among many is skipped", err)
 	}
@@ -302,7 +302,7 @@ func TestExecAddSingleNonRepositoryFails(t *testing.T) {
 	deps, cwd := addDeps(t, g)
 	repoDirs(t, cwd, "plain")
 
-	err := ExecAdd([]string{"myproj", "plain"}, deps.RuntimeCLI)
+	err := ExecAdd(domain.TagSet{}, []string{"myproj", "plain"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecAdd error = nil, want a refusal for a directory named on its own")
 	}
@@ -327,7 +327,7 @@ func TestExecAddSkipsAlreadyListed(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	err = ExecAdd([]string{"myproj", existing}, deps.RuntimeCLI)
+	err = ExecAdd(domain.TagSet{}, []string{"myproj", existing}, deps.RuntimeCLI)
 	if err == nil || !domain.IsWarning(err) {
 		t.Fatalf("ExecAdd error = %v, want a downgradeable warning", err)
 	}
@@ -352,7 +352,7 @@ func TestExecAddRefusesUnknownTarget(t *testing.T) {
 	g := &fakeGit{remote: "git@example.com:fixture/x.git"}
 	deps, _ := addDeps(t, g)
 
-	err := ExecAdd([]string{"myproj", "typo"}, deps.RuntimeCLI)
+	err := ExecAdd(domain.TagSet{}, []string{"myproj", "typo"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecAdd error = nil, want a refusal")
 	}
@@ -374,7 +374,7 @@ func TestExecAddGlobSkipsNonRepositories(t *testing.T) {
 	deps, cwd := addDeps(t, g)
 	dirs := repoDirs(t, cwd, "src-api", "src-docs", "src-assets")
 
-	if err := ExecAdd([]string{"myproj", "src-*"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj", "src-*"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil — a skipped match is not a failure", err)
 	}
 
@@ -411,7 +411,7 @@ func TestExecAddGlobWithoutRepositoriesWarns(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	err = ExecAdd([]string{"myproj", "nothing-here*"}, deps.RuntimeCLI)
+	err = ExecAdd(domain.TagSet{}, []string{"myproj", "nothing-here*"}, deps.RuntimeCLI)
 	if err == nil || !domain.IsWarning(err) {
 		t.Fatalf("ExecAdd error = %v, want a downgradeable warning", err)
 	}
@@ -436,7 +436,7 @@ func TestExecAddGlobKeepsGoingAcrossPatterns(t *testing.T) {
 	deps, cwd := addDeps(t, g)
 	dirs := repoDirs(t, cwd, "keeper")
 
-	if err := ExecAdd([]string{"myproj", "gone*", "keep*"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"myproj", "gone*", "keep*"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -461,7 +461,7 @@ func TestExecAddWithoutProjectsFails(t *testing.T) {
 	deps.ConfigPath = ""
 	deps.HomeDir = home
 
-	err := ExecAdd(nil, deps.RuntimeCLI)
+	err := ExecAdd(domain.TagSet{}, nil, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecAdd error = nil, want a refusal naming what to do")
 	}
@@ -488,7 +488,7 @@ func TestExecAddRefusesDiscoveredProject(t *testing.T) {
 	repoDirs(t, root, "found")
 	deps.Projects["walked"] = domain.Project{Path: root}
 
-	err := ExecAdd([]string{"walked"}, deps.RuntimeCLI)
+	err := ExecAdd(domain.TagSet{}, []string{"walked"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecAdd error = nil, want a refusal for a discovered project")
 	}
@@ -516,7 +516,7 @@ func TestExecAddStartsAnEmptyConfig(t *testing.T) {
 		t.Fatalf("empty config: %v", err)
 	}
 
-	if err := ExecAdd([]string{"fresh"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"fresh"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -547,7 +547,7 @@ func TestExecAddCreatesConfigWhenNoneExists(t *testing.T) {
 	deps.ConfigPath = ""
 	deps.HomeDir = home
 
-	if err := ExecAdd([]string{"fresh"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"fresh"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 
@@ -586,7 +586,7 @@ func TestExecAddKeepsAnExistingConfig(t *testing.T) {
 		t.Fatalf("write existing config: %v", err)
 	}
 
-	if err := ExecAdd([]string{"fresh"}, deps.RuntimeCLI); err != nil {
+	if err := ExecAdd(domain.TagSet{}, []string{"fresh"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecAdd error = %v, want nil", err)
 	}
 

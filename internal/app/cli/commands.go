@@ -45,7 +45,9 @@ has nothing to add to: use ` + "`gits orphan`" + ` to see what its directory hol
 that no project declares.`,
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeAddArgs,
-	RunE:              runWithDeps(add.ExecAdd),
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
+		return add.ExecAdd(tagSet("add"), args, deps)
+	}),
 }
 
 var branchOverviewCmd = &cobra.Command{
@@ -78,7 +80,9 @@ var checkoutCmd = &cobra.Command{
 	Aliases:           []string{"ck"},
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE:              runWithDeps(checkout.ExecCheckout),
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
+		return checkout.ExecCheckout(tagSet("checkout"), args, deps)
+	}),
 }
 
 var cloneCmd = &cobra.Command{
@@ -87,7 +91,7 @@ var cloneCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
-		return clone.ExecClone(cloneOutput, args, deps)
+		return clone.ExecClone(cloneOutput, tagSet("clone"), args, deps)
 	}),
 }
 
@@ -183,7 +187,7 @@ working directory and with GITS_PROJECT, GITS_REPO and GITS_REPO_PATH set.`,
 		}
 		gitsArgs, command := args[:dash], args[dash:]
 		return runWithDeps(func(_ []string, deps app.RuntimeCLI) error {
-			return exec.Exec(execOutput, command, gitsArgs, deps)
+			return exec.Exec(execOutput, command, tagSet("exec"), gitsArgs, deps)
 		})(cmd, gitsArgs)
 	},
 }
@@ -194,7 +198,7 @@ var fetchCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
-		return fetch.ExecFetch(fetchOutput, args, deps)
+		return fetch.ExecFetch(fetchOutput, tagSet("fetch"), args, deps)
 	}),
 }
 
@@ -206,7 +210,7 @@ var listCmd = &cobra.Command{
 	ValidArgsFunction: completeProject,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		// Run with output style.
-		return list.ExecList(listOutput, args, deps)
+		return list.ExecList(listOutput, tagSet("list"), args, deps)
 	}),
 }
 
@@ -215,7 +219,9 @@ var orphanCmd = &cobra.Command{
 	Short:             "Finds orphan repository",
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
-	RunE:              runWithDeps(orphan.ExecOrphan),
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
+		return orphan.ExecOrphan(tagSet("orphan"), args, deps)
+	}),
 }
 
 var pullCmd = &cobra.Command{
@@ -224,7 +230,7 @@ var pullCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
-		return pull.ExecPull(pullOutput, args, deps)
+		return pull.ExecPull(pullOutput, tagSet("pull"), args, deps)
 	}),
 }
 
@@ -234,7 +240,7 @@ var pushCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
-		return push.ExecPush(pushOutput, pushOpts, args, deps)
+		return push.ExecPush(pushOutput, pushOpts, tagSet("push"), args, deps)
 	}),
 }
 
@@ -252,7 +258,7 @@ var statusCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(2),
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
-		return status.ExecStatus(statusOutput, statusOpts, args, deps)
+		return status.ExecStatus(statusOutput, statusOpts, tagSet("status"), args, deps)
 	}),
 }
 

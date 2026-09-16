@@ -5,6 +5,7 @@ package exec
 import (
 	"context"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/interaction/progress"
 	pick "github.com/rafi/gits/internal/app/cli/interaction/select"
@@ -29,7 +30,7 @@ var ErrNoCommand = exec.ErrNoCommand
 //   - repo or sub-project name
 //
 // argv is the command to run, already split from args at the `--` separator.
-func Exec(format string, argv []string, args []string, deps app.RuntimeCLI) error {
+func Exec(format string, argv []string, tags domain.TagSet, args []string, deps app.RuntimeCLI) error {
 	// Both checks precede the load, so neither mistake costs a provider
 	// round-trip or an interactive prompt.
 	if err := output.ValidateFormat(format); err != nil {
@@ -41,7 +42,7 @@ func Exec(format string, argv []string, args []string, deps app.RuntimeCLI) erro
 
 	// What the command runs on is settled — prompting included — before the
 	// engine is handed anything, so nothing it does can fail over an argument.
-	target, err := pick.Target(args, deps)
+	target, err := pick.TargetWithTags(args, tags, deps)
 	if err != nil {
 		return err
 	}

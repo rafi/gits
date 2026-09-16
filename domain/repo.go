@@ -16,6 +16,10 @@ type Repository struct {
 	URL       string `json:"url,omitempty"`
 	Desc      string `json:"desc,omitempty"`
 
+	// Tags are the repository's own tags; after load, they include inherited
+	// project tags.
+	Tags []Tag `json:"tags,omitempty"`
+
 	Type    string    `json:"-"`
 	AbsPath string    `json:"-"`
 	State   RepoState `json:"-"`

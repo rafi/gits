@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
@@ -60,7 +61,7 @@ func TestExecFetchProject(t *testing.T) {
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecFetch("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecFetch("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecFetch error = %v, want nil", err)
 	}
 
@@ -87,7 +88,7 @@ func TestExecFetchSingleRepo(t *testing.T) {
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecFetch("table", []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecFetch("table", domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecFetch error = %v, want nil", err)
 	}
 
@@ -114,7 +115,7 @@ func TestExecFetchSkipsNonOKRepositories(t *testing.T) {
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecFetch("table", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecFetch("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecFetch error = nil, want the skipped repositories to fail the run")
 	}
@@ -144,7 +145,7 @@ func TestExecFetchFailureReportsEpilogue(t *testing.T) {
 	g := &fakeGit{err: errors.New("network down")}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecFetch("table", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecFetch("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecFetch error = nil, want the failed repository to fail the run")
 	}
@@ -183,7 +184,7 @@ func TestExecFetchJSON(t *testing.T) {
 			deps := clitest.New(t, tc.git).WithProject("acme",
 				clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-			if err := ExecFetch("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecFetch("json", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecFetch error = %v, want nil: a repository's condition is data", err)
 			}
 			if got := deps.Diagnostic(); got != "" {
@@ -228,7 +229,7 @@ func TestExecFetchUnknownFormat(t *testing.T) {
 	g := &fakeGit{out: "up to date"}
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecFetch("wide", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecFetch("wide", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "unknown output format") {
 		t.Fatalf("ExecFetch(\"wide\") error = %v, want the format rejected", err)
 	}

@@ -29,6 +29,14 @@ type options struct {
 	// running a network fetch or a tokenCommand passphrase prompt. Shell
 	// completion loads this way so pressing Tab never blocks or prompts.
 	cacheOnly bool
+	// tags narrows each project to repositories carrying any of them.
+	tags domain.TagSet
+}
+
+// WithTags narrows a load to repositories carrying any of tags. It applies
+// after include/exclude, so it never restores an excluded repository.
+func WithTags(tags domain.TagSet) Option {
+	return func(o *options) { o.tags = tags }
 }
 
 // CacheOnly makes a load never contact a remote Provider Source: cached
@@ -200,7 +208,11 @@ func populateProject(project *domain.Project, deps coreruntime.Runtime, o option
 	classifyRepos(deps.Ctx, project, deps.Git)
 	sortTree(project)
 
-	// Filter by user include/exclude config values.
+	// Repositories inherit their project's tags.
+	project.ResolveTags(nil)
+
+	// Filter by include/exclude first, then by tags.
 	project.Filter()
+	project.FilterTags(o.tags)
 	return nil
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/fsutil"
 )
 
@@ -154,9 +155,11 @@ func sameIgnoringSpace(a, b string) bool {
 
 // repoEntry is one item under a project's `repos:`, in the key order the
 // config file documents.
+// Tags are written flow style: `tags: [demo, backend]`.
 type repoEntry struct {
-	Dir string `yaml:"dir"`
-	Src string `yaml:"src,omitempty"`
+	Dir  string   `yaml:"dir"`
+	Src  string   `yaml:"src,omitempty"`
+	Tags []string `yaml:"tags,omitempty,flow"`
 }
 
 // FindProject finds a project's mapping by name.
@@ -235,6 +238,8 @@ type Repo struct {
 	Dir string
 	// Src is the clone URL; empty omits `src:`.
 	Src string
+	// Tags are the repository's labels; empty omits `tags:`.
+	Tags []string
 }
 
 // AddProjectRepos appends a project with a path and an explicit `repos:`
@@ -300,8 +305,8 @@ func (cf *Doc) graft(frag *ast.MappingNode) error {
 // a block list gets another `- dir:` at its own indentation; a `repos:` that
 // is missing, null, or `[]` becomes a block list indented like the rest of
 // the file.
-func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
-	entry := repoEntry{Dir: dir, Src: src}
+func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string, tags ...string) error {
+	entry := repoEntry{Dir: dir, Src: src, Tags: tags}
 	repos := findKey(project, "repos")
 	if repos == nil {
 		frag, err := mappingFragment(map[string]any{"repos": []repoEntry{entry}})
@@ -342,6 +347,105 @@ func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
 	}
 	repos.Value = frag
 	return nil
+}
+
+// TagRepo adds missing tags to the repository entry matching dir (or src when
+// dir is empty) and reports whether it changed. Returns ErrRepoNotListed.
+func (cf *Doc) TagRepo(project *ast.MappingNode, dir, src string, tags []string) (bool, error) {
+	entry := findRepoEntry(project, dir, src)
+	if entry == nil {
+		return false, ErrRepoNotListed
+	}
+	existing := entryTags(entry)
+	have := make([]string, 0, len(existing)+len(tags))
+	for _, tag := range existing {
+		have = append(have, domain.NormalizeTag(tag))
+	}
+	added := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if norm := domain.NormalizeTag(tag); norm != "" && !slices.Contains(have, norm) {
+			have = append(have, norm)
+			added = append(added, tag)
+		}
+	}
+	if len(added) == 0 {
+		return false, nil
+	}
+	return true, setEntryTags(entry, append(existing, added...))
+}
+
+// ErrRepoNotListed is returned when a repository has no `repos:` entry.
+var ErrRepoNotListed = errors.New("repository has no entry in the config file")
+
+// findRepoEntry returns the `repos:` item whose `dir:` is dir, or with no
+// `dir:` and a `src:` of src when dir is empty. Returns nil when not found.
+func findRepoEntry(project *ast.MappingNode, dir, src string) *ast.MappingNode {
+	repos := findKey(project, "repos")
+	if repos == nil {
+		return nil
+	}
+	list, ok := repos.Value.(*ast.SequenceNode)
+	if !ok {
+		// Null or `[]`.
+		return nil
+	}
+	for _, value := range list.Values {
+		mapping, ok := value.(*ast.MappingNode)
+		if !ok {
+			continue
+		}
+		got := findKey(mapping, "dir")
+		switch {
+		case dir != "" && got != nil && scalarString(got.Value) == dir:
+			return mapping
+		case dir == "" && got == nil && src != "":
+			if gotSrc := findKey(mapping, "src"); gotSrc != nil && scalarString(gotSrc.Value) == src {
+				return mapping
+			}
+		}
+	}
+	return nil
+}
+
+// entryTags returns a `repos:` item's tags.
+func entryTags(entry *ast.MappingNode) []string {
+	node := findKey(entry, "tags")
+	if node == nil {
+		return nil
+	}
+	list, ok := node.Value.(*ast.SequenceNode)
+	if !ok {
+		return nil
+	}
+	tags := make([]string, 0, len(list.Values))
+	for _, value := range list.Values {
+		if tag := scalarString(value); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+// setEntryTags sets a `repos:` item's tags as a flow list, adding the key if
+// missing.
+func setEntryTags(entry *ast.MappingNode, tags []string) error {
+	frag, err := fragment(tags, yaml.Flow(true))
+	if err != nil {
+		return err
+	}
+	if node := findKey(entry, "tags"); node != nil {
+		node.Value = frag
+		return nil
+	}
+	mapping, err := mappingFragment(map[string]any{"tags": tags})
+	if err != nil {
+		return err
+	}
+	// Swap the block-style list for the flow one.
+	if len(mapping.Values) == 1 {
+		mapping.Values[0].Value = frag
+	}
+	return ast.Merge(entry, mapping)
 }
 
 // scalarString returns a scalar node's unquoted string, or "" otherwise.

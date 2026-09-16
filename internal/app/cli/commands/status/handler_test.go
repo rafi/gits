@@ -129,7 +129,7 @@ func TestExecStatusSubprocessBudget(t *testing.T) {
 	deps := clitest.New(t, g).
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"), clitest.Cloned("lib"))
 
-	if err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
 
@@ -152,7 +152,7 @@ func TestExecStatusSplitsOutput(t *testing.T) {
 	deps := clitest.New(t, execGit{}).
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
 
@@ -188,7 +188,7 @@ func TestExecStatusSingleRepo(t *testing.T) {
 	deps := clitest.New(t, execGit{}).
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecStatus("table", Options{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
 
@@ -225,7 +225,7 @@ func TestExecStatusPathDiscoversLiveRepos(t *testing.T) {
 		deps := clitest.New(t, pathGit{})
 		t.Chdir(filepath.Join(root, "single"))
 
-		if err := ExecStatus("table", Options{}, []string{"."}, deps.RuntimeCLI); err != nil {
+		if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"."}, deps.RuntimeCLI); err != nil {
 			t.Fatalf("ExecStatus error = %v, want nil", err)
 		}
 
@@ -241,7 +241,7 @@ func TestExecStatusPathDiscoversLiveRepos(t *testing.T) {
 		deps := clitest.New(t, pathGit{})
 		t.Chdir(root)
 
-		if err := ExecStatus("table", Options{}, []string{"fleet"}, deps.RuntimeCLI); err != nil {
+		if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"fleet"}, deps.RuntimeCLI); err != nil {
 			t.Fatalf("ExecStatus error = %v, want nil", err)
 		}
 
@@ -276,7 +276,7 @@ func TestExecStatusFilePathUsesContainingRepository(t *testing.T) {
 	deps := clitest.New(t, pathGit{})
 	t.Chdir(root)
 
-	if err := ExecStatus("table", Options{}, []string{filepath.Join("api", "README.md")}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{filepath.Join("api", "README.md")}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
 
@@ -294,7 +294,7 @@ func TestExecStatusSingleRepoState(t *testing.T) {
 	deps := clitest.New(t, execGit{}).
 		WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-	err := ExecStatus("table", Options{}, []string{"acme", "gone"}, deps.RuntimeCLI)
+	err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme", "gone"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecStatus error = nil, want the unusable repository to fail")
 	}
@@ -328,7 +328,7 @@ func TestExecStatusJSON(t *testing.T) {
 	deps := clitest.New(t, g).
 		WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-	if err := ExecStatus("json", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("json", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil — a repository's condition is data", err)
 	}
 
@@ -421,7 +421,7 @@ func defaultIcons() domain.Icons {
 func statusRow(t *testing.T, g execGit) string {
 	t.Helper()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
-	if err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
 	if got := deps.Diagnostic(); got != "" {
@@ -521,7 +521,7 @@ func docStatusOf(t *testing.T, doc map[string]any, project string, idx int) map[
 func statusDoc(t *testing.T, g execGit, repos ...clitest.Repo) map[string]any {
 	t.Helper()
 	deps := clitest.New(t, g).WithProject("acme", repos...)
-	if err := ExecStatus("json", Options{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecStatus("json", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecStatus error = %v, want nil", err)
 	}
 	if got := deps.Diagnostic(); got != "" {
@@ -620,7 +620,7 @@ func TestExecStatusUnknownProject(t *testing.T) {
 			deps := clitest.New(t, execGit{}).
 				WithProject("acme", clitest.Cloned("api"))
 
-			err := ExecStatus(format, Options{}, []string{"typo"}, deps.RuntimeCLI)
+			err := ExecStatus(format, Options{}, domain.TagSet{}, []string{"typo"}, deps.RuntimeCLI)
 			if err == nil {
 				t.Fatalf("ExecStatus(%q, typo) = nil, want a real error", format)
 			}
@@ -651,7 +651,7 @@ func TestExecStatusUnknownFormat(t *testing.T) {
 		Repos:  []domain.Repository{{Name: "api"}},
 	}}
 
-	err := ExecStatus("wide", Options{}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecStatus("wide", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecStatus(\"wide\") error = nil, want a rejected format")
 	}
@@ -667,7 +667,7 @@ func TestExecStatusUnknownFormat(t *testing.T) {
 
 	// The same dependencies with an accepted format do reach the loader and
 	// fail there, which is what makes the assertion above meaningful.
-	if err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI); err == nil ||
+	if err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err == nil ||
 		strings.Contains(err.Error(), "unknown output format") {
 		t.Errorf("ExecStatus(\"table\") error = %v, want the load to have been attempted", err)
 	}
@@ -710,7 +710,7 @@ func TestExecStatusFilters(t *testing.T) {
 			deps := clitest.New(t, g).WithProject("acme",
 				clitest.Cloned("api"), clitest.Cloned("web"), clitest.Cloned("docs"))
 
-			if err := ExecStatus("table", tc.opts, []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecStatus("table", tc.opts, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecStatus error = %v, want nil", err)
 			}
 
@@ -744,7 +744,7 @@ func TestExecStatusRepoState(t *testing.T) {
 	deps := clitest.New(t, execGit{}).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecStatus error = nil, want the unusable repositories to fail the run")
 	}
@@ -775,7 +775,7 @@ func TestExecStatusProbeFailure(t *testing.T) {
 	deps := clitest.New(t, execGit{failure: errors.New("boom")}).
 		WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecStatus("table", Options{}, []string{"acme"}, deps.RuntimeCLI)
+	err := ExecStatus("table", Options{}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecStatus error = nil, want the failed probe to fail the run")
 	}

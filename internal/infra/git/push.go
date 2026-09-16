@@ -12,7 +12,7 @@ import (
 type PushOptions struct {
 	All        bool // push all branches
 	Branches   bool // git's synonym for --all
-	Tags       bool // push all tags instead of the current branch
+	AllTags    bool // push all git tags instead of the current branch
 	FollowTags bool // include annotated tags reachable from the pushed refs
 	Atomic     bool // one atomic transaction on the remote
 	Prune      bool // remove remote refs matching the pushed refspec
@@ -21,8 +21,8 @@ type PushOptions struct {
 
 // Validate rejects flag combinations gits refuses to fan out.
 func (o PushOptions) Validate() error {
-	if o.All && o.Branches || o.All && o.Tags || o.Branches && o.Tags {
-		return fmt.Errorf("--all, --branches and --tags are mutually exclusive")
+	if o.All && o.Branches || o.All && o.AllTags || o.Branches && o.AllTags {
+		return fmt.Errorf("--all, --branches and --all-tags are mutually exclusive")
 	}
 	return nil
 }
@@ -31,7 +31,7 @@ func (o PushOptions) Validate() error {
 // the current branch's Upstream is irrelevant: the caller pushes without
 // resolving one, and git resolves the destination.
 func (o PushOptions) SelectsRefs() bool {
-	return o.All || o.Branches || o.Tags
+	return o.All || o.Branches || o.AllTags
 }
 
 // args renders the options as git flags, in a stable order.
@@ -42,7 +42,8 @@ func (o PushOptions) args() []string {
 	}{
 		{o.All, "--all"},
 		{o.Branches, "--branches"},
-		{o.Tags, "--tags"},
+		// Exposed as --all-tags; git calls it --tags.
+		{o.AllTags, "--tags"},
 		{o.FollowTags, "--follow-tags"},
 		{o.Atomic, "--atomic"},
 		{o.Prune, "--prune"},

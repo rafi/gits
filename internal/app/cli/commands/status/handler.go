@@ -84,7 +84,10 @@ func (r rows) visible(p domain.Project, opts Options) (reps []*status.Report, hi
 // Args: (optional)
 //   - project name
 //   - repo or sub-project name
-func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI) error {
+func ExecStatus(
+	format string, opts Options, tags domain.TagSet,
+	args []string, deps app.RuntimeCLI,
+) error {
 	// Validate before anything is loaded or selected, so a typo'd format never
 	// costs a provider round-trip or an interactive prompt. The accepted
 	// formats are the ones every bulk command takes.
@@ -94,12 +97,12 @@ func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI)
 
 	// What the command runs on is settled — prompting included — before the
 	// engine is handed anything, so nothing it does can fail over an argument.
-	target, ok, err := pathTarget(args, deps)
+	target, ok, err := pathTarget(args, tags, deps)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		target, err = pick.Target(args, deps)
+		target, err = pick.TargetWithTags(args, tags, deps)
 	}
 	if err != nil {
 		return err
@@ -132,7 +135,7 @@ func ExecStatus(format string, opts Options, args []string, deps app.RuntimeCLI)
 // that directory, or every repository underneath it; a file path names its
 // containing repository. Bare words still prefer configured projects, so an
 // existing directory does not shadow a project of the same name.
-func pathTarget(args []string, deps app.RuntimeCLI) (command.Target, bool, error) {
+func pathTarget(args []string, tags domain.TagSet, deps app.RuntimeCLI) (command.Target, bool, error) {
 	if len(args) != 1 {
 		return command.Target{}, false, nil
 	}
@@ -158,9 +161,14 @@ func pathTarget(args []string, deps app.RuntimeCLI) (command.Target, bool, error
 	if !info.IsDir() {
 		path = containingRepo(path, deps)
 	}
-	project, err := projects.LoadOne(path, deps.Runtime)
+	project, err := projects.LoadOne(path, deps.Runtime, projects.WithTags(tags))
 	if err != nil {
 		return command.Target{}, true, err
+	}
+	// Repositories found by path carry no tags.
+	if !tags.Empty() && project.CountRepos() == 0 {
+		return command.Target{}, true, domain.NewWarning(
+			"no repository under %s carries tag %s", args[0], tags)
 	}
 	return command.Target{Project: project}, true, nil
 }

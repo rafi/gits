@@ -42,6 +42,9 @@ It is a single static Go binary needing nothing but `git`.
 
 - **One command, many repositories.** Clone, fetch, pull, push, check status, or
   run an arbitrary command across a whole project, in parallel.
+- **A config file you never have to write.** `gits discover ~/code` turns the
+  clones you already have into projects, and `gits add` records one at a time.
+  Both create the file and the project for you.
 - **Your repositories, discovered for you.** Point a project at a GitHub user, a
   GitLab group, a Bitbucket workspace, or a directory, and `gits` finds the
   repositories. Results are cached with a configurable TTL.
@@ -97,11 +100,32 @@ Run `gits doctor` at any time to see which of these were found and where.
 
 ## Quick start
 
-**1. Write a config file** at `~/.gits.yaml` (or
-`$XDG_CONFIG_HOME/gits/config.yaml`). If your clones are already grouped in
-directories, `gits discover ~/code` writes one for you, a project per group;
-`gits add <project>` inside a cloned repository writes one a repository at a
-time:
+**1. Let `gits` write the config for you.** You already have clones on disk, so
+there is nothing to type up by hand: point `discover` at them and it writes a
+project per directory, in one command.
+
+```console
+$ gits discover ~/code
+acme ~/code/acme 6 repositories
+oss ~/code/oss 3 repositories
+
+Added 2 projects to ~/.gits.yaml.
+```
+
+Adding a repository one at a time is `gits add`, from inside the clone:
+
+```bash
+cd ~/code/acme/api && gits add acme   # the current repository joins 'acme'
+gits add acme ~/work/tools            # or name directories, globs, clone URLs
+```
+
+Both create the config file and the project when they do not exist yet, so
+there is no `init` step and no manifest to maintain. Run `gits discover ~/code`
+again after cloning more, and only the new arrivals are added.
+
+Either way you end up with `~/.gits.yaml` (or
+`$XDG_CONFIG_HOME/gits/config.yaml`), which you are free to edit, group and
+point at a code forge:
 
 ```yaml
 ---
@@ -191,6 +215,9 @@ Commands that produce a report also take `-o`/`--output`. `list` offers
 `table`, `wide`, `tree`, `name` and `json`; `status`, `doctor` and the bulk
 commands offer `table` and `json`.
 
+Every command that addresses repositories also takes `-t`/`--tag`, which picks
+them out by label instead of by project. See [Tags](#tags).
+
 ## Usage
 
 ### Addressing projects and repositories
@@ -206,6 +233,62 @@ gits list acme infra  # several projects at once
 ```
 
 Omit the project and `gits` asks you to pick one interactively.
+
+### Tags
+
+A project groups repositories by where they live. A tag groups them by whatever
+you say: the three services behind one demo, everything you rebuild after a
+dependency bump, the repos you actually touch this week. Label them in the
+config:
+
+```yaml
+acme:
+  path: ~/code/acme
+  tags: [work]          # every repository under the project carries it
+  repos:
+    - dir: api
+      tags: [demo, backend]
+    - dir: web
+      tags: [demo]
+    - dir: docs
+```
+
+Then address them with `-t`, on any command that takes a project:
+
+```bash
+gits status acme -t demo          # only the repositories tagged 'demo'
+gits pull acme -t demo,backend    # either tag - several tags are a union
+gits pull acme -t demo -t backend # the same thing, spelled out
+gits exec acme -t demo -- git gc  # one command across the tagged ones
+gits list -t demo                 # across every project, no project named
+```
+
+A repository carries its own tags plus its project's, sub-projects included, so
+`web` above is reachable as both `demo` and `work`, and one tag on a project
+addresses everything in it - including repositories discovered from GitHub,
+GitLab or Bitbucket, which have no config entry of their own to label.
+
+Matching is exact and case-insensitive, like `include`/`exclude`: no globs. A
+tag nothing carries is reported rather than silently doing nothing, so a
+misspelling is visible:
+
+```console
+$ gits pull acme -t dmeo
+no repository in project "acme" carries tag dmeo
+```
+
+`gits add --tag` is the one place a tag is written rather than selected by. It
+labels what it records, and labels a repository the project already lists,
+which is how an existing one gets tagged:
+
+```bash
+gits add acme ./api --tag demo,backend  # record it, tagged
+gits add acme ./docs --tag demo         # tag one already in the list
+```
+
+Tagging a whole project is a `tags:` line on the project, since `gits add`
+always records repositories. Tags travel in `-o json` too, already resolved, so
+`jq` can group by them without re-reading your config.
 
 ### Status
 
@@ -242,9 +325,9 @@ project listing exactly those repositories:
 
 ```console
 $ gits discover ~/code
-code       ~/code           2 repositories
-project1  ~/code/project1  2 repositories
-project2  ~/code/project2  2 repositories
+code ~/code 2 repositories
+project1 ~/code/project1 2 repositories
+project2 ~/code/project2 2 repositories
 
 Added 3 projects to ~/.gits.yaml.
 ```
@@ -303,12 +386,19 @@ own. Use `gits orphan` to hunt those down.
 ```bash
 gits push acme          # push every repository in project 'acme'
 gits push acme -n       # git's own --dry-run, per repository
-gits push acme --tags   # push tags instead of the current branch
+gits push acme --all-tags   # push git's tags instead of the current branch
 ```
 
 A branch with no upstream, or one whose upstream is gone, is skipped rather than
 failed. Also supported: `--all`, `--branches`, `--follow-tags`, `--atomic` and
 `--prune`.
+
+> [!NOTE]
+> `--all-tags` was spelled `--tags` before tags-as-labels existed. The old name
+> still works and warns: it sat one letter from the `--tag` that selects
+> repositories while meaning something unrelated - git's tag refs, not your
+> labels. `gits push acme -t demo --all-tags` pushes the tags of the
+> repositories labelled `demo`.
 
 `--force`, `--force-with-lease`, `-u`/`--set-upstream` and `--mirror` are
 deliberately unreachable: one mistyped flag across forty remotes is not
@@ -417,7 +507,9 @@ projectname:          # Project name
   repos:              # Required if no 'source' defined
     - dir: foo        # Optional, default: repository name
       src: git@...    # Optional, default: repository remote URL
+      tags: [...]     # Optional labels, see 'Tags'
     - ...
+  tags: [...]         # Optional labels every repository under it carries
   include: [...]      # Optional allowlist of repositories
   exclude: [...]      # Optional denylist of repositories
   clone: true         # Optional, set false to skip during `gits clone`

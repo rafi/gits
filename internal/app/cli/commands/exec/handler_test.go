@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
 )
 
@@ -24,7 +25,7 @@ func TestExecProject(t *testing.T) {
 	deps := clitest.New(t, clitest.FakeGit{}).
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	err := Exec("table", []string{"echo", "hi"}, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("table", []string{"echo", "hi"}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err != nil {
 		t.Fatalf("ExecExec error = %v, want nil", err)
 	}
@@ -47,7 +48,7 @@ func TestExecRunsInRepoDir(t *testing.T) {
 
 	deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", clitest.Cloned("api"))
 
-	if err := Exec("table", []string{"pwd"}, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := Exec("table", []string{"pwd"}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecExec error = %v, want nil", err)
 	}
 
@@ -70,7 +71,7 @@ func TestExecEnvironment(t *testing.T) {
 	deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", clitest.Cloned("api"))
 
 	cmd := []string{"sh", "-c", "echo $GITS_PROJECT/$GITS_REPO@$GITS_REPO_PATH"}
-	if err := Exec("table", cmd, []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := Exec("table", cmd, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecExec error = %v, want nil", err)
 	}
 
@@ -93,7 +94,7 @@ func TestExecNonZeroExit(t *testing.T) {
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
 	script := `test "$GITS_REPO" != api || { echo boom >&2; exit 3; }`
-	err := Exec("table", []string{"sh", "-c", script}, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("table", []string{"sh", "-c", script}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecExec error = nil, want the failing command to fail the run")
 	}
@@ -119,7 +120,7 @@ func TestExecSingleRepo(t *testing.T) {
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
 	cmd := []string{"sh", "-c", "echo ran-$GITS_REPO"}
-	if err := Exec("table", cmd, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := Exec("table", cmd, domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecExec error = %v, want nil", err)
 	}
 
@@ -143,7 +144,7 @@ func TestExecSkipsNonOKRepositories(t *testing.T) {
 
 	marker := filepath.Join(t.TempDir(), "ran")
 	cmd := []string{"sh", "-c", "echo $GITS_REPO >> " + marker}
-	err := Exec("table", cmd, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("table", cmd, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecExec error = nil, want the skipped repository to fail the run")
 	}
@@ -168,7 +169,7 @@ func TestExecNoCommand(t *testing.T) {
 
 	deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", clitest.Cloned("api"))
 
-	err := Exec("table", nil, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("table", nil, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecExec error = nil, want ErrNoCommand")
 	}
@@ -184,7 +185,7 @@ func TestExecNoShellInterpretation(t *testing.T) {
 
 	deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", clitest.Cloned("api"))
 
-	err := Exec("table", []string{"echo", "a; touch pwned", "$HOME"}, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("table", []string{"echo", "a; touch pwned", "$HOME"}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err != nil {
 		t.Fatalf("ExecExec error = %v, want nil", err)
 	}
@@ -210,7 +211,7 @@ func TestExecJSON(t *testing.T) {
 		WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"), clitest.NotCloned("gone"))
 
 	script := `test "$GITS_REPO" != api || { echo boom; exit 3; }; echo ok $GITS_REPO`
-	err := Exec("json", []string{"sh", "-c", script}, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("json", []string{"sh", "-c", script}, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err != nil {
 		t.Fatalf("Exec error = %v, want nil: a repository's condition is data", err)
 	}
@@ -242,7 +243,7 @@ func TestExecUnknownFormat(t *testing.T) {
 
 	deps := clitest.New(t, clitest.FakeGit{}).WithProject("acme", clitest.Cloned("api"))
 
-	err := Exec("name", nil, []string{"acme"}, deps.RuntimeCLI)
+	err := Exec("name", nil, domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "unknown output format") {
 		t.Fatalf("Exec(\"name\") error = %v, want the format rejected", err)
 	}

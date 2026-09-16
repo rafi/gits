@@ -78,7 +78,7 @@ func TestExecPullProject(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecPull("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPull("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPull error = %v, want nil", err)
 	}
 
@@ -105,7 +105,7 @@ func TestExecPullSingleRepo(t *testing.T) {
 	g := tracking()
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"), clitest.Cloned("web"))
 
-	if err := ExecPull("table", []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
+	if err := ExecPull("table", domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecPull error = %v, want nil", err)
 	}
 
@@ -132,7 +132,7 @@ func TestExecPullSkipsNonOKRepositories(t *testing.T) {
 	deps := clitest.New(t, g).WithProject("acme",
 		clitest.Cloned("api"), clitest.NotCloned("gone"), clitest.Broken("bad"))
 
-	err := ExecPull("table", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPull("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPull error = nil, want the skipped repositories to fail the run")
 	}
@@ -163,7 +163,7 @@ func TestExecPullFailureReportsEpilogue(t *testing.T) {
 	g.pullErr = errors.New("would clobber local changes")
 	deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-	err := ExecPull("table", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPull("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil {
 		t.Fatal("ExecPull error = nil, want the failed repository to fail the run")
 	}
@@ -213,7 +213,7 @@ func TestExecPullUnpullableIsSkipped(t *testing.T) {
 			g := &fakeGit{head: tc.head}
 			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-			if err := ExecPull("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecPull("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecPull error = %v, want a skipped repository not to fail the run", err)
 			}
 			if len(g.Pulled()) != 0 {
@@ -240,7 +240,7 @@ func TestExecPullUnpullableIsSkipped(t *testing.T) {
 			// its line, and the run still succeeds.
 			single := clitest.New(t, &fakeGit{head: tc.head}).
 				WithProject("acme", clitest.Cloned("api"))
-			if err := ExecPull("table", []string{"acme", "api"}, single.RuntimeCLI); err != nil {
+			if err := ExecPull("table", domain.TagSet{}, []string{"acme", "api"}, single.RuntimeCLI); err != nil {
 				t.Errorf("ExecPull error = %v, want the single-repository skip not to fail the run", err)
 			}
 		})
@@ -257,7 +257,7 @@ func TestExecPullSkipsReadDifferently(t *testing.T) {
 		t.Helper()
 		deps := clitest.New(t, &fakeGit{head: head}).
 			WithProject("acme", clitest.Cloned("api"))
-		if err := ExecPull("table", []string{"acme"}, deps.RuntimeCLI); err != nil {
+		if err := ExecPull("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 			t.Fatalf("ExecPull error = %v, want nil", err)
 		}
 		return deps.Result()
@@ -294,7 +294,7 @@ func TestExecPullHeadFailure(t *testing.T) {
 			g := &fakeGit{headErr: tc.err}
 			deps := clitest.New(t, g).WithProject("acme", clitest.Cloned("api"))
 
-			err := ExecPull("table", []string{"acme", "api"}, deps.RuntimeCLI)
+			err := ExecPull("table", domain.TagSet{}, []string{"acme", "api"}, deps.RuntimeCLI)
 			if err == nil {
 				t.Fatal("ExecPull error = nil, want the failed lookup to fail the run")
 			}
@@ -338,7 +338,7 @@ func TestExecPullJSON(t *testing.T) {
 			deps := clitest.New(t, tc.git).
 				WithProject("acme", clitest.Cloned("api"), clitest.NotCloned("gone"))
 
-			if err := ExecPull("json", []string{"acme"}, deps.RuntimeCLI); err != nil {
+			if err := ExecPull("json", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err != nil {
 				t.Fatalf("ExecPull error = %v, want nil: a repository's condition is data", err)
 			}
 			if got := deps.Diagnostic(); got != "" {
@@ -381,7 +381,7 @@ func TestExecPullJSONInterrupted(t *testing.T) {
 	// for the next one.
 	deps.Git = &cancelingGit{fakeGit: tracking(), cancel: cancel}
 
-	err := ExecPull("json", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPull("json", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "interrupted") {
 		t.Fatalf("ExecPull error = %v, want the interruption to fail the run", err)
 	}
@@ -427,14 +427,14 @@ func TestExecPullUnknownFormat(t *testing.T) {
 		Repos:  []domain.Repository{{Name: "api"}},
 	}}
 
-	err := ExecPull("wide", []string{"acme"}, deps.RuntimeCLI)
+	err := ExecPull("wide", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI)
 	if err == nil || !strings.Contains(err.Error(), "unknown output format") {
 		t.Fatalf("ExecPull(\"wide\") error = %v, want the format rejected", err)
 	}
 	if got := deps.Result() + deps.Diagnostic(); got != "" {
 		t.Errorf("output = %q, want nothing rendered", got)
 	}
-	if err := ExecPull("table", []string{"acme"}, deps.RuntimeCLI); err == nil ||
+	if err := ExecPull("table", domain.TagSet{}, []string{"acme"}, deps.RuntimeCLI); err == nil ||
 		strings.Contains(err.Error(), "unknown output format") {
 		t.Errorf("ExecPull(\"table\") error = %v, want the load to have been attempted", err)
 	}

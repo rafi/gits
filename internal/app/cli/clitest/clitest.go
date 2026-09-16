@@ -223,6 +223,13 @@ func RepoSrc(name string) string { return "git@example.com:fixture/" + name + ".
 type Repo struct {
 	name  string
 	state domain.RepoState
+	tags  []domain.Tag
+}
+
+// Tagged returns a copy of r carrying tags.
+func (r Repo) Tagged(tags ...domain.Tag) Repo {
+	r.tags = tags
+	return r
 }
 
 // Cloned declares a repository that classifies as `ok`: NewProject creates its
@@ -252,7 +259,7 @@ func NewProject(t *testing.T, repos ...Repo) domain.Project {
 	root := t.TempDir()
 	project := domain.Project{Path: root}
 	for _, r := range repos {
-		repo := domain.Repository{Name: r.name, Dir: r.name, Src: RepoSrc(r.name)}
+		repo := domain.Repository{Name: r.name, Dir: r.name, Src: RepoSrc(r.name), Tags: r.tags}
 		switch r.state {
 		case domain.RepoStateOK:
 			if err := os.Mkdir(filepath.Join(root, r.name), 0o750); err != nil {

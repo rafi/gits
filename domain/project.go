@@ -30,6 +30,8 @@ type Project struct {
 	SubProjects []Project       `json:"subprojects,omitempty"`
 	Include     []string        `json:"include,omitempty"`
 	Exclude     []string        `json:"exclude,omitempty"`
+	// Tags apply to every Repository under the project, at any depth.
+	Tags []Tag `json:"tags,omitempty"`
 }
 
 // ProjectListKeyed is a list of projects with name keys.
@@ -159,6 +161,39 @@ func (p *Project) Filter() {
 	for i := range p.SubProjects {
 		p.SubProjects[i].Filter()
 	}
+}
+
+// ResolveTags adds each Project's tags, plus inherited, to every Repository
+// beneath it.
+func (p *Project) ResolveTags(inherited []Tag) {
+	own := MergeTags(inherited, p.Tags)
+	for idx := range p.Repos {
+		p.Repos[idx].Tags = MergeTags(own, p.Repos[idx].Tags)
+	}
+	for idx := range p.SubProjects {
+		p.SubProjects[idx].ResolveTags(own)
+	}
+}
+
+// FilterTags keeps Repositories matching tags and returns how many remain.
+// An empty set keeps everything; empty Projects are not pruned.
+func (p *Project) FilterTags(tags TagSet) int {
+	if tags.Empty() {
+		return p.CountRepos()
+	}
+	repos := make([]Repository, 0, len(p.Repos))
+	for _, repo := range p.Repos {
+		if tags.Matches(repo.Tags) {
+			repos = append(repos, repo)
+		}
+	}
+	p.Repos = repos
+
+	kept := len(repos)
+	for idx := range p.SubProjects {
+		kept += p.SubProjects[idx].FilterTags(tags)
+	}
+	return kept
 }
 
 // CalculateHash stores a SHA-256 digest of the project's marshaled form in

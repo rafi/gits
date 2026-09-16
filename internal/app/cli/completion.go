@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/domain"
+
 	coreruntime "github.com/rafi/gits/internal/runtime"
 	"github.com/rafi/gits/internal/runtime/projects"
 )
@@ -43,6 +45,47 @@ func completeProject(_ *cobra.Command, _ []string, toComplete string) ([]string,
 		}
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeTags offers the tags declared in the config file, completing the
+// last element of a comma-separated value.
+func completeTags(_ *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	prefix, last := splitLastTag(toComplete)
+
+	tags := make([]string, 0, len(configFile.Projects))
+	for _, proj := range configFile.Projects {
+		tags = append(tags, collectTags(proj)...)
+	}
+
+	var completions []cobra.Completion
+	for _, tag := range domain.MergeTags(tags) {
+		if strings.HasPrefix(tag, domain.NormalizeTag(last)) {
+			completions = append(completions, prefix+tag)
+		}
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// collectTags returns every tag declared in the project subtree.
+func collectTags(project domain.Project) []string {
+	tags := append([]string{}, project.Tags...)
+	for _, repo := range project.Repos {
+		tags = append(tags, repo.Tags...)
+	}
+	for _, sub := range project.SubProjects {
+		tags = append(tags, collectTags(sub)...)
+	}
+	return tags
+}
+
+// splitLastTag splits a partial `--tag` value into the completed prefix,
+// including its trailing comma, and the tag being typed.
+func splitLastTag(toComplete string) (prefix, last string) {
+	idx := strings.LastIndex(toComplete, ",")
+	if idx < 0 {
+		return "", toComplete
+	}
+	return toComplete[:idx+1], toComplete[idx+1:]
 }
 
 // completeAddArgs completes `gits add`: the project name first, then
