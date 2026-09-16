@@ -14,6 +14,10 @@ const DefaultCacheTTL = 7 * 24 * time.Hour
 // settings.providerTimeout is unset or unparseable.
 const DefaultProviderTimeout = 5 * time.Minute
 
+// DefaultRateLimit is the requests per second a provider sends to one host
+// when its settings.<type>.rateLimit is unset.
+const DefaultRateLimit = 10.0
+
 // DefaultGitTimeout bounds network git operations (clone/fetch/pull) when
 // settings.gitTimeout is unset or unparseable.
 const DefaultGitTimeout = 5 * time.Minute
@@ -36,8 +40,8 @@ type Settings struct {
 	GitLab          ProviderSettings `json:"gitlab"`
 }
 
-// ProviderSettings holds the credentials of a single remote provider, keyed
-// in the config by provider name (settings.github, settings.gitlab, …).
+// ProviderSettings holds the credentials and request rate of a single remote
+// provider, keyed in the config by provider name (settings.github, …).
 type ProviderSettings struct {
 	// Token is the API token, used verbatim.
 	Token string `json:"token,omitempty"`
@@ -46,6 +50,23 @@ type ProviderSettings struct {
 	TokenCommand string `json:"tokenCommand,omitempty"`
 	// TokenCmd is an accepted alias for TokenCommand, spelled "token-cmd".
 	TokenCmd string `json:"token-cmd,omitempty"`
+	// RateLimit caps requests per second to one host; 0 is unlimited. Unset
+	// means DefaultRateLimit. Read from settings only; a source has none.
+	RateLimit *float64 `json:"rateLimit,omitempty"`
+}
+
+// RequestRate returns the rateLimit setting, or DefaultRateLimit when it is
+// unset. A negative value returns the default and an error naming the
+// setting.
+func (p ProviderSettings) RequestRate() (float64, error) {
+	if p.RateLimit == nil {
+		return DefaultRateLimit, nil
+	}
+	if *p.RateLimit < 0 {
+		return DefaultRateLimit, fmt.Errorf(
+			"invalid rateLimit %v, using default: must not be negative", *p.RateLimit)
+	}
+	return *p.RateLimit, nil
 }
 
 // Command returns the configured token command, preferring the canonical

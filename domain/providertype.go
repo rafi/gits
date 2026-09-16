@@ -32,11 +32,15 @@ type ProviderType struct {
 	URLRequired bool
 	// PublicHost is the normalized url meaning the same as no url at all.
 	PublicHost string
+	// RetrySafe lets a throttled request be sent again. Declared rather than
+	// inferred from the method: GitHub reads over POST.
+	RetrySafe bool
 }
 
 var providerTypes = []ProviderType{
 	{
 		Name:          ProviderGitHub,
+		RetrySafe:     true,
 		SearchField:   "owner",
 		TokenEnvVars:  []string{"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"},
 		TokenRequired: true,
@@ -46,6 +50,7 @@ var providerTypes = []ProviderType{
 	},
 	{
 		Name:          ProviderGitLab,
+		RetrySafe:     true,
 		SearchField:   "groupID",
 		TokenEnvVars:  []string{"GITLAB_TOKEN"},
 		TokenRequired: true,
@@ -55,6 +60,7 @@ var providerTypes = []ProviderType{
 	},
 	{
 		Name:          ProviderBitbucket,
+		RetrySafe:     true,
 		SearchField:   "owner",
 		TokenEnvVars:  []string{"BITBUCKET_TOKEN"},
 		TokenRequired: true,

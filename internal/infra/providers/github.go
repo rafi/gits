@@ -57,12 +57,10 @@ func (c *gitHubProvider) now() time.Time {
 }
 
 func newGitHubProvider(opts Options) *gitHubProvider {
-	src := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: opts.Token},
-	)
-	httpClient := oauth2.NewClient(context.Background(), src)
-	if opts.Timeout > 0 {
-		httpClient.Timeout = opts.Timeout
+	httpClient := opts.httpClient(domain.ProviderGitHub)
+	httpClient.Transport = &oauth2.Transport{
+		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: opts.Token}),
+		Base:   httpClient.Transport,
 	}
 	client := githubv4.NewClient(httpClient)
 	if opts.BaseURL != "" {

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/rafi/gits/domain"
@@ -21,10 +22,9 @@ type gitLabProvider struct {
 }
 
 func newGitLabProvider(opts Options) (*gitLabProvider, error) {
-	clientOpts := []gitlab.ClientOptionFunc{}
-	if opts.Timeout > 0 {
-		clientOpts = append(clientOpts,
-			gitlab.WithHTTPClient(&http.Client{Timeout: opts.Timeout}))
+	clientOpts := []gitlab.ClientOptionFunc{
+		gitlab.WithHTTPClient(opts.httpClient(domain.ProviderGitLab)),
+		gitlab.WithCustomRetry(gitLabRetryPolicy),
 	}
 	if opts.BaseURL != "" {
 		clientOpts = append(clientOpts, gitlab.WithBaseURL(opts.BaseURL+"/api/v4"))
@@ -38,6 +38,16 @@ func newGitLabProvider(opts Options) (*gitLabProvider, error) {
 		log:             opts.Log,
 		includeArchived: opts.IncludeArchived,
 	}, nil
+}
+
+// gitLabRetryPolicy keeps the SDK's retries for server errors but leaves
+// 429 and 503 to the transport, which already honored Retry-After for them;
+// retrying those here too would multiply the attempts.
+func gitLabRetryPolicy(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	if err == nil && resp != nil && throttled(resp.StatusCode) {
+		return false, nil
+	}
+	return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 }
 
 // skipGitLabProject reports whether a listed project is omitted: empty

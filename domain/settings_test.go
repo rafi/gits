@@ -128,6 +128,34 @@ func TestSettingsProviderAuth(t *testing.T) {
 	}
 }
 
+func TestProviderSettingsRequestRate(t *testing.T) {
+	t.Parallel()
+
+	rate := func(v float64) *float64 { return &v }
+	tests := []struct {
+		name    string
+		limit   *float64
+		want    float64
+		wantErr bool
+	}{
+		{"unset is the default", nil, DefaultRateLimit, false},
+		{"zero is unlimited", rate(0), 0, false},
+		{"fractional", rate(0.5), 0.5, false},
+		{"negative falls back", rate(-1), DefaultRateLimit, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ProviderSettings{RateLimit: tt.limit}.RequestRate()
+			if got != tt.want || (err != nil) != tt.wantErr {
+				t.Errorf("RequestRate() = %v, %v; want %v, error %v",
+					got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestProviderSettingsCommand(t *testing.T) {
 	t.Parallel()
 
