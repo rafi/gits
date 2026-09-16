@@ -3,7 +3,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,8 +28,6 @@ const configTag = "json"
 
 // File represents a config file with projects and settings.
 type File struct {
-	deprecations
-
 	client   *koanf.Koanf
 	Projects domain.ProjectListKeyed
 
@@ -43,10 +40,6 @@ type File struct {
 	// has a theme and a writer, rather than printed from here — this runs in
 	// cobra's initializer, before a runtime exists.
 	Warnings []string
-}
-
-type deprecations struct {
-	Projects domain.ProjectListKeyed `koanf:"projects"`
 }
 
 // NewConfigFromFile reads in config file and ENV variables if set.
@@ -78,18 +71,6 @@ func (f *File) applyDefaults() {
 		f.Settings.WorkerCount = max(runtime.NumCPU(), minWorkerCount)
 	}
 	f.Settings.Icons.ApplyDefaults()
-}
-
-// Convert handles deprecated config formats.
-func (f *File) Convert() error {
-	if err := f.client.Unmarshal("", &f.deprecations); err != nil {
-		return fmt.Errorf("unable to check deprecations: %w", err)
-	}
-	if len(f.deprecations.Projects) > 0 {
-		f.Projects = f.deprecations.Projects
-		return errors.New("key 'projects:' is deprecated, remove it")
-	}
-	return nil
 }
 
 // validateProjects rejects a project (or sub-project) that sets both a
@@ -220,14 +201,6 @@ func (f *File) loadConfig(filePath string) error {
 	// the only place the two can be told apart.
 	if err := validateProjects(f.Projects); err != nil {
 		return err
-	}
-
-	// Handle deprecated config fields.
-	if err := f.Convert(); err != nil {
-		// A deprecation is a warning, not a failure: record it for the caller
-		// to render on Diagnostic Output rather than printing to os.Stderr
-		// here; the Warnings field carries them to command wiring.
-		f.Warnings = append(f.Warnings, fmt.Sprintf("%s from %s", err, f.Filename))
 	}
 
 	// Parse special key 'settings'.

@@ -12,12 +12,6 @@ import (
 // settingsKey is the one top-level key that is not a project.
 const settingsKey = "settings"
 
-// deprecatedProjectsKey is the retired top-level `projects:` wrapper. Convert
-// reports it by name with instructions, so its contents must not also be
-// listed as unknown keys: everything nested under it looks unknown precisely
-// because the wrapper is the thing that is wrong.
-const deprecatedProjectsKey = "projects"
-
 // unknownKeys reports the config keys that matched no field of the structs
 // they were unmarshalled into — a misspelled `pth:` where `path:` was meant.
 //
@@ -41,9 +35,6 @@ func unknownKeys(k *koanf.Koanf, projects any, settings any) []string {
 	keys := make([]string, 0, len(found))
 	for _, key := range found {
 		if key == settingsKey || strings.HasPrefix(key, settingsKey+".") {
-			continue
-		}
-		if key == deprecatedProjectsKey || strings.HasPrefix(key, deprecatedProjectsKey+".") {
 			continue
 		}
 		keys = append(keys, key)

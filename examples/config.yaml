@@ -204,8 +204,6 @@ settings:
 #   exclude      Denylist of repositories.
 #   clone        Set to false to skip this project during `gits clone`.
 #
-# A top-level `projects:` key is deprecated and now reports an error. Put
-# projects at the root of the document.
 # ---------------------------------------------------------------------------
 
 # GitHub source: `search` is the owner (user or organization).

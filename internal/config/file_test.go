@@ -218,33 +218,6 @@ func TestLoadConfigWorkerCountDefault(t *testing.T) {
 	}
 }
 
-func TestConvertDeprecatedProjectsKey(t *testing.T) {
-	t.Parallel()
-
-	path := writeTemp(t, "c.yaml", "projects:\n  legacy:\n    desc: old\n")
-	f := &File{}
-	if err := f.loadConfig(path); err != nil {
-		t.Fatalf("loadConfig: %v", err)
-	}
-	// Deprecated projects are still captured.
-	if _, ok := f.Projects["legacy"]; !ok {
-		t.Errorf("legacy project not captured; got %v", f.Projects)
-	}
-	// The deprecation is recorded as a Warning for the caller to render on
-	// Diagnostic Output, rather than printed to os.Stderr from here.
-	if len(f.Warnings) != 1 {
-		t.Fatalf("Warnings = %v, want one deprecation notice", f.Warnings)
-	}
-	if !strings.Contains(f.Warnings[0], "projects:") ||
-		!strings.Contains(f.Warnings[0], "deprecated") {
-		t.Errorf("Warnings[0] = %q, want the deprecation notice naming the key", f.Warnings[0])
-	}
-	// And Convert surfaces the deprecation error.
-	if err := f.Convert(); err == nil {
-		t.Error("Convert() = nil, want deprecation error")
-	}
-}
-
 func TestFindDefaultPath(t *testing.T) {
 	disableHomedirCache(t)
 
