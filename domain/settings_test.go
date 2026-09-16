@@ -104,6 +104,8 @@ func TestSettingsProviderAuth(t *testing.T) {
 		GitHub:    ProviderSettings{TokenCommand: "pass tokens/github"},
 		GitLab:    ProviderSettings{Token: "gl-token"},
 		Bitbucket: ProviderSettings{TokenCmd: "pass tokens/bitbucket"},
+		Gitea:     ProviderSettings{Token: "gitea-token"},
+		Forgejo:   ProviderSettings{TokenCommand: "pass codeberg"},
 	}
 	tests := []struct {
 		provider string
@@ -112,6 +114,8 @@ func TestSettingsProviderAuth(t *testing.T) {
 		{"github", s.GitHub},
 		{"gitlab", s.GitLab},
 		{"bitbucket", s.Bitbucket},
+		{"gitea", s.Gitea},
+		{"forgejo", s.Forgejo},
 		{"GitHub", s.GitHub},
 		{"filesystem", ProviderSettings{}},
 		{"", ProviderSettings{}},

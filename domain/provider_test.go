@@ -46,6 +46,8 @@ func TestProviderSourceValidate(t *testing.T) {
 		{"github empty search names owner", ProviderSource{Type: "github", Search: ""}, true, "owner"},
 		{"gitlab empty search names groupID", ProviderSource{Type: "gitlab", Search: ""}, true, "groupID"},
 		{"bitbucket empty search names owner", ProviderSource{Type: "bitbucket", Search: ""}, true, "owner"},
+		{"gitea empty search names owner", ProviderSource{Type: "gitea", Search: "", URL: "https://gitea.com"}, true, "owner"},
+		{"forgejo ok", ProviderSource{Type: "forgejo", Search: "rafi", URL: "https://codeberg.org"}, false, ""},
 		{"filesystem empty search names path", ProviderSource{Type: "filesystem", Search: ""}, true, "path"},
 	}
 	for _, tt := range tests {
@@ -81,6 +83,9 @@ func TestProviderSourceValidateURL(t *testing.T) {
 		{"gitlab host with path", ProviderSource{Type: "gitlab", Search: "42", URL: "https://host/gitlab/"}, ""},
 		{"user accepted", ProviderSource{Type: "github", Search: "acme", URL: "https://rafi@git.corp.com"}, ""},
 		{"public host", ProviderSource{Type: "github", Search: "acme", URL: "https://github.com"}, ""},
+		{"gitea requires url", ProviderSource{Type: "gitea", Search: "acme"}, "gitea"},
+		{"forgejo requires url", ProviderSource{Type: "forgejo", Search: "rafi"}, "forgejo"},
+		{"gitea host", ProviderSource{Type: "gitea", Search: "acme", URL: "https://gitea.com/"}, ""},
 		{"bitbucket rejects url", ProviderSource{Type: "bitbucket", Search: "team", URL: "https://bb.corp"}, "bitbucket"},
 		{"filesystem rejects url", ProviderSource{Type: "filesystem", Search: "/code", URL: "https://x"}, "filesystem"},
 		{"password rejected", ProviderSource{Type: "github", Search: "acme", URL: "https://rafi:s3cret@git.corp.com"}, "password"},
@@ -109,21 +114,6 @@ func TestProviderSourceValidateURL(t *testing.T) {
 				t.Errorf("Validate() error leaks the password: %q", err)
 			}
 		})
-	}
-}
-
-// TestCheckSourceURLRequired covers a type that cannot run without a url;
-// none of the current types is one.
-func TestCheckSourceURLRequired(t *testing.T) {
-	t.Parallel()
-
-	forge := ProviderType{Name: "forge", URLAllowed: true, URLRequired: true}
-	err := checkSourceURL(forge, "")
-	if err == nil || !strings.Contains(err.Error(), "forge") {
-		t.Errorf("checkSourceURL(required, empty) = %v, want error naming the type", err)
-	}
-	if err := checkSourceURL(forge, "https://forge.example"); err != nil {
-		t.Errorf("checkSourceURL(required, set) = %v, want nil", err)
 	}
 }
 

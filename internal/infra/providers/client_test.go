@@ -13,20 +13,24 @@ func TestNewGitProvider(t *testing.T) {
 		name     string
 		provider string
 		token    string
+		baseURL  string
 		wantType string
 		wantErr  bool
 	}{
-		{"github", "github", "tok", "*providers.gitHubProvider", false},
-		{"gitlab", "gitlab", "tok", "*providers.gitLabProvider", false},
-		{"bitbucket", "bitbucket", "user:pass", "*providers.bitbucketProvider", false},
-		{"filesystem", "filesystem", "", "*providers.filesystemProvider", false},
-		{"unknown", "svn", "", "", true},
+		{"github", "github", "tok", "", "*providers.gitHubProvider", false},
+		{"gitlab", "gitlab", "tok", "", "*providers.gitLabProvider", false},
+		{"bitbucket", "bitbucket", "user:pass", "", "*providers.bitbucketProvider", false},
+		{"gitea", "gitea", "tok", "https://gitea.com", "*providers.giteaProvider", false},
+		{"forgejo without token", "forgejo", "", "https://codeberg.org", "*providers.giteaProvider", false},
+		{"gitea without url", "gitea", "tok", "", "", true},
+		{"filesystem", "filesystem", "", "", "*providers.filesystemProvider", false},
+		{"unknown", "svn", "", "", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			p, err := NewGitProvider(t.Context(), tt.provider, Options{Token: tt.token})
+			p, err := NewGitProvider(t.Context(), tt.provider, Options{Token: tt.token, BaseURL: tt.baseURL})
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("NewGitProvider(%q) = nil error, want error", tt.provider)
@@ -69,6 +73,8 @@ func typeName(v any) string {
 		return "*providers.gitLabProvider"
 	case *bitbucketProvider:
 		return "*providers.bitbucketProvider"
+	case *giteaProvider:
+		return "*providers.giteaProvider"
 	case *filesystemProvider:
 		return "*providers.filesystemProvider"
 	default:

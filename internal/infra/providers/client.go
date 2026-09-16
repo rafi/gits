@@ -20,6 +20,8 @@ const (
 	ProviderGitHub     Provider = domain.ProviderGitHub
 	ProviderGitLab     Provider = domain.ProviderGitLab
 	ProviderBitbucket  Provider = domain.ProviderBitbucket
+	ProviderGitea      Provider = domain.ProviderGitea
+	ProviderForgejo    Provider = domain.ProviderForgejo
 	ProviderFilesystem Provider = domain.ProviderFilesystem
 )
 
@@ -34,6 +36,8 @@ var constructors = map[string]func(Options) (GitProvider, error){
 	domain.ProviderGitHub:     infallible(newGitHubProvider),
 	domain.ProviderGitLab:     fallible(newGitLabProvider),
 	domain.ProviderBitbucket:  fallible(newBitbucketProvider),
+	domain.ProviderGitea:      fallible(giteaConstructor(domain.ProviderGitea)),
+	domain.ProviderForgejo:    fallible(giteaConstructor(domain.ProviderForgejo)),
 	domain.ProviderFilesystem: infallible(newFilesystemProvider),
 }
 
@@ -92,28 +96,26 @@ func (o Options) httpClient(typeName string) *http.Client {
 }
 
 // NewGitProvider returns the provider for providerName, resolving its token
-// first when that provider needs one.
+// first. A provider that does not require one runs anonymously without it.
 func NewGitProvider(ctx context.Context, providerName string, opts Options) (GitProvider, error) {
 	providerType, ok := domain.LookupProviderType(providerName)
 	newProvider, known := constructors[providerName]
 	if !ok || !known {
 		return nil, fmt.Errorf("unknown provider: %s", providerName)
 	}
-	if providerType.TokenRequired {
-		var err error
-		opts.Token, err = resolveToken(ctx, providerType, opts)
-		if err != nil {
-			return nil, err
-		}
-		if opts.Token == "" && opts.BaseURL != "" {
+	var err error
+	opts.Token, err = resolveToken(ctx, providerType, opts)
+	if err != nil {
+		return nil, err
+	}
+	if providerType.TokenRequired && opts.Token == "" {
+		if opts.BaseURL != "" {
 			return nil, fmt.Errorf(
 				"token is required for %s at %s: set token or tokenCommand"+
 					" (environment variables apply only to the public host)",
 				providerName, opts.BaseURL)
 		}
-		if opts.Token == "" {
-			return nil, fmt.Errorf("token is required for %s", providerName)
-		}
+		return nil, fmt.Errorf("token is required for %s", providerName)
 	}
 	return newProvider(opts)
 }
