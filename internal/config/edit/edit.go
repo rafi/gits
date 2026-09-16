@@ -24,7 +24,7 @@ import (
 )
 
 // Doc is a config file held as a YAML syntax tree, so that writing it
-// back changes only the lines `gits add` appends: comments, blank lines,
+// back changes only the lines an edit adds: comments, blank lines,
 // quoting, and indentation the user chose all survive as they were.
 type Doc struct {
 	file *ast.File
@@ -156,7 +156,7 @@ func sameIgnoringSpace(a, b string) bool {
 // config file documents.
 type repoEntry struct {
 	Dir string `yaml:"dir"`
-	Src string `yaml:"src"`
+	Src string `yaml:"src,omitempty"`
 }
 
 // FindProject finds a project's mapping by name.
@@ -175,24 +175,84 @@ func (cf *Doc) FindProject(projectName string) (*ast.MappingNode, error) {
 	return project, nil
 }
 
+// SubProject returns the mapping of the Sub-project at names, starting with
+// the top-level key. Returns nil when not found.
+func (cf *Doc) SubProject(names []string) *ast.MappingNode {
+	if len(names) == 0 || cf.root == nil {
+		return nil
+	}
+	value := findKey(cf.root, names[0])
+	if value == nil {
+		return nil
+	}
+	project, _ := value.Value.(*ast.MappingNode)
+	for _, name := range names[1:] {
+		if project == nil {
+			return nil
+		}
+		project = findSubProject(project, name)
+	}
+	return project
+}
+
+// findSubProject returns the `subprojects:` item named name, or nil.
+func findSubProject(project *ast.MappingNode, name string) *ast.MappingNode {
+	subs := findKey(project, "subprojects")
+	if subs == nil {
+		return nil
+	}
+	list, ok := subs.Value.(*ast.SequenceNode)
+	if !ok {
+		return nil
+	}
+	for _, value := range list.Values {
+		mapping, ok := value.(*ast.MappingNode)
+		if !ok {
+			continue
+		}
+		if got := findKey(mapping, "name"); got != nil && scalarString(got.Value) == name {
+			return mapping
+		}
+	}
+	return nil
+}
+
 // AddProject appends a project with an empty `repos:` to the root mapping,
 // and returns its mapping node.
 func (cf *Doc) AddProject(projectName string) (*ast.MappingNode, error) {
 	return cf.addProject(projectName, map[string]any{"repos": nil})
 }
 
-// AddProjectPath appends a project that is nothing but a Project Path, which
-// is the whole of a project discovered from the filesystem: the loader gives
-// a project with a path and no `repos:` a filesystem source of its own, so
-// the entry stays one line per project however many repositories come and go
-// under it. A description is written when one is given and omitted when not.
-func (cf *Doc) AddProjectPath(projectName, path, desc string) error {
-	body := map[string]any{"path": path}
-	if desc != "" {
-		body["desc"] = desc
+// projectEntry is a project with a path and its repositories.
+type projectEntry struct {
+	Path  string      `yaml:"path"`
+	Repos []repoEntry `yaml:"repos"`
+}
+
+// Repo is a repository to write under a project's `repos:`.
+type Repo struct {
+	// Dir is relative to the project path when under it.
+	Dir string
+	// Src is the clone URL; empty omits `src:`.
+	Src string
+}
+
+// AddProjectRepos appends a project with a path and an explicit `repos:`
+// list.
+func (cf *Doc) AddProjectRepos(projectName, path string, repos []Repo) error {
+	entry := projectEntry{Path: path, Repos: make([]repoEntry, 0, len(repos))}
+	for _, repo := range repos {
+		entry.Repos = append(entry.Repos, repoEntry(repo))
 	}
-	_, err := cf.addProject(projectName, body)
-	return err
+	node, err := fragment(map[string]projectEntry{projectName: entry})
+	if err != nil {
+		return err
+	}
+	mapping, ok := node.(*ast.MappingNode)
+	if !ok {
+		return fmt.Errorf("yaml fragment is %T, want a mapping", node)
+	}
+	return cf.graft(mapping)
 }
 
 // HasProject reports whether the config file already holds a project under
@@ -212,20 +272,27 @@ func (cf *Doc) addProject(projectName string, body map[string]any) (*ast.Mapping
 	if err != nil {
 		return nil, err
 	}
+	if err := cf.graft(frag); err != nil {
+		return nil, err
+	}
+	return cf.FindProject(projectName)
+}
+
+// graft adds a one-project mapping to the root mapping of the file.
+func (cf *Doc) graft(frag *ast.MappingNode) error {
 	if cf.root == nil {
 		// The root mapping is new. When the file was comments only, they
 		// stay above it.
 		if comments, ok := cf.file.Docs[0].Body.(*ast.CommentGroupNode); ok {
 			if err := frag.SetComment(comments); err != nil {
-				return nil, err
+				return err
 			}
 		}
 		cf.file.Docs[0].Body = frag
 		cf.root = frag
-	} else if err := ast.Merge(cf.root, frag); err != nil {
-		return nil, err
+		return nil
 	}
-	return cf.FindProject(projectName)
+	return ast.Merge(cf.root, frag)
 }
 
 // AddRepo appends a repository to a project's `repos:`. The new item takes
@@ -275,6 +342,19 @@ func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
 	}
 	repos.Value = frag
 	return nil
+}
+
+// scalarString returns a scalar node's unquoted string, or "" otherwise.
+func scalarString(node ast.Node) string {
+	scalar, ok := node.(ast.ScalarNode)
+	if !ok {
+		return ""
+	}
+	str, ok := scalar.GetValue().(string)
+	if !ok {
+		return ""
+	}
+	return str
 }
 
 // findKey finds a key's entry in a mapping, by the name the key *means*

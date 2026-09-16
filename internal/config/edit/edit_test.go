@@ -436,8 +436,10 @@ func TestProjectNamesThatAreNotStrings(t *testing.T) {
 			if doc.HasProject(name) {
 				t.Errorf("HasProject(%q) = true on an empty config, want false", name)
 			}
-			if err := doc.AddProjectPath(name, "~/code/"+name, ""); err != nil {
-				t.Fatalf("AddProjectPath(%q): %v", name, err)
+			if err := doc.AddProjectRepos(
+				name, "~/code/"+name, []Repo{{Dir: "one", Src: "git@h:o/one.git"}},
+			); err != nil {
+				t.Fatalf("AddProjectRepos(%q): %v", name, err)
 			}
 			// The name must be found again by the name it was added under,
 			// which is what a second run's duplicate check relies on.
@@ -495,5 +497,56 @@ func TestAddRepoToAQuotedProjectName(t *testing.T) {
 	want := "\"123\":\n  repos:\n    - dir: ~/code/x\n      src: git@h:o/x.git\n"
 	if string(got) != want {
 		t.Errorf("config = %q, want %q", got, want)
+	}
+}
+
+// TestAddProjectRepos checks that a project is written with a path and its
+// repositories listed.
+func TestAddProjectRepos(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("# my config\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	doc, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := doc.AddProjectRepos("src", "~/src", []Repo{
+		{Dir: "repo3", Src: "git@h:o/repo3.git"},
+		// No remote: written without `src:`.
+		{Dir: "repo6"},
+	}); err != nil {
+		t.Fatalf("AddProjectRepos: %v", err)
+	}
+	if err := doc.AddProjectRepos("project1", "~/src/project1", []Repo{
+		{Dir: "repo1", Src: "https://h/o/repo1.git"},
+	}); err != nil {
+		t.Fatalf("AddProjectRepos: %v", err)
+	}
+	if err := doc.Save(path); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	want := `# my config
+src:
+  path: ~/src
+  repos:
+    - dir: repo3
+      src: git@h:o/repo3.git
+    - dir: repo6
+project1:
+  path: ~/src/project1
+  repos:
+    - dir: repo1
+      src: https://h/o/repo1.git
+`
+	if string(got) != want {
+		t.Errorf("config =\n%s\nwant:\n%s", got, want)
 	}
 }

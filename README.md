@@ -98,8 +98,10 @@ Run `gits doctor` at any time to see which of these were found and where.
 ## Quick start
 
 **1. Write a config file** at `~/.gits.yaml` (or
-`$XDG_CONFIG_HOME/gits/config.yaml`). Running `gits add <project>` inside a
-cloned repository writes one for you when you have none:
+`$XDG_CONFIG_HOME/gits/config.yaml`). If your clones are already grouped in
+directories, `gits discover ~/code` writes one for you, a project per group;
+`gits add <project>` inside a cloned repository writes one a repository at a
+time:
 
 ```yaml
 ---
@@ -165,6 +167,7 @@ Usage: `gits [command] [project] [repo] [flags]`
 | `checkout` | Traverse repositories and optionally checkout branch |
 | `clone` | Clone all repositories |
 | `completion` | Generate a shell completion script |
+| `discover` | Find groups of repositories and add them as projects |
 | `doctor` | Report configuration and environment problems |
 | `exec` | Run a command in every repository |
 | `fetch` | Fetch and prune from all remotes |
@@ -230,6 +233,68 @@ gits add acme git@github.com:acme/api.git  # cloned into the current directory f
 
 This is for hand-listed projects. For one backed by a `source`, use
 `gits orphan` to find repositories on disk that no project declares.
+
+### Discovering projects you already have
+
+Already have clones scattered on disk? `gits discover` writes the config for
+you. Point it at a path, and every directory holding repositories becomes a
+project listing exactly those repositories:
+
+```console
+$ gits discover ~/code
+code       ~/code           2 repositories
+project1  ~/code/project1  2 repositories
+project2  ~/code/project2  2 repositories
+
+Added 3 projects to ~/.gits.yaml.
+```
+
+For a `~/code` like this one, with a couple of clones loose between the project
+directories:
+
+```text
+code
+├── project1/{repo1,repo2}
+├── repo3
+├── project2/{repo4,repo5}
+└── repo6
+```
+
+it writes:
+
+```yaml
+code:
+  path: ~/code
+  repos:
+    - dir: repo3
+    - dir: repo6
+project1:
+  path: ~/code/project1
+  repos:
+    - dir: repo1
+    - dir: repo2
+project2:
+  path: ~/code/project2
+  repos:
+    - dir: repo4
+    - dir: repo5
+```
+
+Every repository lands in exactly one project, named after the directory it sits
+in. Note that `code` claims its own two clones and none of the other four:
+projects name their repositories instead of searching their path, so nothing
+gets counted twice.
+
+```bash
+gits discover ~/code -n       # report what it would add, write nothing
+gits discover .              # the current directory
+gits discover ~/code --min 2  # skip directories holding a single repository
+```
+
+Clone more, run it again: only the new arrivals are added, and a name already
+taken is reported rather than quietly renamed. Repositories nested *inside*
+another one are left alone, so a vendored clone never becomes a project of its
+own. Use `gits orphan` to hunt those down.
 
 ### Pushing
 

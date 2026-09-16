@@ -12,6 +12,7 @@ import (
 	"github.com/rafi/gits/internal/app/cli/commands/cd"
 	"github.com/rafi/gits/internal/app/cli/commands/checkout"
 	"github.com/rafi/gits/internal/app/cli/commands/clone"
+	"github.com/rafi/gits/internal/app/cli/commands/discover"
 	"github.com/rafi/gits/internal/app/cli/commands/doctor"
 	"github.com/rafi/gits/internal/app/cli/commands/exec"
 	"github.com/rafi/gits/internal/app/cli/commands/fetch"
@@ -87,6 +88,54 @@ var cloneCmd = &cobra.Command{
 	ValidArgsFunction: completeProjectRepo,
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return clone.ExecClone(cloneOutput, args, deps)
+	}),
+}
+
+var discoverCmd = &cobra.Command{
+	Use:   "discover <path>",
+	Short: "Find groups of repositories and add them as projects",
+	Long: `Search a path for directories that hold git repositories, and record each
+one as a project in the config file.
+
+The search is recursive and goes as deep as your tree does. Every directory
+holding repositories becomes a project of exactly the ones inside it, named
+after that directory:
+
+  gits discover ~/src         # every directory under ~/src
+  gits discover .             # the current directory
+  gits discover ~/src -n      # report what it would add, write nothing
+  gits discover ~/src --min 2 # skip directories holding a single repository
+
+A ` + "`~/src`" + ` holding ` + "`project1/*`" + `, ` + "`project2/*`" + ` and a couple of loose clones gives
+three projects: ` + "`project1`" + `, ` + "`project2`" + `, and ` + "`src`" + ` with the two strays. Each one
+names its repositories rather than searching its path, so ` + "`src`" + ` holds its own
+two and does not reach down into the others.
+
+Each repository is recorded with the remote it was cloned from, the same way
+` + "`gits add`" + ` records one.
+
+Running this again after cloning more is safe, and finds what is new. A
+project that discovers its repositories — from a forge, or by searching a
+directory — owns its whole path, so nothing under it is ever written. A
+project that lists them by hand is looked inside all the same: clones that
+appeared under its path since it was written join that project, under the
+name the config already gives it, rather than becoming a project of their own.
+
+Two directories of the same name become two projects: the second is named
+after its parent, ` + "`work-archive`" + ` beside ` + "`archive`" + `, since a config file cannot
+hold one name twice. A name another project already uses is reported rather
+than quietly renamed. A repository nested inside another is left alone — use
+` + "`gits orphan`" + ` to find those.`,
+	// A missing path gets its own error; too many args keep cobra's.
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return discover.ErrNoPath
+		}
+		return cobra.ExactArgs(1)(cmd, args)
+	},
+	ValidArgsFunction: completeDirs,
+	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
+		return discover.ExecDiscover(discoverOpts, args, deps)
 	}),
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/internal/app/cli/commands/discover"
 	"github.com/rafi/gits/internal/app/cli/commands/list"
 	"github.com/rafi/gits/internal/app/cli/commands/status"
 	"github.com/rafi/gits/internal/app/cli/render/output"
@@ -35,6 +36,9 @@ var (
 	pullOutput   = "table"
 	pushOutput   = "table"
 )
+
+// discoverOpts are the flags of `gits discover`.
+var discoverOpts discover.Options
 
 // pushOpts is the vetted passthrough set for safe bulk push.
 // Nothing here reaches --force, -u or --mirror, and nothing should be added
@@ -74,6 +78,12 @@ func init() {
 		registerOutputFlag(f.cmd, f.dst, f.styles)
 	}
 
+	discoverFlags := discoverCmd.PersistentFlags()
+	discoverFlags.IntVar(&discoverOpts.Min, "min", discover.DefaultMin,
+		"minimum repositories a directory must hold to become a project")
+	discoverFlags.BoolVarP(&discoverOpts.DryRun, "dry-run", "n", false,
+		"report what would be added, write nothing")
+
 	pushFlags := pushCmd.PersistentFlags()
 	pushFlags.BoolVar(&pushOpts.All, "all", false, "push all branches")
 	pushFlags.BoolVar(&pushOpts.Branches, "branches", false, "push all branches (synonym of --all)")
@@ -89,6 +99,7 @@ func init() {
 	rootCmd.AddCommand(cdCmd)
 	rootCmd.AddCommand(checkoutCmd)
 	rootCmd.AddCommand(cloneCmd)
+	rootCmd.AddCommand(discoverCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(fetchCmd)

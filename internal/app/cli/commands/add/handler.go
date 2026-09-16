@@ -1,3 +1,4 @@
+// Package add implements `gits add`.
 package add
 
 import (

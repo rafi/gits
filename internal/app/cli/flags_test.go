@@ -92,3 +92,52 @@ func TestBulkOutputFlagRegistered(t *testing.T) {
 		_ = flag.Value.Set("table")
 	}
 }
+
+// TestDiscoverRequiresAPath checks that discover accepts exactly one path.
+func TestDiscoverRequiresAPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "no path names the two forms",
+			args: []string{},
+			want: "gits discover .",
+		},
+		{
+			name: "too many arguments is a different mistake",
+			args: []string{"one", "two"},
+			want: "accepts 1 arg",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := discoverCmd.Args(discoverCmd, tt.args)
+			if err == nil {
+				t.Fatalf("discover %v = nil, want the arguments to be refused", tt.args)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %q, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+
+	if err := discoverCmd.Args(discoverCmd, []string{"~/src"}); err != nil {
+		t.Errorf("discover ~/src = %v, want one path to be accepted", err)
+	}
+}
+
+// TestDiscoverUsageNamesThePathAsRequired checks the usage shows `<path>`.
+func TestDiscoverUsageNamesThePathAsRequired(t *testing.T) {
+	t.Parallel()
+
+	if want := "discover <path>"; discoverCmd.Use != want {
+		t.Errorf("discoverCmd.Use = %q, want %q", discoverCmd.Use, want)
+	}
+}

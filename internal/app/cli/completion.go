@@ -55,6 +55,14 @@ func completeAddArgs(cmd *cobra.Command, args []string, toComplete string) ([]st
 	return nil, cobra.ShellCompDirectiveFilterDirs
 }
 
+// completeDirs offers directories for the first argument.
+func completeDirs(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return nil, cobra.ShellCompDirectiveFilterDirs
+}
+
 const (
 	// The positional argument counts past which a completion function has
 	// nothing left to offer: project, repo, branch.
