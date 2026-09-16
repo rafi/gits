@@ -38,6 +38,8 @@ type Settings struct {
 	Bitbucket       ProviderSettings `json:"bitbucket"`
 	GitHub          ProviderSettings `json:"github"`
 	GitLab          ProviderSettings `json:"gitlab"`
+	Gitea           ProviderSettings `json:"gitea"`
+	Forgejo         ProviderSettings `json:"forgejo"`
 }
 
 // ProviderSettings holds the credentials and request rate of a single remote

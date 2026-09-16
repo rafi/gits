@@ -7,6 +7,8 @@ const (
 	ProviderGitHub     = "github"
 	ProviderGitLab     = "gitlab"
 	ProviderBitbucket  = "bitbucket"
+	ProviderGitea      = "gitea"
+	ProviderForgejo    = "forgejo"
 	ProviderFilesystem = "filesystem"
 )
 
@@ -37,11 +39,14 @@ type ProviderType struct {
 	RetrySafe bool
 }
 
+// searchOwner labels a search naming a user or organization.
+const searchOwner = "owner"
+
 var providerTypes = []ProviderType{
 	{
 		Name:          ProviderGitHub,
 		RetrySafe:     true,
-		SearchField:   "owner",
+		SearchField:   searchOwner,
 		TokenEnvVars:  []string{"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"},
 		TokenRequired: true,
 		Settings:      func(s Settings) ProviderSettings { return s.GitHub },
@@ -61,10 +66,28 @@ var providerTypes = []ProviderType{
 	{
 		Name:          ProviderBitbucket,
 		RetrySafe:     true,
-		SearchField:   "owner",
+		SearchField:   searchOwner,
 		TokenEnvVars:  []string{"BITBUCKET_TOKEN"},
 		TokenRequired: true,
 		Settings:      func(s Settings) ProviderSettings { return s.Bitbucket },
+	},
+	{
+		// Gitea and Forgejo have no public host, so no environment tokens,
+		// and discover anonymously without a configured one.
+		Name:        ProviderGitea,
+		RetrySafe:   true,
+		SearchField: searchOwner,
+		Settings:    func(s Settings) ProviderSettings { return s.Gitea },
+		URLAllowed:  true,
+		URLRequired: true,
+	},
+	{
+		Name:        ProviderForgejo,
+		RetrySafe:   true,
+		SearchField: searchOwner,
+		Settings:    func(s Settings) ProviderSettings { return s.Forgejo },
+		URLAllowed:  true,
+		URLRequired: true,
 	},
 	{
 		// Read from disk, so it authenticates against nothing.

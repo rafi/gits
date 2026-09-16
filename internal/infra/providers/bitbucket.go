@@ -1,5 +1,5 @@
 // Package providers discovers a Project's repositories from its Provider
-// Source — GitHub, GitLab, Bitbucket, or the filesystem.
+// Source — GitHub, GitLab, Bitbucket, Gitea, Forgejo, or the filesystem.
 package providers
 
 import (

@@ -99,7 +99,7 @@ func TestLoadConfigProviderRateLimit(t *testing.T) {
 	t.Parallel()
 
 	path := writeTemp(t, "c.yaml",
-		"p:\n  desc: x\nsettings:\n  github:\n    rateLimit: 5\n  gitlab:\n    rateLimit: 0\n  bitbucket:\n    rateLimit: 0.5\n")
+		"p:\n  desc: x\nsettings:\n  github:\n    rateLimit: 5\n  gitlab:\n    rateLimit: 0\n  bitbucket:\n    rateLimit: 0.5\n  gitea:\n    rateLimit: 2\n  forgejo:\n    rateLimit: 1\n")
 	f := &File{}
 	if err := NewConfigFromFile(path, f); err != nil {
 		t.Fatalf("NewConfigFromFile: %v", err)
@@ -111,6 +111,8 @@ func TestLoadConfigProviderRateLimit(t *testing.T) {
 		{"github", 5},
 		{"gitlab", 0},
 		{"bitbucket", 0.5},
+		{"gitea", 2},
+		{"forgejo", 1},
 	}
 	for _, tt := range tests {
 		got, err := f.Settings.ProviderAuth(tt.provider).RequestRate()
