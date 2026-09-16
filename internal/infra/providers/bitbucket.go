@@ -51,9 +51,7 @@ func newBitbucketProvider(opts Options) (*bitbucketProvider, error) {
 	provider.client.Pagelen = 100
 	// go-bitbucket's default HTTP client has no timeout, so a hung API
 	// call would block forever.
-	if opts.Timeout > 0 {
-		provider.client.HttpClient.Timeout = opts.Timeout
-	}
+	provider.client.HttpClient = opts.httpClient(domain.ProviderBitbucket)
 	return provider, nil
 }
 

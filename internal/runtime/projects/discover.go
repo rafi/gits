@@ -109,6 +109,8 @@ func loadFromProvider(project *domain.Project, deps coreruntime.Runtime) error {
 	// validated and its warning surfaced once at startup (newRuntime), so the
 	// error is intentionally dropped rather than reported again per fetch.
 	timeout, _ := deps.Settings.ProviderTimeoutDuration()
+	// Likewise a negative rateLimit, reported at startup.
+	rateLimit, _ := deps.Settings.ProviderAuth(source.Type).RequestRate()
 	c, err := providers.NewGitProvider(deps.Ctx, source.Type, providers.Options{
 		Token:           auth.Token,
 		TokenCommand:    auth.Command(),
@@ -116,6 +118,7 @@ func loadFromProvider(project *domain.Project, deps coreruntime.Runtime) error {
 		IncludeArchived: deps.Settings.IncludeArchived,
 		Log:             deps.Log,
 		Timeout:         timeout,
+		RateLimit:       rateLimit,
 		GitClient:       deps.Git,
 	})
 	if err != nil {

@@ -180,6 +180,14 @@ func newRuntime(ctx context.Context) (coreruntime.Runtime, []error) {
 	if _, err := configFile.Settings.ProviderTimeoutDuration(); err != nil {
 		warnings = append(warnings, err)
 	}
+	for _, t := range domain.ProviderTypes() {
+		if t.Settings == nil {
+			continue
+		}
+		if _, err := t.Settings(configFile.Settings).RequestRate(); err != nil {
+			warnings = append(warnings, fmt.Errorf("settings.%s: %w", t.Name, err))
+		}
+	}
 
 	return coreruntime.Runtime{
 		Ctx:        ctx,

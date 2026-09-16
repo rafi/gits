@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -70,9 +71,24 @@ type Options struct {
 	BaseURL         string
 	IncludeArchived bool
 	Timeout         time.Duration
+	// RateLimit caps requests per second to one host, shared with every
+	// provider on it; 0 is unlimited.
+	RateLimit float64
 	// GitClient is read-only: provider discovery only ever asks whether a
 	// path is a repository.
 	GitClient git.Reader
+}
+
+// httpClient returns the HTTP client for a provider of typeName: bounded by
+// Timeout, paced by RateLimit, and retrying throttled requests when the type
+// is retry-safe.
+func (o Options) httpClient(typeName string) *http.Client {
+	providerType, _ := domain.LookupProviderType(typeName)
+	return &http.Client{
+		Timeout: o.Timeout,
+		Transport: newLimitedTransport(
+			http.DefaultTransport, o.RateLimit, providerType.RetrySafe, o.Log),
+	}
 }
 
 // NewGitProvider returns the provider for providerName, resolving its token
