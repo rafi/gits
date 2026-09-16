@@ -13,6 +13,9 @@ const readmeURL = "https://github.com/rafi/gits#configuration"
 type ProviderSource struct {
 	Type   string `json:"type,omitempty"`
 	Search string `json:"search,omitempty"`
+	// URL is the web host of a self-hosted forge; see BaseURL. A user in it
+	// is a credential, stripped with the rest.
+	URL string `json:"url,omitempty"`
 
 	// Credentials; stripped before serialization, see WithoutAuth.
 	Token        string `json:"token,omitempty"`
@@ -29,33 +32,47 @@ func (ps ProviderSource) Auth() ProviderSettings {
 	}
 }
 
-// WithoutAuth returns the source with its credentials removed.
+// WithoutAuth returns the source with its credentials, the url's user
+// included, removed.
 func (ps ProviderSource) WithoutAuth() ProviderSource {
 	ps.Token, ps.TokenCommand, ps.TokenCmd = "", "", ""
+	ps.URL = urlWithoutUser(ps.URL)
 	return ps
 }
 
-// UniqueKey returns the cache key for the source. Sources with their own
-// credentials get a distinct key, derived from a digest of them.
+// UniqueKey returns the cache key for the source. A source on a self-hosted
+// host keys by that host too. Sources with their own credentials or a url
+// user get a distinct key, derived from a digest of them.
 func (ps ProviderSource) UniqueKey() string {
-	searchKey := strings.ReplaceAll(ps.Search, "/", "%")
-	key := fmt.Sprintf("%s-%s", ps.Type, searchKey)
-	if auth := ps.Auth(); !auth.IsZero() {
-		key += "-" + authDigest(auth)
+	key := ps.Type
+	if base := ps.BaseURL(); base != "" {
+		host := base[strings.Index(base, "://")+len("://"):]
+		key += "-" + strings.NewReplacer("/", "%", ":", "_").Replace(host)
+	}
+	key += "-" + strings.ReplaceAll(ps.Search, "/", "%")
+	auth, user := ps.Auth(), ps.URLUser()
+	if !auth.IsZero() || user != "" {
+		key += "-" + authDigest(auth, user)
 	}
 	return key
 }
 
-// authDigest returns a short hash of auth that does not reveal it.
-func authDigest(auth ProviderSettings) string {
+// authDigest returns a short hash of auth and a url user that does not
+// reveal them.
+func authDigest(auth ProviderSettings, user string) string {
 	const digestChars = 12
 	// Separator prevents collisions between fields.
-	sum := sha256.Sum256([]byte(auth.Token + "\x00" + auth.Command()))
+	material := auth.Token + "\x00" + auth.Command()
+	if user != "" {
+		// Only when set, so keys of sources without a user are unchanged.
+		material += "\x00" + user
+	}
+	sum := sha256.Sum256([]byte(material))
 	return hex.EncodeToString(sum[:])[:digestChars]
 }
 
-// Validate reports whether the Provider Source names a known type and
-// carries the search term that type requires.
+// Validate reports whether the Provider Source names a known type, carries
+// the search term that type requires, and has a url the type accepts.
 func (ps ProviderSource) Validate() error {
 	providerType, ok := LookupProviderType(ps.Type)
 	if !ok {
@@ -70,5 +87,5 @@ func (ps ProviderSource) Validate() error {
 			readmeURL,
 		)
 	}
-	return nil
+	return checkSourceURL(providerType, ps.URL)
 }

@@ -499,6 +499,7 @@ func TestCacheNeverWritesCredentials(t *testing.T) {
 		Name: "acme",
 		Source: &domain.ProviderSource{
 			Type: "github", Search: "acme", Token: "s3cret",
+			URL: "https://rafi@github.corp.example",
 		},
 		SubProjects: []domain.Project{{
 			Name: "tools",
@@ -517,7 +518,7 @@ func TestCacheNeverWritesCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	for _, secret := range []string{"s3cret", "pass work"} {
+	for _, secret := range []string{"s3cret", "pass work", "rafi"} {
 		if strings.Contains(string(raw), secret) {
 			t.Errorf("cache file contains %q: %s", secret, raw)
 		}

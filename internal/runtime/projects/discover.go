@@ -37,12 +37,15 @@ func loadSubProjectSources(project *domain.Project, deps coreruntime.Runtime, o 
 }
 
 // inheritAuth copies parent's credentials to sub when sub has none and both
-// use the same provider type.
+// use the same provider type on the same host.
 func inheritAuth(parent, sub *domain.ProviderSource) {
 	if parent == nil || sub == nil {
 		return
 	}
-	if parent.Type != sub.Type || !sub.Auth().IsZero() || parent.Auth().IsZero() {
+	if parent.Type != sub.Type || parent.BaseURL() != sub.BaseURL() {
+		return
+	}
+	if !sub.Auth().IsZero() || parent.Auth().IsZero() {
 		return
 	}
 	sub.Token = parent.Token
@@ -109,6 +112,7 @@ func loadFromProvider(project *domain.Project, deps coreruntime.Runtime) error {
 	c, err := providers.NewGitProvider(deps.Ctx, source.Type, providers.Options{
 		Token:           auth.Token,
 		TokenCommand:    auth.Command(),
+		BaseURL:         source.BaseURL(),
 		IncludeArchived: deps.Settings.IncludeArchived,
 		Log:             deps.Log,
 		Timeout:         timeout,

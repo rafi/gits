@@ -64,8 +64,12 @@ func newGitHubProvider(opts Options) *gitHubProvider {
 	if opts.Timeout > 0 {
 		httpClient.Timeout = opts.Timeout
 	}
+	client := githubv4.NewClient(httpClient)
+	if opts.BaseURL != "" {
+		client = githubv4.NewEnterpriseClient(opts.BaseURL+"/api/graphql", httpClient)
+	}
 	return &gitHubProvider{
-		client:          githubv4.NewClient(httpClient),
+		client:          client,
 		log:             opts.Log,
 		includeArchived: opts.IncludeArchived,
 	}

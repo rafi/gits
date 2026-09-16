@@ -1117,6 +1117,22 @@ func TestInheritAuth(t *testing.T) {
 			sub:    &domain.ProviderSource{Type: "gitlab", Search: "42"},
 		},
 		{
+			name:   "a token for another host is not passed down",
+			parent: &domain.ProviderSource{Type: "github", URL: "https://github.corp.example", Token: "corp"},
+			sub:    &domain.ProviderSource{Type: "github", Search: "public"},
+		},
+		{
+			name:   "a public-host token does not follow to a custom host",
+			parent: &domain.ProviderSource{Type: "github", Token: "public"},
+			sub:    &domain.ProviderSource{Type: "github", URL: "https://github.corp.example", Search: "x"},
+		},
+		{
+			name:      "the same host, spelled differently, inherits",
+			parent:    &domain.ProviderSource{Type: "github", URL: "https://github.com/", Token: "parent"},
+			sub:       &domain.ProviderSource{Type: "github", Search: "x"},
+			wantToken: "parent",
+		},
+		{
 			name:   "an uncredentialed parent passes nothing down",
 			parent: &domain.ProviderSource{Type: "github"},
 			sub:    &domain.ProviderSource{Type: "github", Search: "x"},
