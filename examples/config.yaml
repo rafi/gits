@@ -18,6 +18,8 @@
 # Note: provider API tokens are configured under `settings` (see below), and
 # fall back to the environment:
 #   GITHUB_TOKEN (or HOMEBREW_GITHUB_API_TOKEN), GITLAB_TOKEN, BITBUCKET_TOKEN
+# The environment only applies to github.com, gitlab.com and Bitbucket Cloud,
+# never to a source with a `url:`.
 #
 # Note: color output is a CLI flag (`gits -C auto|always|never`, default
 # `auto`), not a setting. A top-level `color:` key would be parsed as a
@@ -29,7 +31,7 @@
 # gits shells out to, and the state of each cached project.
 
 settings:
-  # Cache repository lists fetched from providers (github/gitlab/bitbucket).
+  # Cache repository lists fetched from providers (every type but filesystem).
   # Filesystem sources are never cached. Cache files are written to
   # $XDG_CACHE_HOME/gits/ (defaults to ~/.cache/gits/).
   # Refresh them manually with `gits sync`. Default: true.
@@ -53,8 +55,9 @@ settings:
   # here rather than pinned to a number.
   # workerCount: 8
 
-  # Include archived repositories when listing from a provider. Applies to
-  # GitHub and GitLab; Bitbucket Cloud has no archived flag. Default: false.
+  # Include archived repositories when listing from a provider. Gerrit's
+  # read-only projects count as archived; Bitbucket Cloud has no archived
+  # flag. Default: false.
   includeArchived: false
 
   # Interactive selector. gits shells out to fzf for picking a project,
@@ -74,9 +77,12 @@ settings:
   # Enable debug logging. The `-v` flag overrides this. Default: false.
   verbose: false
 
-  # Per-provider API credentials. For each provider the first available of
-  # `token`, `tokenCommand` and the provider's environment variables wins.
-  # Both keys are optional; unset here so the environment keeps working.
+  # Per-provider API credentials and pacing, one block per type: github,
+  # gitlab, bitbucket, gitea, forgejo, gerrit. For each provider the first
+  # available of `token`, `tokenCommand` and the provider's environment
+  # variables wins. The keys are optional; unset here so the environment
+  # keeps working. gitea, forgejo and gerrit discover anonymously when no
+  # token resolves, which lists only public repositories.
   #
   #   token         Used verbatim. Note this file is plain text.
   #   tokenCommand  A shell command printing the token on stdout; its first
@@ -85,6 +91,14 @@ settings:
   #                 passphrase prompt appears once no matter how many
   #                 projects use the provider. A failing command aborts —
   #                 there is no silent fallback to the environment.
+  #   rateLimit     Requests per second to one host, with retries on 429 and
+  #                 503 honoring Retry-After (at most a minute, 3 attempts).
+  #                 Projects on one host share the pace; two types on one
+  #                 host share the slower rate. `0` turns pacing off.
+  #                 Default: 10.
+  #   username      gerrit only. The account the token (an HTTP password)
+  #                 belongs to, also used in SSH clone URLs. A source's own
+  #                 `username:` or a user in its `url:` wins over this.
   #
   # github:
   #   tokenCommand: pass tokens/github
@@ -94,6 +108,12 @@ settings:
   #   token: me@example.com:my-api-token  # Atlassian email and API token.
   #                                       # The API token on its own also
   #                                       # works: `token: my-api-token`.
+  # forgejo:
+  #   tokenCommand: pass tokens/codeberg
+  # gerrit:
+  #   username: rafi
+  #   tokenCommand: pass tokens/opendev
+  #   rateLimit: 5
   #
   # A Bitbucket API token needs the read:repository:bitbucket and
   # read:workspace:bitbucket scopes. A legacy username:app-password still
@@ -227,7 +247,45 @@ settings:
 #     type: gitlab
 #     search: "12345678"
 
-# Bitbucket source: `search` is the owner.
+# GitHub Enterprise Server or self-managed GitLab: `url` is the address you
+# open in a browser; gits adds the API path. `https://github.com` and
+# `https://gitlab.com` mean the same as no `url`. A source with `url` never
+# reads tokens from the environment, so give it `token` or `tokenCommand`.
+# The url may carry a user (`https://me@host`), never a password.
+# corp:
+#   path: ~/code/corp
+#   source:
+#     type: github
+#     url: https://github.corp.example
+#     search: platform
+#     tokenCommand: pass tokens/github-corp
+
+# Gitea or Forgejo source: `url` is required, `search` is a user or an
+# organization. Use `type: gitea` or `type: forgejo` to match the server, so
+# its credentials come from the matching settings block.
+# codeberg:
+#   path: ~/code/codeberg
+#   source:
+#     type: forgejo
+#     url: https://codeberg.org
+#     search: forgejo-contrib
+
+# Gerrit source: `url` is required, `search` is a project name prefix. Names
+# nest as subprojects along their `/` segments, below the prefix, so
+# `openstack/infra/zuul` lands in subproject `infra`. Read-only projects
+# count as archived. Clone URLs use the SSH host and port the server
+# advertises, which it only does for a signed-in caller; anonymous sources
+# clone over HTTPS.
+# opendev:
+#   path: ~/code/opendev
+#   source:
+#     type: gerrit
+#     url: https://review.opendev.org
+#     search: openstack/
+#     username: rafi          # optional, see settings.gerrit.username
+#     tokenCommand: pass tokens/opendev
+
+# Bitbucket source: `search` is the owner (Bitbucket Cloud only).
 # mybitbucket:
 #   path: ~/code/bitbucket
 #   source:
