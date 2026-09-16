@@ -359,6 +359,32 @@ func TestDiscoverSource(t *testing.T) {
 			t.Error("getSource(invalid type) = nil, want error")
 		}
 	})
+
+	t.Run("source token command overrides settings", func(t *testing.T) {
+		t.Parallel()
+
+		if runtime.GOOS == "windows" {
+			t.Skip("shell fixture assumes a POSIX shell")
+		}
+		d := deps(&recordingCache{})
+		// A working settings token, so only the source's command can fail.
+		d.Settings = domain.Settings{
+			GitHub: domain.ProviderSettings{Token: "settings-token"},
+		}
+		p := domain.Project{
+			Name: "p",
+			Source: &domain.ProviderSource{
+				Type: "github", Search: "acme", TokenCmd: "exit 1",
+			},
+		}
+		err := getSource(&p, d, options{})
+		if err == nil {
+			t.Fatal("getSource = nil, want the source's token command to have run")
+		}
+		if !strings.Contains(err.Error(), "token command failed") {
+			t.Errorf("error = %v, want the source token command failure", err)
+		}
+	})
 }
 
 func TestClassificationMatrix(t *testing.T) {
@@ -1053,5 +1079,108 @@ func TestPathlessGroupingProjectIsNotDiscovered(t *testing.T) {
 	}
 	if got := len(p.SubProjects[0].Repos); got != 1 {
 		t.Fatalf("sub-project repos = %d, want 1", got)
+	}
+}
+
+// TestInheritAuth checks which credentials a sub-project's own source gets.
+func TestInheritAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		parent      *domain.ProviderSource
+		sub         *domain.ProviderSource
+		wantToken   string
+		wantCommand string
+	}{
+		{
+			name:      "sub with no credentials inherits the parent's",
+			parent:    &domain.ProviderSource{Type: "github", Token: "parent"},
+			sub:       &domain.ProviderSource{Type: "github", Search: "narrower"},
+			wantToken: "parent",
+		},
+		{
+			name:      "sub's own credentials win",
+			parent:    &domain.ProviderSource{Type: "github", Token: "parent"},
+			sub:       &domain.ProviderSource{Type: "github", Token: "own"},
+			wantToken: "own",
+		},
+		{
+			name:        "a command is inherited like a token",
+			parent:      &domain.ProviderSource{Type: "gitlab", TokenCommand: "pass gl"},
+			sub:         &domain.ProviderSource{Type: "gitlab", Search: "43"},
+			wantCommand: "pass gl",
+		},
+		{
+			name:   "another provider inherits nothing",
+			parent: &domain.ProviderSource{Type: "github", Token: "parent"},
+			sub:    &domain.ProviderSource{Type: "gitlab", Search: "42"},
+		},
+		{
+			name:   "an uncredentialed parent passes nothing down",
+			parent: &domain.ProviderSource{Type: "github"},
+			sub:    &domain.ProviderSource{Type: "github", Search: "x"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			inheritAuth(tt.parent, tt.sub)
+			if tt.sub.Token != tt.wantToken {
+				t.Errorf("token = %q, want %q", tt.sub.Token, tt.wantToken)
+			}
+			if got := tt.sub.Auth().Command(); got != tt.wantCommand {
+				t.Errorf("Command() = %q, want %q", got, tt.wantCommand)
+			}
+		})
+	}
+
+	t.Run("a missing source on either side is no-op", func(t *testing.T) {
+		t.Parallel()
+
+		sub := &domain.ProviderSource{Type: "github"}
+		inheritAuth(nil, sub)
+		inheritAuth(&domain.ProviderSource{Type: "github", Token: "p"}, nil)
+		if !sub.Auth().IsZero() {
+			t.Errorf("sub gained a credential: %+v", sub)
+		}
+	})
+}
+
+// TestSubProjectSourceInheritsCredentials checks that a sub-project source
+// uses the parent's credentials during a load.
+func TestSubProjectSourceInheritsCredentials(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture assumes a POSIX shell")
+	}
+	deps := coreruntime.Runtime{
+		Ctx:   context.Background(),
+		Git:   fakeGit{isRepo: true},
+		Cache: &recordingCache{},
+		// A working settings token, so only the inherited command can fail.
+		Settings: domain.Settings{
+			GitHub: domain.ProviderSettings{Token: "settings-token"},
+		},
+	}
+	project := domain.Project{
+		Name: "org",
+		Source: &domain.ProviderSource{
+			Type: "github", Search: "org", TokenCmd: "exit 1",
+		},
+		SubProjects: []domain.Project{{
+			Name:   "tools",
+			Source: &domain.ProviderSource{Type: "github", Search: "org-tools"},
+		}},
+	}
+
+	err := loadSubProjectSources(&project, deps, options{})
+	if err == nil {
+		t.Fatal("loadSubProjectSources = nil, want the inherited token command to have run")
+	}
+	if !strings.Contains(err.Error(), "token command failed") {
+		t.Errorf("error = %v, want the inherited token command failure", err)
 	}
 }

@@ -165,14 +165,57 @@ func (p *Project) Filter() {
 // p.Hash. It is a cache checksum — it tells the loader whether a cached project
 // still matches the config it was built from — not a security boundary: nothing
 // authenticates the cache file, so the digest detects drift, not tampering.
+//
+// Credentials are excluded from the digest.
 func (p *Project) CalculateHash() error {
-	data, err := json.Marshal(p)
+	redacted := p.WithoutAuth()
+	data, err := json.Marshal(&redacted)
 	if err != nil {
 		return err
 	}
 	hash := sha256.Sum256(data)
 	p.Hash = hex.EncodeToString(hash[:])
 	return nil
+}
+
+// WithoutAuth returns a copy of the project with all Provider Source
+// credentials removed. The original is not modified.
+func (p *Project) WithoutAuth() Project {
+	out := *p
+	if out.Source != nil {
+		redacted := out.Source.WithoutAuth()
+		out.Source = &redacted
+	}
+	if len(out.SubProjects) > 0 {
+		subs := make([]Project, len(out.SubProjects))
+		for idx := range out.SubProjects {
+			subs[idx] = out.SubProjects[idx].WithoutAuth()
+		}
+		out.SubProjects = subs
+	}
+	return out
+}
+
+// RestoreAuth copies Provider Source credentials from onto p, matching
+// Sub-projects by name. Sub-projects missing from from are left alone.
+func (p *Project) RestoreAuth(from Project) {
+	if p.Source != nil && from.Source != nil {
+		p.Source.Token = from.Source.Token
+		p.Source.TokenCommand = from.Source.TokenCommand
+		p.Source.TokenCmd = from.Source.TokenCmd
+	}
+	if len(p.SubProjects) == 0 || len(from.SubProjects) == 0 {
+		return
+	}
+	configured := make(map[string]Project, len(from.SubProjects))
+	for _, sub := range from.SubProjects {
+		configured[sub.Name] = sub
+	}
+	for idx := range p.SubProjects {
+		if src, ok := configured[p.SubProjects[idx].Name]; ok {
+			p.SubProjects[idx].RestoreAuth(src)
+		}
+	}
 }
 
 // CountRepos returns how many repositories the project holds, its

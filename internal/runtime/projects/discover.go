@@ -25,6 +25,7 @@ func loadSubProjectSources(project *domain.Project, deps coreruntime.Runtime, o 
 			continue
 		}
 		applySourceDefaults(sub)
+		inheritAuth(project.Source, sub.Source)
 		if err := getSource(sub, deps, o); err != nil {
 			return err
 		}
@@ -33,6 +34,20 @@ func loadSubProjectSources(project *domain.Project, deps coreruntime.Runtime, o 
 		}
 	}
 	return nil
+}
+
+// inheritAuth copies parent's credentials to sub when sub has none and both
+// use the same provider type.
+func inheritAuth(parent, sub *domain.ProviderSource) {
+	if parent == nil || sub == nil {
+		return
+	}
+	if parent.Type != sub.Type || !sub.Auth().IsZero() || parent.Auth().IsZero() {
+		return
+	}
+	sub.Token = parent.Token
+	sub.TokenCommand = parent.TokenCommand
+	sub.TokenCmd = parent.TokenCmd
 }
 
 // getSource populates project repos from a provider source.
@@ -86,7 +101,7 @@ func getSource(project *domain.Project, deps coreruntime.Runtime, o options) err
 // the path taken whenever the cache did not answer.
 func loadFromProvider(project *domain.Project, deps coreruntime.Runtime) error {
 	source := project.Source
-	auth := deps.Settings.ProviderAuth(source.Type)
+	auth := deps.Settings.SourceAuth(source)
 	// A bad providerTimeout falls back to its default here; the value is
 	// validated and its warning surfaced once at startup (newRuntime), so the
 	// error is intentionally dropped rather than reported again per fetch.

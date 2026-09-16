@@ -46,10 +46,16 @@ type ProjectIdentity struct {
 	Desc   string          `json:"desc,omitempty"`
 }
 
-// Identity returns the project node's wire identity.
+// Identity returns the project node's wire identity. The Provider Source is
+// included without credentials.
 func (p *Project) Identity() ProjectIdentity {
+	source := p.Source
+	if source != nil {
+		redacted := source.WithoutAuth()
+		source = &redacted
+	}
 	return ProjectIdentity{
-		Source: p.Source,
+		Source: source,
 		Clone:  p.Clone,
 		ID:     p.ID,
 		Name:   p.Name,

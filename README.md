@@ -568,6 +568,26 @@ For each provider the first of these wins:
 3. Environment: `GITHUB_TOKEN` (or `HOMEBREW_GITHUB_API_TOKEN`),
    `GITLAB_TOKEN`, `BITBUCKET_TOKEN`.
 
+A single project can authenticate as somebody else by putting the same two
+keys on its `source:`, which is how you keep a work account and a personal one
+in one config file:
+
+```yaml
+personal:
+  path: ~/code/me
+  source:
+    type: github
+    search: rafi
+    tokenCommand: pass tokens/github-personal
+
+work:
+  path: ~/code/work
+  source:
+    type: github
+    search: acme
+    tokenCommand: pass tokens/github-work   # `token:` and `token-cmd:` too
+```
+
 Bitbucket takes an
 [Atlassian API token](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/)
 in either of two forms:

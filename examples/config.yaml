@@ -99,6 +99,10 @@ settings:
   # read:workspace:bitbucket scopes. A legacy username:app-password still
   # works wherever Bitbucket still honors it, but Atlassian has deprecated
   # app passwords in favor of API tokens.
+  #
+  # These are the credentials for every project on a provider. One project
+  # can authenticate as somebody else by putting the same keys on its
+  # `source:` — see the `personal` and `work` examples further down.
 
   # Status icons. Each is a plain string, so you can use any glyph your font
   # supports. Keys you omit keep their built-in glyph, so overriding just one
@@ -229,6 +233,20 @@ settings:
 #   source:
 #     type: bitbucket
 #     search: rafi
+
+# Two accounts on one provider. A `source:` may carry its own credentials:
+# personal:
+#   path: ~/code/me
+#   source:
+#     type: github
+#     search: rafi
+#     tokenCommand: pass tokens/github-personal
+# work:
+#   path: ~/code/work
+#   source:
+#     type: github
+#     search: acme
+#     tokenCommand: pass tokens/github-work
 
 # Filesystem source: searched recursively for git repositories. When `search`
 # is omitted it defaults to the project `path`.

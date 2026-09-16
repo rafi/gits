@@ -57,6 +57,11 @@ func (p ProviderSettings) Command() string {
 	return p.TokenCmd
 }
 
+// IsZero reports whether no token or command is configured.
+func (p ProviderSettings) IsZero() bool {
+	return p.Token == "" && p.Command() == ""
+}
+
 // ProviderAuth returns the credentials configured for a provider source
 // type. Types that need no token (e.g. "filesystem") yield the zero value.
 func (s Settings) ProviderAuth(providerType string) ProviderSettings {
@@ -70,6 +75,18 @@ func (s Settings) ProviderAuth(providerType string) ProviderSettings {
 	default:
 		return ProviderSettings{}
 	}
+}
+
+// SourceAuth returns the source's own credentials, or its provider's settings
+// if it declares none. The two are never merged.
+func (s Settings) SourceAuth(source *ProviderSource) ProviderSettings {
+	if source == nil {
+		return ProviderSettings{}
+	}
+	if auth := source.Auth(); !auth.IsZero() {
+		return auth
+	}
+	return s.ProviderAuth(source.Type)
 }
 
 // parseDurationOr parses a Go-duration setting value, falling back to def when

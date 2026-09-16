@@ -158,6 +158,7 @@ func describeEntry(path string, ttl time.Duration) Entry {
 
 // Get loads a cached Project into project, reporting whether a live entry
 // was found. A stale or unreadable entry reports false, not an error.
+// Credentials from project are kept.
 func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	path, err := cacheFilePath(key)
 	if err != nil {
@@ -210,11 +211,14 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 		cf.logger().Debug("cache expired", "ttl", cf.ttl)
 		return false, nil
 	}
-	*project = p.Project
+	cached := p.Project
+	cached.RestoreAuth(*project)
+	*project = cached
 	return true, nil
 }
 
 // Save writes project to the cache file for key.
+// Credentials are not written.
 func (cf *File) Save(key string, project domain.Project) error {
 	path, err := cacheFilePath(key)
 	if err != nil {
@@ -230,7 +234,7 @@ func (cf *File) Save(key string, project domain.Project) error {
 		Version:   version.GetMajorMinor(),
 		Timestamp: time.Now().Format(cacheTimeFormat),
 		Checksum:  project.Hash,
-		Project:   project,
+		Project:   project.WithoutAuth(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to encode cache file: %w", err)

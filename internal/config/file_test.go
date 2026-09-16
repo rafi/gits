@@ -606,3 +606,75 @@ func TestExistingPathFindsNothing(t *testing.T) {
 		t.Errorf("ExistingPath = %q, want empty", got)
 	}
 }
+
+// TestLoadConfigSourceTokens checks that source credentials load, including
+// on sub-projects.
+func TestLoadConfigSourceTokens(t *testing.T) {
+	t.Parallel()
+
+	path := writeTemp(t, "c.yaml", `
+settings:
+  github:
+    token: settings-token
+work:
+  path: ~/code/work
+  source:
+    type: github
+    search: acme
+    tokenCommand: pass tokens/work
+personal:
+  path: ~/code/me
+  source:
+    type: github
+    search: rafi
+    token: personal-token
+aliased:
+  source:
+    type: gitlab
+    search: "42"
+    token-cmd: pass tokens/gl
+inherits:
+  path: ~/code/x
+  source:
+    type: github
+    search: x
+`)
+	f := &File{}
+	if err := NewConfigFromFile(path, f); err != nil {
+		t.Fatalf("NewConfigFromFile: %v", err)
+	}
+
+	tests := []struct {
+		project     string
+		wantToken   string
+		wantCommand string
+	}{
+		{"work", "", "pass tokens/work"},
+		{"personal", "personal-token", ""},
+		{"aliased", "", "pass tokens/gl"},
+		// Falls back to settings.
+		{"inherits", "settings-token", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.project, func(t *testing.T) {
+			t.Parallel()
+
+			proj, ok := f.Projects[tt.project]
+			if !ok {
+				t.Fatalf("project %q missing from %+v", tt.project, f.Projects)
+			}
+			auth := f.Settings.SourceAuth(proj.Source)
+			if auth.Token != tt.wantToken {
+				t.Errorf("token = %q, want %q", auth.Token, tt.wantToken)
+			}
+			if got := auth.Command(); got != tt.wantCommand {
+				t.Errorf("Command() = %q, want %q", got, tt.wantCommand)
+			}
+		})
+	}
+
+	// Known keys are not reported as typos.
+	if len(f.Warnings) > 0 {
+		t.Errorf("warnings = %v, want none", f.Warnings)
+	}
+}

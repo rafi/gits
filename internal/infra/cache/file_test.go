@@ -490,3 +490,75 @@ func TestEntries(t *testing.T) {
 		}
 	})
 }
+
+// TestCacheNeverWritesCredentials checks that tokens are not saved to disk.
+func TestCacheNeverWritesCredentials(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	proj := domain.Project{
+		Name: "acme",
+		Source: &domain.ProviderSource{
+			Type: "github", Search: "acme", Token: "s3cret",
+		},
+		SubProjects: []domain.Project{{
+			Name: "tools",
+			Source: &domain.ProviderSource{
+				Type: "github", Search: "tools", TokenCommand: "pass work",
+			},
+		}},
+	}
+	cf := &File{}
+	if err := cf.Save("redact", proj); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	path, _ := cacheFilePath("redact")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	for _, secret := range []string{"s3cret", "pass work"} {
+		if strings.Contains(string(raw), secret) {
+			t.Errorf("cache file contains %q: %s", secret, raw)
+		}
+	}
+	// Save must not strip the caller's credentials.
+	if proj.Source.Token != "s3cret" {
+		t.Error("Save cleared the caller's credential")
+	}
+}
+
+// TestCacheGetRestoresCredentials checks that Get keeps configured credentials.
+func TestCacheGetRestoresCredentials(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	proj := domain.Project{
+		Name:   "acme",
+		Source: &domain.ProviderSource{Type: "github", Search: "acme", Token: "s3cret"},
+		Repos:  []domain.Repository{{Name: "a"}},
+	}
+	if err := proj.CalculateHash(); err != nil {
+		t.Fatalf("CalculateHash: %v", err)
+	}
+	cf := &File{ttl: time.Hour}
+	if err := cf.Save("restore", proj); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// As built from config: credentials, no repos.
+	got := domain.Project{
+		Name:   "acme",
+		Source: &domain.ProviderSource{Type: "github", Search: "acme", Token: "s3cret"},
+		Hash:   proj.Hash,
+	}
+	ok, err := cf.Get("restore", &got)
+	if err != nil || !ok {
+		t.Fatalf("Get = (%v, %v), want (true, nil)", ok, err)
+	}
+	if len(got.Repos) != 1 {
+		t.Errorf("repos = %+v, want the cached one", got.Repos)
+	}
+	if got.Source.Token != "s3cret" {
+		t.Errorf("credential lost across the cache: %+v", got.Source)
+	}
+}
