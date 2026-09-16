@@ -1,7 +1,7 @@
 # gits
 
 > Fast CLI Git manager for multiple repositories grouped by projects, with
-> GitHub/GitLab/Bitbucket support.
+> GitHub/GitLab/Bitbucket/Gitea/Forgejo/Gerrit support.
 
 [![tests](https://github.com/rafi/gits/actions/workflows/test.yml/badge.svg)](https://github.com/rafi/gits/actions/workflows/test.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/rafi/gits.svg)](https://pkg.go.dev/github.com/rafi/gits)
@@ -33,7 +33,8 @@ gits clone acme      # clone the ones that aren't there yet
 ```
 
 A project is just a label for a group of repositories. It either lists them by
-hand or discovers them from GitHub, GitLab, Bitbucket or a local directory -
+hand or discovers them from GitHub, GitLab, Bitbucket, Gitea, Forgejo, Gerrit
+or a local directory -
 cached, so day-to-day commands never wait on the network.
 
 It is a single static Go binary needing nothing but `git`.
@@ -46,8 +47,9 @@ It is a single static Go binary needing nothing but `git`.
   clones you already have into projects, and `gits add` records one at a time.
   Both create the file and the project for you.
 - **Your repositories, discovered for you.** Point a project at a GitHub user, a
-  GitLab group, a Bitbucket workspace, or a directory, and `gits` finds the
-  repositories. Results are cached with a configurable TTL.
+  GitLab group, a Bitbucket workspace, a Gitea or Forgejo owner, a Gerrit
+  prefix, or a directory, and `gits` finds the repositories. Self-hosted forges
+  work too. Results are cached with a configurable TTL.
 - **A status view that fits on a screen.** One line per repository, with branch,
   staged/unstaged/untracked counts, ahead/behind, version and last commit.
 - **Scriptable.** `-o json` emits one well-defined document from `list`,
@@ -69,7 +71,7 @@ request cannon. `gits` covers the first two in one binary.
 - **Pipe-friendly by design.** `-o json` on every command that lists or reports,
   clean stdout, progress on stderr. Your scripts, your CI, and your agents all
   get a straiacme answer.
-- **Projects that nest.** GitHub, GitLab, and Bitbucket, grouped into
+- **Projects that nest.** GitHub, GitLab, Bitbucket, and more, grouped into
   sub-projects and filtered down. Flat tag lists give up long before you do.
 
 ## Install
@@ -265,8 +267,8 @@ gits list -t demo                 # across every project, no project named
 
 A repository carries its own tags plus its project's, sub-projects included, so
 `web` above is reachable as both `demo` and `work`, and one tag on a project
-addresses everything in it - including repositories discovered from GitHub,
-GitLab or Bitbucket, which have no config entry of their own to label.
+addresses everything in it - including repositories discovered from a forge,
+which have no config entry of their own to label.
 
 Matching is exact and case-insensitive, like `include`/`exclude`: no globs. A
 tag nothing carries is reported rather than silently doing nothing, so a
@@ -502,8 +504,9 @@ projectname:          # Project name
   desc: My projects   # Optional
   path: ~/code/github # Optional if 'repos' are specified and have absolute paths.
   source:             # Required if no 'repos' defined, default: filesystem
-    type: github      # Required: github|gitlab|bitbucket|filesystem
-    search: rafi      # Required search query (organization, user name, group id)
+    type: github      # Required: github|gitlab|bitbucket|gitea|forgejo|gerrit|filesystem
+    search: rafi      # Required search query (owner, group id, name prefix)
+    url: https://...  # Self-hosted forge web address, see 'Self-hosted forges'
   repos:              # Required if no 'source' defined
     - dir: foo        # Optional, default: repository name
       src: git@...    # Optional, default: repository remote URL
@@ -555,7 +558,10 @@ stays home. Sub-projects get filtered too, each by its own lists.
 Real orgs don't keep their repositories in one tidy pile. GitLab groups nest as
 deep as you like, and sub-projects are how `gits` follows them down. Point a
 project at a GitLab group and the whole tree comes back with its shape
-intact - no flattening, no listing each subgroup by hand.
+intact - no flattening, no listing each subgroup by hand. Gerrit project names nest
+the same way along their `/` segments, below the search prefix: searching
+`openstack/` puts `openstack/nova` at the top as `nova`, and `openstack/infra/zuul`
+under the sub-project `infra`.
 
 You can also build that tree yourself. Nest projects under `subprojects`, as a
 list, so each carries its own `name`:
@@ -615,9 +621,10 @@ settings:
   verbose: false   # Trace what gits did on the way to an answer - provider
                    # pages, cache hits, git's stderr - to stderr. Same as -v.
   includeArchived: false  # Include archived repositories when listing
-                          # from providers (GitHub, GitLab). Default: false.
-                          # Bitbucket Cloud has no archived flag, so the
-                          # setting does not apply there.
+                          # from providers. Gerrit's read-only projects
+                          # count as archived. Default: false. Bitbucket
+                          # Cloud has no archived flag, so the setting does
+                          # not apply there.
   providerTimeout: 5m     # HTTP timeout for provider API calls. Go
                           # duration syntax. Default: 5m.
   gitTimeout: 5m          # Timeout for network git operations
@@ -636,7 +643,9 @@ default); `gits doctor` prints the directory in use.
 
 ### Provider tokens
 
-Remote providers need an API token. Configure it per provider under `settings:`,
+GitHub, GitLab and Bitbucket need an API token. Gitea, Forgejo and Gerrit
+discover anonymously without one, which lists public repositories; give them a
+token to see private ones too. Configure it per provider under `settings:`,
 either verbatim or as a command that prints it:
 
 ```yaml
@@ -647,6 +656,8 @@ settings:
     tokenCommand: op read op://private/gitlab/token
   bitbucket:
     tokenCommand: pass tokens/bitbucket
+  forgejo:
+    tokenCommand: pass tokens/codeberg
 ```
 
 For each provider the first of these wins:
@@ -658,7 +669,10 @@ For each provider the first of these wins:
    even with several projects on the same provider. A failing command is an
    error - there is no silent fallback.
 3. Environment: `GITHUB_TOKEN` (or `HOMEBREW_GITHUB_API_TOKEN`),
-   `GITLAB_TOKEN`, `BITBUCKET_TOKEN`.
+   `GITLAB_TOKEN`, `BITBUCKET_TOKEN`. Only for github.com, gitlab.com and
+   Bitbucket Cloud: a source with a `url:` never reads the environment, so
+   an ambient `GITHUB_TOKEN` is never sent to another host. Gitea, Forgejo
+   and Gerrit have no environment variables.
 
 A single project can authenticate as somebody else by putting the same two
 keys on its `source:`, which is how you keep a work account and a personal one
@@ -696,8 +710,82 @@ which is all discovery reads. A legacy `username:app-password` still works
 wherever Bitbucket still honors it, but Atlassian has deprecated app passwords
 in favor of API tokens, so prefer a token for anything new.
 
+Gerrit's token is an
+[HTTP password](https://gerrit-review.googlesource.com/Documentation/user-upload.html#http)
+(an auth token on Gerrit 3.13 and later), and it goes with a `username`. The
+first of these wins: `username:` on the source, the user in its `url:`
+(`https://rafi@review.example.com`), then `settings.gerrit.username`:
+
+```yaml
+settings:
+  gerrit:
+    username: rafi
+    tokenCommand: pass tokens/opendev
+```
+
+The username also goes into SSH clone URLs, `ssh://rafi@host:29418/name`, at
+the host and port the server advertises. Gerrit only reveals its SSH address
+to a signed-in caller, so without a token repositories clone over HTTPS
+instead.
+
 Cached projects don't need a token until the cache expires or `gits sync`
 refreshes it.
+
+### Self-hosted forges
+
+A `url:` on the source points it at your own host. Use the address you would
+open in a browser - `gits` adds the API path itself:
+
+```yaml
+work:
+  path: ~/code/work
+  source:
+    type: github            # GitHub Enterprise Server
+    url: https://github.corp.example
+    search: platform
+    tokenCommand: pass tokens/github-corp
+
+mine:
+  path: ~/code/codeberg
+  source:
+    type: forgejo           # or gitea
+    url: https://codeberg.org
+    search: rafi            # a user or an organization
+
+opendev:
+  path: ~/code/opendev
+  source:
+    type: gerrit
+    url: https://review.opendev.org
+    search: openstack/      # a project name prefix
+```
+
+- `gitea`, `forgejo` and `gerrit` require `url:`. `github` and `gitlab` take it
+  for Enterprise and self-managed hosts; `https://github.com` and
+  `https://gitlab.com` mean the same as leaving it out. `bitbucket` does not
+  take it: only Bitbucket Cloud is supported.
+- The url may name a user, `https://rafi@host`, but never a password - use
+  `token` or `tokenCommand`. The user is kept out of the cache and `-o json`.
+- Two projects with the same `search` on different hosts are cached apart.
+- A custom host never gets a token from the environment, so set one on the
+  source or under `settings:`.
+
+### Rate limits
+
+`gits` paces its requests to each host so a big sync does not trip a forge's
+abuse limits, and tries a request up to three times when a host answers
+`429 Too Many Requests` or `503 Service Unavailable`, waiting as long as its
+`Retry-After` asks, a minute at most. Set the pace per provider in
+requests per second:
+
+```yaml
+settings:
+  gerrit:
+    rateLimit: 5   # Default: 10. 0 turns pacing off.
+```
+
+Projects on one host share one pace, and two providers pointed at the same host
+share the slower of their two rates.
 
 ## Config examples
 
@@ -726,6 +814,21 @@ mybitbucket:
   source:
     type: bitbucket
     search: rafi
+
+# Forgejo source on Codeberg. Gitea works the same with `type: gitea`.
+codeberg:
+  source:
+    type: forgejo
+    url: https://codeberg.org
+    search: forgejo-contrib
+
+# Gerrit source, every project whose name starts with the prefix.
+opendev:
+  path: ~/code/opendev
+  source:
+    type: gerrit
+    url: https://review.opendev.org
+    search: openstack/oslo
 
 # Filesystem source that will be searched recursively.
 explore:
