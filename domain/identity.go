@@ -16,6 +16,8 @@ type RepoIdentity struct {
 	Dir       string `json:"dir,omitempty"`
 	URL       string `json:"url,omitempty"`
 	Desc      string `json:"desc,omitempty"`
+	// Labels are the repository's own plus inherited project labels.
+	Labels []Label `json:"labels,omitempty"`
 }
 
 // Identity returns the repository's wire identity.
@@ -28,6 +30,7 @@ func (r Repository) Identity() RepoIdentity {
 		Dir:       r.Dir,
 		URL:       r.URL,
 		Desc:      r.Desc,
+		Labels:    r.Labels,
 	}
 }
 
@@ -44,6 +47,8 @@ type ProjectIdentity struct {
 	Name   string          `json:"name"`
 	Path   string          `json:"path"`
 	Desc   string          `json:"desc,omitempty"`
+	// Labels are the project's own labels, not merged with its parents'.
+	Labels []Label `json:"labels,omitempty"`
 }
 
 // Identity returns the project node's wire identity. The Provider Source is
@@ -61,5 +66,6 @@ func (p *Project) Identity() ProjectIdentity {
 		Name:   p.Name,
 		Path:   p.Path,
 		Desc:   p.Desc,
+		Labels: p.Labels,
 	}
 }

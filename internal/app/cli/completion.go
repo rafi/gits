@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/domain"
+
 	coreruntime "github.com/rafi/gits/internal/runtime"
 	"github.com/rafi/gits/internal/runtime/projects"
 )
@@ -43,6 +45,47 @@ func completeProject(_ *cobra.Command, _ []string, toComplete string) ([]string,
 		}
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeLabels offers the labels declared in the config file, completing the
+// last element of a comma-separated value.
+func completeLabels(_ *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	prefix, last := splitLastLabel(toComplete)
+
+	labels := make([]string, 0, len(configFile.Projects))
+	for _, proj := range configFile.Projects {
+		labels = append(labels, collectLabels(proj)...)
+	}
+
+	var completions []cobra.Completion
+	for _, label := range domain.MergeLabels(labels) {
+		if strings.HasPrefix(label, domain.NormalizeLabel(last)) {
+			completions = append(completions, prefix+label)
+		}
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// collectLabels returns every label declared in the project subtree.
+func collectLabels(project domain.Project) []string {
+	labels := append([]string{}, project.Labels...)
+	for _, repo := range project.Repos {
+		labels = append(labels, repo.Labels...)
+	}
+	for _, sub := range project.SubProjects {
+		labels = append(labels, collectLabels(sub)...)
+	}
+	return labels
+}
+
+// splitLastLabel splits a partial `--label` value into the completed prefix,
+// including its trailing comma, and the label being typed.
+func splitLastLabel(toComplete string) (prefix, last string) {
+	idx := strings.LastIndex(toComplete, ",")
+	if idx < 0 {
+		return "", toComplete
+	}
+	return toComplete[:idx+1], toComplete[idx+1:]
 }
 
 // completeAddArgs completes `gits add`: the project name first, then

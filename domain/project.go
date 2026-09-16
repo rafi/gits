@@ -30,6 +30,8 @@ type Project struct {
 	SubProjects []Project       `json:"subprojects,omitempty"`
 	Include     []string        `json:"include,omitempty"`
 	Exclude     []string        `json:"exclude,omitempty"`
+	// Labels apply to every Repository under the project, at any depth.
+	Labels []Label `json:"labels,omitempty"`
 }
 
 // ProjectListKeyed is a list of projects with name keys.
@@ -159,6 +161,39 @@ func (p *Project) Filter() {
 	for i := range p.SubProjects {
 		p.SubProjects[i].Filter()
 	}
+}
+
+// ResolveLabels adds each Project's labels, plus inherited, to every Repository
+// beneath it.
+func (p *Project) ResolveLabels(inherited []Label) {
+	own := MergeLabels(inherited, p.Labels)
+	for idx := range p.Repos {
+		p.Repos[idx].Labels = MergeLabels(own, p.Repos[idx].Labels)
+	}
+	for idx := range p.SubProjects {
+		p.SubProjects[idx].ResolveLabels(own)
+	}
+}
+
+// FilterLabels keeps Repositories matching labels and returns how many remain.
+// An empty set keeps everything; empty Projects are not pruned.
+func (p *Project) FilterLabels(labels LabelSet) int {
+	if labels.Empty() {
+		return p.CountRepos()
+	}
+	repos := make([]Repository, 0, len(p.Repos))
+	for _, repo := range p.Repos {
+		if labels.Matches(repo.Labels) {
+			repos = append(repos, repo)
+		}
+	}
+	p.Repos = repos
+
+	kept := len(repos)
+	for idx := range p.SubProjects {
+		kept += p.SubProjects[idx].FilterLabels(labels)
+	}
+	return kept
 }
 
 // CalculateHash stores a SHA-256 digest of the project's marshaled form in

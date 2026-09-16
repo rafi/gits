@@ -42,8 +42,17 @@ func isCancelled(err error) bool {
 func ParseArgs(args []string, skipRepoSelect bool, deps app.RuntimeCLI) (
 	domain.Project, *domain.Repository, error,
 ) {
+	return ParseArgsWithLabels(args, domain.LabelSet{}, skipRepoSelect, deps)
+}
+
+// ParseArgsWithLabels is ParseArgs narrowed to repositories carrying any of
+// labels.
+func ParseArgsWithLabels(
+	args []string, labels domain.LabelSet, skipRepoSelect bool, deps app.RuntimeCLI,
+) (domain.Project, *domain.Repository, error) {
 	return target.Resolve(
-		target.Parse(args, !skipRepoSelect), NewFZF(deps), deps.Runtime)
+		target.Parse(args, !skipRepoSelect).WithLabels(labels),
+		NewFZF(deps), deps.Runtime)
 }
 
 // Project returns an interactively selected project name.
@@ -170,7 +179,14 @@ func SelectBranch(
 // when one was named, as the engine's target — prompting for whatever they
 // left out. It is the step every bulk command takes before running.
 func Target(args []string, deps app.RuntimeCLI) (command.Target, error) {
-	project, repo, err := ParseArgs(args, true, deps)
+	return TargetWithLabels(args, domain.LabelSet{}, deps)
+}
+
+// TargetWithLabels is Target narrowed to repositories carrying any of labels.
+func TargetWithLabels(
+	args []string, labels domain.LabelSet, deps app.RuntimeCLI,
+) (command.Target, error) {
+	project, repo, err := ParseArgsWithLabels(args, labels, true, deps)
 	if err != nil {
 		return command.Target{}, err
 	}

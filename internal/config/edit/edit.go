@@ -20,6 +20,7 @@ import (
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/fsutil"
 )
 
@@ -154,9 +155,11 @@ func sameIgnoringSpace(a, b string) bool {
 
 // repoEntry is one item under a project's `repos:`, in the key order the
 // config file documents.
+// Labels are written flow style: `labels: [demo, backend]`.
 type repoEntry struct {
-	Dir string `yaml:"dir"`
-	Src string `yaml:"src,omitempty"`
+	Dir    string   `yaml:"dir"`
+	Src    string   `yaml:"src,omitempty"`
+	Labels []string `yaml:"labels,omitempty,flow"`
 }
 
 // FindProject finds a project's mapping by name.
@@ -235,6 +238,8 @@ type Repo struct {
 	Dir string
 	// Src is the clone URL; empty omits `src:`.
 	Src string
+	// Labels are the repository's labels; empty omits `labels:`.
+	Labels []string
 }
 
 // AddProjectRepos appends a project with a path and an explicit `repos:`
@@ -300,8 +305,8 @@ func (cf *Doc) graft(frag *ast.MappingNode) error {
 // a block list gets another `- dir:` at its own indentation; a `repos:` that
 // is missing, null, or `[]` becomes a block list indented like the rest of
 // the file.
-func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
-	entry := repoEntry{Dir: dir, Src: src}
+func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string, labels ...string) error {
+	entry := repoEntry{Dir: dir, Src: src, Labels: labels}
 	repos := findKey(project, "repos")
 	if repos == nil {
 		frag, err := mappingFragment(map[string]any{"repos": []repoEntry{entry}})
@@ -342,6 +347,105 @@ func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
 	}
 	repos.Value = frag
 	return nil
+}
+
+// LabelRepo adds missing labels to the repository entry matching dir (or src when
+// dir is empty) and reports whether it changed. Returns ErrRepoNotListed.
+func (cf *Doc) LabelRepo(project *ast.MappingNode, dir, src string, labels []string) (bool, error) {
+	entry := findRepoEntry(project, dir, src)
+	if entry == nil {
+		return false, ErrRepoNotListed
+	}
+	existing := entryLabels(entry)
+	have := make([]string, 0, len(existing)+len(labels))
+	for _, label := range existing {
+		have = append(have, domain.NormalizeLabel(label))
+	}
+	added := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if norm := domain.NormalizeLabel(label); norm != "" && !slices.Contains(have, norm) {
+			have = append(have, norm)
+			added = append(added, label)
+		}
+	}
+	if len(added) == 0 {
+		return false, nil
+	}
+	return true, setEntryLabels(entry, append(existing, added...))
+}
+
+// ErrRepoNotListed is returned when a repository has no `repos:` entry.
+var ErrRepoNotListed = errors.New("repository has no entry in the config file")
+
+// findRepoEntry returns the `repos:` item whose `dir:` is dir, or with no
+// `dir:` and a `src:` of src when dir is empty. Returns nil when not found.
+func findRepoEntry(project *ast.MappingNode, dir, src string) *ast.MappingNode {
+	repos := findKey(project, "repos")
+	if repos == nil {
+		return nil
+	}
+	list, ok := repos.Value.(*ast.SequenceNode)
+	if !ok {
+		// Null or `[]`.
+		return nil
+	}
+	for _, value := range list.Values {
+		mapping, ok := value.(*ast.MappingNode)
+		if !ok {
+			continue
+		}
+		got := findKey(mapping, "dir")
+		switch {
+		case dir != "" && got != nil && scalarString(got.Value) == dir:
+			return mapping
+		case dir == "" && got == nil && src != "":
+			if gotSrc := findKey(mapping, "src"); gotSrc != nil && scalarString(gotSrc.Value) == src {
+				return mapping
+			}
+		}
+	}
+	return nil
+}
+
+// entryLabels returns a `repos:` item's labels.
+func entryLabels(entry *ast.MappingNode) []string {
+	node := findKey(entry, "labels")
+	if node == nil {
+		return nil
+	}
+	list, ok := node.Value.(*ast.SequenceNode)
+	if !ok {
+		return nil
+	}
+	labels := make([]string, 0, len(list.Values))
+	for _, value := range list.Values {
+		if label := scalarString(value); label != "" {
+			labels = append(labels, label)
+		}
+	}
+	return labels
+}
+
+// setEntryLabels sets a `repos:` item's labels as a flow list, adding the key if
+// missing.
+func setEntryLabels(entry *ast.MappingNode, labels []string) error {
+	frag, err := fragment(labels, yaml.Flow(true))
+	if err != nil {
+		return err
+	}
+	if node := findKey(entry, "labels"); node != nil {
+		node.Value = frag
+		return nil
+	}
+	mapping, err := mappingFragment(map[string]any{"labels": labels})
+	if err != nil {
+		return err
+	}
+	// Swap the block-style list for the flow one.
+	if len(mapping.Values) == 1 {
+		mapping.Values[0].Value = frag
+	}
+	return ast.Merge(entry, mapping)
 }
 
 // scalarString returns a scalar node's unquoted string, or "" otherwise.

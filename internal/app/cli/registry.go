@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rafi/gits/domain"
+
 	"github.com/rafi/gits/internal/app/cli/commands/discover"
 	"github.com/rafi/gits/internal/app/cli/commands/list"
 	"github.com/rafi/gits/internal/app/cli/commands/status"
@@ -39,6 +41,9 @@ var (
 
 // discoverOpts are the flags of `gits discover`.
 var discoverOpts discover.Options
+
+// labelValues holds each command's raw `--label` values, keyed by command name.
+var labelValues = map[string]*[]string{}
 
 // pushOpts is the vetted passthrough set for safe bulk push.
 // Nothing here reaches --force, -u or --mirror, and nothing should be added
@@ -84,6 +89,15 @@ func init() {
 	discoverFlags.BoolVarP(&discoverOpts.DryRun, "dry-run", "n", false,
 		"report what would be added, write nothing")
 
+	// `add` sets labels; the other commands filter by them.
+	for _, cmd := range []*cobra.Command{
+		checkoutCmd, cloneCmd, execCmd, fetchCmd, listCmd,
+		orphanCmd, pullCmd, pushCmd, statusCmd,
+	} {
+		registerLabelFlag(cmd, "only repositories carrying one of these labels (comma-separated)")
+	}
+	registerLabelFlag(addCmd, "label the recorded repositories (comma-separated)")
+
 	pushFlags := pushCmd.PersistentFlags()
 	pushFlags.BoolVar(&pushOpts.All, "all", false, "push all branches")
 	pushFlags.BoolVar(&pushOpts.Branches, "branches", false, "push all branches (synonym of --all)")
@@ -120,6 +134,24 @@ func registerOutputFlag(cmd *cobra.Command, dst *string, styles []string) {
 		StringVarP(dst, "output", "o", *dst,
 			fmt.Sprintf("output style (%s)", strings.Join(styles, ", ")))
 	mustRegisterFlagCompletion(cmd, "output", completeValues(styles))
+}
+
+// registerLabelFlag registers a command's repeatable, comma-separated `--label/-l`
+// flag and its completion.
+func registerLabelFlag(cmd *cobra.Command, usage string) {
+	dst := new([]string)
+	labelValues[cmd.Name()] = dst
+	cmd.PersistentFlags().StringSliceVarP(dst, "label", "l", nil, usage)
+	mustRegisterFlagCompletion(cmd, "label", completeLabels)
+}
+
+// labelSet returns the parsed `--label` values of the named command.
+func labelSet(cmd string) domain.LabelSet {
+	dst, ok := labelValues[cmd]
+	if !ok {
+		return domain.LabelSet{}
+	}
+	return domain.NewLabelSet(*dst)
 }
 
 // mustRegisterFlagCompletion panics on a failure to register, which cobra

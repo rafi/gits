@@ -16,6 +16,10 @@ type Repository struct {
 	URL       string `json:"url,omitempty"`
 	Desc      string `json:"desc,omitempty"`
 
+	// Labels are the repository's own labels; after load, they include inherited
+	// project labels.
+	Labels []Label `json:"labels,omitempty"`
+
 	Type    string    `json:"-"`
 	AbsPath string    `json:"-"`
 	State   RepoState `json:"-"`

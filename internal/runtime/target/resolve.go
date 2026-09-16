@@ -21,6 +21,9 @@ type Args struct {
 	Sub string
 	// Repo is a repository name.
 	Repo string
+	// Labels narrows the project to repositories carrying any of them. Empty
+	// keeps all.
+	Labels domain.LabelSet
 	// RequireRepo demands a repository: without one the command cannot command.
 	RequireRepo bool
 }
@@ -42,11 +45,17 @@ func Parse(args []string, requireRepo bool) Args {
 	return a
 }
 
+// WithLabels returns a copy of a narrowed to repositories carrying any of labels.
+func (a Args) WithLabels(labels domain.LabelSet) Args {
+	a.Labels = labels
+	return a
+}
+
 // Project loads the project named name, descending into the sub-project sub
 // when it is set. Naming something that does not exist is a real failure, not
 // a downgradeable warning: a script must be able to tell a typo from success.
-func Project(name, sub string, rt coreruntime.Runtime) (domain.Project, error) {
-	p, err := projects.LoadOne(name, rt)
+func Project(name, sub string, rt coreruntime.Runtime, opts ...projects.Option) (domain.Project, error) {
+	p, err := projects.LoadOne(name, rt, opts...)
 	if err != nil {
 		return p, fmt.Errorf("unable to load project: %w", err)
 	}
@@ -70,9 +79,18 @@ func Repo(p domain.Project, name string) (domain.Repository, error) {
 	return repo, nil
 }
 
+// labelList formats labels for an error message, or "no labels" when empty.
+func labelList(labels []domain.Label) string {
+	if len(labels) == 0 {
+		return "no labels"
+	}
+	return strings.Join(labels, ",")
+}
+
 // Resolve returns the project and, when asked for, the repository. The
 // repository comes back nil only when the command does not require one and no
 // second argument named one.
+// Labels that match no repository yield a warning.
 func Resolve(a Args, s Selector, rt coreruntime.Runtime) (
 	domain.Project, *domain.Repository, error,
 ) {
@@ -88,9 +106,13 @@ func Resolve(a Args, s Selector, rt coreruntime.Runtime) (
 		}
 	}
 
-	project, err := Project(name, a.Sub, rt)
+	project, err := Project(name, a.Sub, rt, projects.WithLabels(a.Labels))
 	if err != nil {
 		return project, nil, err
+	}
+	if !a.Labels.Empty() && project.CountRepos() == 0 {
+		return project, nil, domain.NewWarning(
+			"no repository in project %q carries label %s", project.Name, a.Labels)
 	}
 
 	if !a.RequireRepo && a.Repo == "" {
@@ -115,9 +137,31 @@ func Resolve(a Args, s Selector, rt coreruntime.Runtime) (
 		}
 	}
 
-	repo, err := Repo(project, repoName)
+	repo, err := lookup(project, repoName, name, a, rt)
 	if err != nil {
 		return project, nil, err
 	}
 	return project, &repo, nil
+}
+
+// lookup finds the named repository in project. With labels, a repository
+// filtered out by them is reported as unlabeled rather than not found.
+func lookup(
+	project domain.Project, repoName, name string, a Args, rt coreruntime.Runtime,
+) (domain.Repository, error) {
+	if a.Labels.Empty() {
+		return Repo(project, repoName)
+	}
+	if repo, found := project.GetRepo(repoName, ""); found {
+		return repo, nil
+	}
+	full, err := Project(name, a.Sub, rt)
+	if err != nil {
+		return domain.Repository{}, err
+	}
+	if missed, ok := full.GetRepo(repoName, ""); ok {
+		return domain.Repository{}, fmt.Errorf("repo %q does not carry label %s (it has %s)",
+			repoName, a.Labels, labelList(missed.Labels))
+	}
+	return domain.Repository{}, fmt.Errorf("repo %q not found", repoName)
 }
