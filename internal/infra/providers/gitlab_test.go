@@ -174,3 +174,39 @@ func flattenGitLabTree(p *domain.Project, prefix string) []string {
 	}
 	return lines
 }
+
+// TestGitLabSelfHostedBase proves a source url, path prefix included, sends
+// the REST API to <url>/api/v4.
+func TestGitLabSelfHostedBase(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/gitlab/api/v4/groups/acme":
+				fmt.Fprint(w, `{"id":1,"name":"Acme","path":"acme","full_path":"acme"}`)
+			case "/gitlab/api/v4/groups/acme/descendant_groups":
+				fmt.Fprint(w, `[]`)
+			case "/gitlab/api/v4/groups/acme/projects":
+				fmt.Fprint(w, `[{"id":10,"path":"top","namespace":{"full_path":"acme"}}]`)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+	defer server.Close()
+
+	p, err := NewGitProvider(t.Context(), "gitlab", Options{Token: "tok", BaseURL: server.URL + "/gitlab"})
+	if err != nil {
+		t.Fatalf("NewGitProvider: %v", err)
+	}
+	project := &domain.Project{}
+	if err := p.LoadRepos(t.Context(), "acme", project); err != nil {
+		t.Fatalf("LoadRepos: %v (requests %v)", err, paths)
+	}
+	if len(project.Repos) != 1 {
+		t.Errorf("repos = %d, want 1 (requests %v)", len(project.Repos), paths)
+	}
+}

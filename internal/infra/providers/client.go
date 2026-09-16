@@ -61,9 +61,13 @@ func infallible[P GitProvider](newProvider func(Options) P) func(Options) (GitPr
 type Options struct {
 	// Log traces provider work — page fetches, token command runs — for `-v`.
 	// Nothing a user must read goes here.
-	Log             *slog.Logger
-	Token           string
-	TokenCommand    string
+	Log          *slog.Logger
+	Token        string
+	TokenCommand string
+	// BaseURL is the self-hosted forge's web host (domain.ProviderSource
+	// BaseURL); empty for the public host. Environment tokens are never
+	// used with it.
+	BaseURL         string
 	IncludeArchived bool
 	Timeout         time.Duration
 	// GitClient is read-only: provider discovery only ever asks whether a
@@ -84,6 +88,12 @@ func NewGitProvider(ctx context.Context, providerName string, opts Options) (Git
 		opts.Token, err = resolveToken(ctx, providerType, opts)
 		if err != nil {
 			return nil, err
+		}
+		if opts.Token == "" && opts.BaseURL != "" {
+			return nil, fmt.Errorf(
+				"token is required for %s at %s: set token or tokenCommand"+
+					" (environment variables apply only to the public host)",
+				providerName, opts.BaseURL)
 		}
 		if opts.Token == "" {
 			return nil, fmt.Errorf("token is required for %s", providerName)

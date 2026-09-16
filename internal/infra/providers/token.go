@@ -28,7 +28,7 @@ var (
 
 // resolveToken returns the token for a provider, in order of precedence: the
 // configured token, the output of the configured token command, and finally
-// the provider's environment variables.
+// the provider's environment variables, which apply only to its public host.
 func resolveToken(ctx context.Context, provider domain.ProviderType, opts Options) (string, error) {
 	if opts.Token != "" {
 		return opts.Token, nil
@@ -39,6 +39,11 @@ func resolveToken(ctx context.Context, provider domain.ProviderType, opts Option
 			return "", fmt.Errorf("%s token command failed: %w", provider.Name, err)
 		}
 		return token, nil
+	}
+	// An environment token is set for the public host; a config naming
+	// another host must name its token too.
+	if opts.BaseURL != "" {
+		return "", nil
 	}
 	return getFirstEnvValue(provider.TokenEnvVars), nil
 }

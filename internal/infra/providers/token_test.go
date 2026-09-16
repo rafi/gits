@@ -256,3 +256,31 @@ func TestFirstNonEmptyLine(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveTokenIgnoresEnvForCustomHost proves an ambient token, set for
+// the public host, is never sent to a host the config names.
+func TestResolveTokenIgnoresEnvForCustomHost(t *testing.T) {
+	if runtimeIsWindows() {
+		t.Skip("shell fixtures assume a POSIX shell")
+	}
+	resetTokenCache(t)
+	clearTokenEnv(t)
+	t.Setenv("GITHUB_TOKEN", "from-env")
+
+	opts := Options{BaseURL: "https://github.corp.example"}
+	if got, err := resolveToken(t.Context(), githubType(t), opts); err != nil || got != "" {
+		t.Errorf("resolveToken(custom host, env only) = (%q, %v), want (\"\", nil)", got, err)
+	}
+	opts.TokenCommand = "echo from-cmd"
+	if got, err := resolveToken(t.Context(), githubType(t), opts); err != nil || got != "from-cmd" {
+		t.Errorf("resolveToken(custom host, command) = (%q, %v), want (\"from-cmd\", nil)", got, err)
+	}
+
+	_, err := NewGitProvider(t.Context(), "github", Options{BaseURL: "https://github.corp.example"})
+	if err == nil {
+		t.Fatal("NewGitProvider(custom host, env only) = nil error, want token required")
+	}
+	if !strings.Contains(err.Error(), "github.corp.example") {
+		t.Errorf("error = %v, want it to name the host", err)
+	}
+}

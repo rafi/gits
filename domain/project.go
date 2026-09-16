@@ -238,6 +238,7 @@ func (p *Project) RestoreAuth(from Project) {
 		p.Source.Token = from.Source.Token
 		p.Source.TokenCommand = from.Source.TokenCommand
 		p.Source.TokenCmd = from.Source.TokenCmd
+		p.Source.URL = from.Source.URL
 	}
 	if len(p.SubProjects) == 0 || len(from.SubProjects) == 0 {
 		return

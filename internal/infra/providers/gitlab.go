@@ -26,6 +26,9 @@ func newGitLabProvider(opts Options) (*gitLabProvider, error) {
 		clientOpts = append(clientOpts,
 			gitlab.WithHTTPClient(&http.Client{Timeout: opts.Timeout}))
 	}
+	if opts.BaseURL != "" {
+		clientOpts = append(clientOpts, gitlab.WithBaseURL(opts.BaseURL+"/api/v4"))
+	}
 	client, err := gitlab.NewClient(opts.Token, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create gitlab client: %w", err)

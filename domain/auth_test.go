@@ -267,3 +267,48 @@ func TestRestoreAuthWithProviderSubProjects(t *testing.T) {
 		t.Errorf("discovered sub-project given a credential: %+v", cached.SubProjects[0].Source)
 	}
 }
+
+// TestWithoutAuthStripsURLUser checks that the URL keeps its host but loses
+// its user, and that RestoreAuth puts the user back.
+func TestWithoutAuthStripsURLUser(t *testing.T) {
+	t.Parallel()
+
+	configured := Project{
+		Name:   "work",
+		Source: &ProviderSource{Type: "github", Search: "acme", URL: "https://rafi@git.corp.com/"},
+	}
+	cached := configured.WithoutAuth()
+	if got := cached.Source.URL; got != "https://git.corp.com/" {
+		t.Errorf("WithoutAuth() URL = %q, want %q", got, "https://git.corp.com/")
+	}
+	if configured.Source.URL != "https://rafi@git.corp.com/" {
+		t.Error("WithoutAuth() mutated its receiver")
+	}
+
+	raw, err := json.Marshal(cached)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(raw), "rafi") {
+		t.Errorf("marshaled project contains the URL user: %s", raw)
+	}
+	if identity := configured.Identity(); strings.Contains(identity.Source.URL, "rafi") {
+		t.Errorf("Identity() carried the URL user: %q", identity.Source.URL)
+	}
+
+	cached.RestoreAuth(configured)
+	if got := cached.Source.URL; got != "https://rafi@git.corp.com/" {
+		t.Errorf("RestoreAuth() URL = %q, want the configured one", got)
+	}
+}
+
+// TestWithoutAuthDropsUnparseableURL checks that a URL too malformed to strip
+// is removed rather than written out with whatever it holds.
+func TestWithoutAuthDropsUnparseableURL(t *testing.T) {
+	t.Parallel()
+
+	source := ProviderSource{Type: "github", Search: "acme", URL: "https://rafi:s3cret@host/%zz"}
+	if got := source.WithoutAuth().URL; got != "" {
+		t.Errorf("WithoutAuth() URL = %q, want empty", got)
+	}
+}

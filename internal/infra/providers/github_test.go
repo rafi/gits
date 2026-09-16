@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/shurcooL/githubv4"
+
+	"github.com/rafi/gits/domain"
 )
 
 // newTestGitHubProvider builds a provider whose GraphQL client talks to a
@@ -363,5 +365,60 @@ func TestGitHubFetchReposCancelledCtx(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("fetchRepos error = %v, want it to wrap context.Canceled", err)
+	}
+}
+
+// TestGitHubEnterpriseHost proves a source url sends GraphQL to
+// <url>/api/graphql with the token, and that a server reporting no budget —
+// GitHub Enterprise with rate limiting off — is walked unpaced.
+func TestGitHubEnterpriseHost(t *testing.T) {
+	t.Parallel()
+
+	for _, rateLimit := range []string{`"rateLimit":null,`, ``} {
+		var paths, auths []string
+		server := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				var req ghRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				paths = append(paths, r.URL.Path)
+				auths = append(auths, r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				if req.Variables.Cursor == nil {
+					fmt.Fprintf(w,
+						`{"data":{%s"repositoryOwner":{"id":"O_1","login":"platform","repositories":{"nodes":[%s],"pageInfo":{"endCursor":"c1","hasNextPage":true}}}}}`,
+						rateLimit, ghRepoNodes(1, 2))
+					return
+				}
+				fmt.Fprintf(w,
+					`{"data":{%s"repositoryOwner":{"id":"O_1","login":"platform","repositories":{"nodes":[%s],"pageInfo":{"endCursor":"c2","hasNextPage":false}}}}}`,
+					rateLimit, ghRepoNodes(3, 3))
+			},
+		))
+
+		p, err := NewGitProvider(t.Context(), "github", Options{Token: "tok", BaseURL: server.URL})
+		if err != nil {
+			t.Fatalf("NewGitProvider: %v", err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		project := &domain.Project{}
+		err = p.LoadRepos(ctx, "platform", project)
+		cancel()
+		server.Close()
+		if err != nil {
+			t.Fatalf("LoadRepos(rateLimit %q) error = %v", rateLimit, err)
+		}
+		if len(project.Repos) != 3 {
+			t.Errorf("LoadRepos(rateLimit %q) repos = %d, want 3", rateLimit, len(project.Repos))
+		}
+		for i := range paths {
+			if paths[i] != "/api/graphql" {
+				t.Errorf("request path = %q, want /api/graphql", paths[i])
+			}
+			if auths[i] != "Bearer tok" {
+				t.Errorf("Authorization = %q, want the configured token", auths[i])
+			}
+		}
 	}
 }

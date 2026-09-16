@@ -25,6 +25,13 @@ type ProviderType struct {
 	TokenRequired bool
 	// Settings returns the type's `settings:` block; nil when it has none.
 	Settings func(Settings) ProviderSettings
+	// URLAllowed accepts `url:`, the web host of a self-hosted forge.
+	URLAllowed bool
+	// URLRequired rejects a source without `url:`; the type has no public
+	// host to fall back to.
+	URLRequired bool
+	// PublicHost is the normalized url meaning the same as no url at all.
+	PublicHost string
 }
 
 var providerTypes = []ProviderType{
@@ -34,6 +41,8 @@ var providerTypes = []ProviderType{
 		TokenEnvVars:  []string{"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"},
 		TokenRequired: true,
 		Settings:      func(s Settings) ProviderSettings { return s.GitHub },
+		URLAllowed:    true,
+		PublicHost:    "https://github.com",
 	},
 	{
 		Name:          ProviderGitLab,
@@ -41,6 +50,8 @@ var providerTypes = []ProviderType{
 		TokenEnvVars:  []string{"GITLAB_TOKEN"},
 		TokenRequired: true,
 		Settings:      func(s Settings) ProviderSettings { return s.GitLab },
+		URLAllowed:    true,
+		PublicHost:    "https://gitlab.com",
 	},
 	{
 		Name:          ProviderBitbucket,
