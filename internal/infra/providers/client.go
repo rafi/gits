@@ -22,6 +22,7 @@ const (
 	ProviderBitbucket  Provider = domain.ProviderBitbucket
 	ProviderGitea      Provider = domain.ProviderGitea
 	ProviderForgejo    Provider = domain.ProviderForgejo
+	ProviderGerrit     Provider = domain.ProviderGerrit
 	ProviderFilesystem Provider = domain.ProviderFilesystem
 )
 
@@ -38,6 +39,7 @@ var constructors = map[string]func(Options) (GitProvider, error){
 	domain.ProviderBitbucket:  fallible(newBitbucketProvider),
 	domain.ProviderGitea:      fallible(giteaConstructor(domain.ProviderGitea)),
 	domain.ProviderForgejo:    fallible(giteaConstructor(domain.ProviderForgejo)),
+	domain.ProviderGerrit:     fallible(newGerritProvider),
 	domain.ProviderFilesystem: infallible(newFilesystemProvider),
 }
 
@@ -72,7 +74,10 @@ type Options struct {
 	// BaseURL is the self-hosted forge's web host (domain.ProviderSource
 	// BaseURL); empty for the public host. Environment tokens are never
 	// used with it.
-	BaseURL         string
+	BaseURL string
+	// Username is the account a token authenticates as and clones use
+	// (domain.Settings.SourceUsername). Read by gerrit only.
+	Username        string
 	IncludeArchived bool
 	Timeout         time.Duration
 	// RateLimit caps requests per second to one host, shared with every

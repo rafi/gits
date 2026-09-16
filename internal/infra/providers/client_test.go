@@ -23,6 +23,7 @@ func TestNewGitProvider(t *testing.T) {
 		{"gitea", "gitea", "tok", "https://gitea.com", "*providers.giteaProvider", false},
 		{"forgejo without token", "forgejo", "", "https://codeberg.org", "*providers.giteaProvider", false},
 		{"gitea without url", "gitea", "tok", "", "", true},
+		{"gerrit without token", "gerrit", "", "https://review.test", "*providers.gerritProvider", false},
 		{"filesystem", "filesystem", "", "", "*providers.filesystemProvider", false},
 		{"unknown", "svn", "", "", "", true},
 	}
@@ -75,6 +76,8 @@ func typeName(v any) string {
 		return "*providers.bitbucketProvider"
 	case *giteaProvider:
 		return "*providers.giteaProvider"
+	case *gerritProvider:
+		return "*providers.gerritProvider"
 	case *filesystemProvider:
 		return "*providers.filesystemProvider"
 	default:

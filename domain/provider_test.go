@@ -48,6 +48,8 @@ func TestProviderSourceValidate(t *testing.T) {
 		{"bitbucket empty search names owner", ProviderSource{Type: "bitbucket", Search: ""}, true, "owner"},
 		{"gitea empty search names owner", ProviderSource{Type: "gitea", Search: "", URL: "https://gitea.com"}, true, "owner"},
 		{"forgejo ok", ProviderSource{Type: "forgejo", Search: "rafi", URL: "https://codeberg.org"}, false, ""},
+		{"gerrit ok", ProviderSource{Type: "gerrit", Search: "openstack/", URL: "https://review.opendev.org"}, false, ""},
+		{"gerrit empty search names prefix", ProviderSource{Type: "gerrit", Search: "", URL: "https://review.opendev.org"}, true, "prefix"},
 		{"filesystem empty search names path", ProviderSource{Type: "filesystem", Search: ""}, true, "path"},
 	}
 	for _, tt := range tests {
@@ -85,6 +87,7 @@ func TestProviderSourceValidateURL(t *testing.T) {
 		{"public host", ProviderSource{Type: "github", Search: "acme", URL: "https://github.com"}, ""},
 		{"gitea requires url", ProviderSource{Type: "gitea", Search: "acme"}, "gitea"},
 		{"forgejo requires url", ProviderSource{Type: "forgejo", Search: "rafi"}, "forgejo"},
+		{"gerrit requires url", ProviderSource{Type: "gerrit", Search: "openstack/"}, "gerrit"},
 		{"gitea host", ProviderSource{Type: "gitea", Search: "acme", URL: "https://gitea.com/"}, ""},
 		{"bitbucket rejects url", ProviderSource{Type: "bitbucket", Search: "team", URL: "https://bb.corp"}, "bitbucket"},
 		{"filesystem rejects url", ProviderSource{Type: "filesystem", Search: "/code", URL: "https://x"}, "filesystem"},
@@ -194,5 +197,38 @@ func TestUniqueKeySeparatesURLUsers(t *testing.T) {
 	}
 	if strings.Contains(rafi.UniqueKey(), "rafi") {
 		t.Errorf("UniqueKey() leaks the URL user: %q", rafi.UniqueKey())
+	}
+}
+
+func TestProviderSourceValidateUsername(t *testing.T) {
+	t.Parallel()
+
+	gerrit := ProviderSource{Type: "gerrit", Search: "p", URL: "https://review.test", Username: "rafi"}
+	if err := gerrit.Validate(); err != nil {
+		t.Errorf("gerrit with username: Validate() = %v, want nil", err)
+	}
+	github := ProviderSource{Type: "github", Search: "acme", Username: "rafi"}
+	if err := github.Validate(); err == nil || !strings.Contains(err.Error(), "github") {
+		t.Errorf("github with username: Validate() = %v, want error naming github", err)
+	}
+}
+
+// TestUniqueKeySeparatesUsernames checks that a source username changes the
+// key, since it shapes every repository's Src, without appearing in it.
+func TestUniqueKeySeparatesUsernames(t *testing.T) {
+	t.Parallel()
+
+	plain := ProviderSource{Type: "gerrit", Search: "p", URL: "https://review.test"}
+	rafi := plain
+	rafi.Username = "rafi"
+	inURL := plain
+	inURL.URL = "https://rafi@review.test"
+
+	if rafi.UniqueKey() == plain.UniqueKey() || rafi.UniqueKey() == inURL.UniqueKey() {
+		t.Errorf("usernames share a cache entry: %q, %q, %q",
+			plain.UniqueKey(), rafi.UniqueKey(), inURL.UniqueKey())
+	}
+	if strings.Contains(rafi.UniqueKey(), "rafi") {
+		t.Errorf("UniqueKey() leaks the username: %q", rafi.UniqueKey())
 	}
 }

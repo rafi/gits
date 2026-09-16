@@ -9,6 +9,7 @@ const (
 	ProviderBitbucket  = "bitbucket"
 	ProviderGitea      = "gitea"
 	ProviderForgejo    = "forgejo"
+	ProviderGerrit     = "gerrit"
 	ProviderFilesystem = "filesystem"
 )
 
@@ -34,6 +35,8 @@ type ProviderType struct {
 	URLRequired bool
 	// PublicHost is the normalized url meaning the same as no url at all.
 	PublicHost string
+	// UsernameAllowed accepts `username:` on the source.
+	UsernameAllowed bool
 	// RetrySafe lets a throttled request be sent again. Declared rather than
 	// inferred from the method: GitHub reads over POST.
 	RetrySafe bool
@@ -88,6 +91,17 @@ var providerTypes = []ProviderType{
 		Settings:    func(s Settings) ProviderSettings { return s.Forgejo },
 		URLAllowed:  true,
 		URLRequired: true,
+	},
+	{
+		// Gerrit likewise has no public host. Its token is an HTTP password,
+		// so it goes with a username, which also names the SSH clone user.
+		Name:            ProviderGerrit,
+		RetrySafe:       true,
+		SearchField:     "prefix",
+		Settings:        func(s Settings) ProviderSettings { return s.Gerrit },
+		URLAllowed:      true,
+		URLRequired:     true,
+		UsernameAllowed: true,
 	},
 	{
 		// Read from disk, so it authenticates against nothing.
