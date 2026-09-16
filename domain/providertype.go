@@ -1,0 +1,71 @@
+package domain
+
+import "slices"
+
+// The Provider Source type names. The strings are config vocabulary.
+const (
+	ProviderGitHub     = "github"
+	ProviderGitLab     = "gitlab"
+	ProviderBitbucket  = "bitbucket"
+	ProviderFilesystem = "filesystem"
+)
+
+// ProviderType describes one Provider Source type: everything validation,
+// settings and token lookup need to know about it. Its constructor lives
+// with the provider implementations, keyed by the same Name.
+type ProviderType struct {
+	// Name is the `type:` value selecting it.
+	Name string
+	// SearchField names what `search:` holds, for validation messages.
+	SearchField string
+	// TokenEnvVars are the environment variables consulted, in order, when
+	// no token is configured.
+	TokenEnvVars []string
+	// TokenRequired rejects discovery when no token resolves.
+	TokenRequired bool
+	// Settings returns the type's `settings:` block; nil when it has none.
+	Settings func(Settings) ProviderSettings
+}
+
+var providerTypes = []ProviderType{
+	{
+		Name:          ProviderGitHub,
+		SearchField:   "owner",
+		TokenEnvVars:  []string{"GITHUB_TOKEN", "HOMEBREW_GITHUB_API_TOKEN"},
+		TokenRequired: true,
+		Settings:      func(s Settings) ProviderSettings { return s.GitHub },
+	},
+	{
+		Name:          ProviderGitLab,
+		SearchField:   "groupID",
+		TokenEnvVars:  []string{"GITLAB_TOKEN"},
+		TokenRequired: true,
+		Settings:      func(s Settings) ProviderSettings { return s.GitLab },
+	},
+	{
+		Name:          ProviderBitbucket,
+		SearchField:   "owner",
+		TokenEnvVars:  []string{"BITBUCKET_TOKEN"},
+		TokenRequired: true,
+		Settings:      func(s Settings) ProviderSettings { return s.Bitbucket },
+	},
+	{
+		// Read from disk, so it authenticates against nothing.
+		Name:        ProviderFilesystem,
+		SearchField: "path",
+	},
+}
+
+// LookupProviderType returns the Provider Source type called name.
+func LookupProviderType(name string) (ProviderType, bool) {
+	i := slices.IndexFunc(providerTypes, func(t ProviderType) bool { return t.Name == name })
+	if i < 0 {
+		return ProviderType{}, false
+	}
+	return providerTypes[i], true
+}
+
+// ProviderTypes returns every Provider Source type.
+func ProviderTypes() []ProviderType {
+	return slices.Clone(providerTypes)
+}

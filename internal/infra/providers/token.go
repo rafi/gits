@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/logging"
 )
 
@@ -28,18 +29,18 @@ var (
 // resolveToken returns the token for a provider, in order of precedence: the
 // configured token, the output of the configured token command, and finally
 // the provider's environment variables.
-func resolveToken(ctx context.Context, provider Provider, opts Options) (string, error) {
+func resolveToken(ctx context.Context, provider domain.ProviderType, opts Options) (string, error) {
 	if opts.Token != "" {
 		return opts.Token, nil
 	}
 	if cmd := strings.TrimSpace(opts.TokenCommand); cmd != "" {
 		token, err := runTokenCommand(ctx, opts.Log, cmd)
 		if err != nil {
-			return "", fmt.Errorf("%s token command failed: %w", provider, err)
+			return "", fmt.Errorf("%s token command failed: %w", provider.Name, err)
 		}
 		return token, nil
 	}
-	return getFirstEnvValue(tokenEnvVarNames[provider]), nil
+	return getFirstEnvValue(provider.TokenEnvVars), nil
 }
 
 // runTokenCommand executes command with the system shell and returns the

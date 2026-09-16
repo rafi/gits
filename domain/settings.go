@@ -65,16 +65,11 @@ func (p ProviderSettings) IsZero() bool {
 // ProviderAuth returns the credentials configured for a provider source
 // type. Types that need no token (e.g. "filesystem") yield the zero value.
 func (s Settings) ProviderAuth(providerType string) ProviderSettings {
-	switch strings.ToLower(providerType) {
-	case "github":
-		return s.GitHub
-	case "gitlab":
-		return s.GitLab
-	case "bitbucket":
-		return s.Bitbucket
-	default:
+	t, ok := LookupProviderType(strings.ToLower(providerType))
+	if !ok || t.Settings == nil {
 		return ProviderSettings{}
 	}
+	return t.Settings(s)
 }
 
 // SourceAuth returns the source's own credentials, or its provider's settings

@@ -57,17 +57,8 @@ func authDigest(auth ProviderSettings) string {
 // Validate reports whether the Provider Source names a known type and
 // carries the search term that type requires.
 func (ps ProviderSource) Validate() error {
-	var fieldName string
-	switch ps.Type {
-	case "github":
-		fieldName = "owner"
-	case "gitlab":
-		fieldName = "groupID"
-	case "bitbucket":
-		fieldName = "owner"
-	case "filesystem":
-		fieldName = "path"
-	default:
+	providerType, ok := LookupProviderType(ps.Type)
+	if !ok {
 		return fmt.Errorf("unknown source type: %s. see %s", ps.Type, readmeURL)
 	}
 	if ps.Search == "" {
@@ -75,7 +66,7 @@ func (ps ProviderSource) Validate() error {
 			"for %s provider, make sure you included the correct %q value"+
 				" in your config file under the `search:` key.\nsee %s",
 			ps.Type,
-			fieldName,
+			providerType.SearchField,
 			readmeURL,
 		)
 	}
