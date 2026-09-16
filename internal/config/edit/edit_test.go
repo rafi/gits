@@ -1,4 +1,4 @@
-package add
+package edit
 
 import (
 	"os"
@@ -23,11 +23,11 @@ func TestSaveRoundTrip(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 
-	config, err := load(path)
+	doc, err := Load(path)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if err := config.save(path); err != nil {
+	if err := doc.Save(path); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 
@@ -234,18 +234,18 @@ beta:
 			if err := os.WriteFile(path, []byte(tt.in), 0o644); err != nil {
 				t.Fatalf("write config: %v", err)
 			}
-			config, err := load(path)
+			doc, err := Load(path)
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
-			project, err := config.findProject(tt.project)
+			project, err := doc.FindProject(tt.project)
 			if err != nil {
 				t.Fatalf("findProject: %v", err)
 			}
-			if err := config.addRepo(project, "~/new", "git@h:o/new.git"); err != nil {
+			if err := doc.AddRepo(project, "~/new", "git@h:o/new.git"); err != nil {
 				t.Fatalf("addRepo: %v", err)
 			}
-			if err := config.save(path); err != nil {
+			if err := doc.Save(path); err != nil {
 				t.Fatalf("save: %v", err)
 			}
 			got, err := os.ReadFile(path)
@@ -328,18 +328,18 @@ fresh:
 					t.Fatalf("write config: %v", err)
 				}
 			}
-			config, err := load(path)
+			doc, err := Load(path)
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
-			project, err := config.addProject("fresh")
+			project, err := doc.AddProject("fresh")
 			if err != nil {
 				t.Fatalf("addProject: %v", err)
 			}
-			if err := config.addRepo(project, "~/new", "git@h:o/new.git"); err != nil {
+			if err := doc.AddRepo(project, "~/new", "git@h:o/new.git"); err != nil {
 				t.Fatalf("addRepo: %v", err)
 			}
-			if err := config.save(path); err != nil {
+			if err := doc.Save(path); err != nil {
 				t.Fatalf("save: %v", err)
 			}
 			got, err := os.ReadFile(path)
@@ -363,7 +363,7 @@ func TestLoadRejectsNonMapping(t *testing.T) {
 		if err := os.WriteFile(path, []byte(in), 0o644); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
-		if _, err := load(path); err == nil {
+		if _, err := Load(path); err == nil {
 			t.Errorf("load(%q) error = nil, want a rejected top level", in)
 		}
 	}
@@ -376,7 +376,7 @@ func TestLoadRejectsNonMapping(t *testing.T) {
 func TestSaveKeepsExamplesByteForByte(t *testing.T) {
 	t.Parallel()
 
-	examples, err := filepath.Glob(filepath.Join("..", "..", "..", "..", "..", "examples", "*.yaml"))
+	examples, err := filepath.Glob(filepath.Join("..", "..", "..", "examples", "*.yaml"))
 	if err != nil || len(examples) == 0 {
 		t.Fatalf("no example configs found: %v", err)
 	}
@@ -391,11 +391,11 @@ func TestSaveKeepsExamplesByteForByte(t *testing.T) {
 			if err := os.WriteFile(path, want, 0o644); err != nil {
 				t.Fatalf("write config: %v", err)
 			}
-			config, err := load(path)
+			doc, err := Load(path)
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
-			if err := config.save(path); err != nil {
+			if err := doc.Save(path); err != nil {
 				t.Fatalf("save: %v", err)
 			}
 			got, err := os.ReadFile(path)

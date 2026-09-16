@@ -3,7 +3,6 @@ package add
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/goccy/go-yaml/ast"
@@ -11,7 +10,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	pick "github.com/rafi/gits/internal/app/cli/interaction/select"
-	"github.com/rafi/gits/internal/config"
+	"github.com/rafi/gits/internal/config/edit"
 	"github.com/rafi/gits/internal/format"
 	"github.com/rafi/gits/internal/infra/providers"
 )
@@ -36,11 +35,14 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 				"name the project to create, as in `gits add myproject`")
 	}
 
-	configPath, err := ensureConfigFile(deps)
+	configPath, created, err := edit.EnsurePath(deps.ConfigPath)
 	if err != nil {
 		return err
 	}
-	doc, err := load(configPath)
+	if created {
+		fmt.Fprintf(deps.Err, "Created config file %s\n", format.Path(configPath, deps.HomeDir))
+	}
+	doc, err := edit.Load(configPath)
 	if err != nil {
 		return err
 	}
@@ -78,7 +80,7 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 			return fmt.Errorf("unable to read the remote of %s: %w", path, err)
 		}
 		nicePath := format.Path(path, deps.HomeDir)
-		if err := doc.addRepo(projNode, nicePath, remoteURL); err != nil {
+		if err := doc.AddRepo(projNode, nicePath, remoteURL); err != nil {
 			return err
 		}
 		added = append(added, nicePath)
@@ -88,7 +90,7 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 	if len(added) == 0 {
 		return domain.NewWarning("nothing to add to project %q", project.Name)
 	}
-	if err := doc.save(configPath); err != nil {
+	if err := doc.Save(configPath); err != nil {
 		return err
 	}
 
@@ -98,55 +100,11 @@ func ExecAdd(args []string, deps app.RuntimeCLI) error {
 	return nil
 }
 
-// ensureConfigFile returns the config file `add` should write to, creating an
-// empty one for a user who has none. A user with a config file always gets
-// that file: the empty ConfigPath this acts on means the loader searched every
-// default location and found nothing, and the new file is created with
-// O_EXCL, so a file that appeared in the meantime is used as it is rather than
-// truncated. Nothing here ever writes over a config that already exists.
-func ensureConfigFile(deps app.RuntimeCLI) (string, error) {
-	if deps.ConfigPath != "" {
-		return deps.ConfigPath, nil
-	}
-	// Re-run the loader's own search: ConfigPath is empty both for a user with
-	// no config file and for a test that left the field unset.
-	existing, err := config.ExistingPath()
-	if err != nil {
-		return "", err
-	}
-	if existing != "" {
-		return existing, nil
-	}
-
-	path, err := config.NewFilePath()
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", fmt.Errorf("unable to create config directory: %w", err)
-	}
-	// A config file can hold provider tokens, so a file gits creates is the
-	// user's own to read; one that already exists keeps the mode they chose.
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
-	switch {
-	case os.IsExist(err):
-		// Another process wrote one between the search and now: append to it.
-		return path, nil
-	case err != nil:
-		return "", fmt.Errorf("unable to create config file: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("unable to create config file: %w", err)
-	}
-	fmt.Fprintf(deps.Err, "Created config file %s\n", format.Path(path, deps.HomeDir))
-	return path, nil
-}
-
 // ensureProject returns a project by name along with its mapping in the
 // config file, and creates both when the project doesn't exist. If no project
 // name is provided, user will be prompted to select one.
 func ensureProject(
-	args []string, config *configDoc, deps app.RuntimeCLI,
+	args []string, doc *edit.Doc, deps app.RuntimeCLI,
 ) (domain.Project, *ast.MappingNode, error) {
 	if len(args) > 0 {
 		if _, foundProject := deps.Projects[args[0]]; !foundProject {
@@ -155,7 +113,7 @@ func ensureProject(
 				Name:  args[0],
 				Repos: []domain.Repository{},
 			}
-			node, err := config.addProject(project.Name)
+			node, err := doc.AddProject(project.Name)
 			return project, node, err
 		}
 		// Only the project name is relevant for selection.
@@ -170,7 +128,7 @@ func ensureProject(
 	if err := rejectDiscovered(project); err != nil {
 		return project, nil, err
 	}
-	node, err := config.findProject(project.Name)
+	node, err := doc.FindProject(project.Name)
 	return project, node, err
 }
 

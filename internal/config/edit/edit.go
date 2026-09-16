@@ -1,6 +1,13 @@
-// Package add implements `gits add`, which records a Repository in a
-// Project's config file.
-package add
+// Package edit changes a gits config file in place, as a YAML syntax tree, so
+// that writing it back alters only the lines an edit adds: comments, blank
+// lines, quoting, and the indentation the user chose all survive as they were
+// written.
+//
+// It is the one writer of the config file. `gits add` appends a Repository to
+// a Project's `repos:`; `gits discover` appends whole Projects with a Project
+// Path. Both go through here, so a config file is rewritten by one set of
+// rules rather than by each command's own.
+package edit
 
 import (
 	"errors"
@@ -16,10 +23,10 @@ import (
 	"github.com/rafi/gits/internal/infra/fsutil"
 )
 
-// configDoc is a config file held as a YAML syntax tree, so that writing it
+// Doc is a config file held as a YAML syntax tree, so that writing it
 // back changes only the lines `gits add` appends: comments, blank lines,
 // quoting, and indentation the user chose all survive as they were.
-type configDoc struct {
+type Doc struct {
 	file *ast.File
 	// original is the file as read, and pristine is the syntax tree printed
 	// back before any change. Where the two differ only in whitespace, save
@@ -32,10 +39,10 @@ type configDoc struct {
 	root *ast.MappingNode
 }
 
-// load parses a yaml file into a configDoc. A file that is empty, or absent
+// Load parses a yaml file into a Doc. A file that is empty, or absent
 // at a path the caller chose, is one to append to rather than a failure — the
 // first `gits add` is exactly how a config gets started.
-func load(filePath string) (*configDoc, error) {
+func Load(filePath string) (*Doc, error) {
 	if filePath == "" {
 		return nil, errors.New("no config file found: pass one with `-c`")
 	}
@@ -54,10 +61,10 @@ func load(filePath string) (*configDoc, error) {
 	default:
 		return nil, errNotAMapping
 	}
-	cf := &configDoc{file: file, original: data, pristine: file.String()}
+	cf := &Doc{file: file, original: data, pristine: file.String()}
 	switch body := file.Docs[0].Body.(type) {
 	case nil, *ast.CommentGroupNode:
-		// Nothing but whitespace or comments: the first addProject makes the
+		// Nothing but whitespace or comments: the first AddProject makes the
 		// root mapping, and keeps the comments above it.
 	case *ast.MappingNode:
 		cf.root = body
@@ -75,9 +82,9 @@ var errNotAMapping = errors.New("config file is not a mapping of projects")
 // no block of its own to copy the style from.
 const yamlIndent = 2
 
-// save writes the config file back, atomically: the original file mode is
+// Save writes the config file back, atomically: the original file mode is
 // preserved, and any failure leaves no temp file behind.
-func (cf *configDoc) save(filePath string) error {
+func (cf *Doc) Save(filePath string) error {
 	data := []byte(splice(string(cf.original), cf.pristine, cf.file.String()))
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		data = append(data, '\n')
@@ -152,8 +159,8 @@ type repoEntry struct {
 	Src string `yaml:"src"`
 }
 
-// findProject finds a project's mapping by name.
-func (cf *configDoc) findProject(projectName string) (*ast.MappingNode, error) {
+// FindProject finds a project's mapping by name.
+func (cf *Doc) FindProject(projectName string) (*ast.MappingNode, error) {
 	if cf.root == nil {
 		return nil, fmt.Errorf("unable to find project %q in config", projectName)
 	}
@@ -168,10 +175,40 @@ func (cf *configDoc) findProject(projectName string) (*ast.MappingNode, error) {
 	return project, nil
 }
 
-// addProject appends a project with an empty `repos:` to the root mapping,
+// AddProject appends a project with an empty `repos:` to the root mapping,
 // and returns its mapping node.
-func (cf *configDoc) addProject(projectName string) (*ast.MappingNode, error) {
-	frag, err := mappingFragment(map[string]any{projectName: map[string]any{"repos": nil}})
+func (cf *Doc) AddProject(projectName string) (*ast.MappingNode, error) {
+	return cf.addProject(projectName, map[string]any{"repos": nil})
+}
+
+// AddProjectPath appends a project that is nothing but a Project Path, which
+// is the whole of a project discovered from the filesystem: the loader gives
+// a project with a path and no `repos:` a filesystem source of its own, so
+// the entry stays one line per project however many repositories come and go
+// under it. A description is written when one is given and omitted when not.
+func (cf *Doc) AddProjectPath(projectName, path, desc string) error {
+	body := map[string]any{"path": path}
+	if desc != "" {
+		body["desc"] = desc
+	}
+	_, err := cf.addProject(projectName, body)
+	return err
+}
+
+// HasProject reports whether the config file already holds a project under
+// this name. It asks the file rather than the loaded project list, so a name
+// taken by an entry the loader skipped still counts as taken.
+func (cf *Doc) HasProject(projectName string) bool {
+	if cf.root == nil {
+		return false
+	}
+	return findKey(cf.root, projectName) != nil
+}
+
+// addProject appends a project with the given body to the root mapping, and
+// returns its mapping node.
+func (cf *Doc) addProject(projectName string, body map[string]any) (*ast.MappingNode, error) {
+	frag, err := mappingFragment(map[string]any{projectName: body})
 	if err != nil {
 		return nil, err
 	}
@@ -188,15 +225,15 @@ func (cf *configDoc) addProject(projectName string) (*ast.MappingNode, error) {
 	} else if err := ast.Merge(cf.root, frag); err != nil {
 		return nil, err
 	}
-	return cf.findProject(projectName)
+	return cf.FindProject(projectName)
 }
 
-// addRepo appends a repository to a project's `repos:`. The new item takes
+// AddRepo appends a repository to a project's `repos:`. The new item takes
 // the style of the list it joins: a flow list `[...]` gets another flow item;
 // a block list gets another `- dir:` at its own indentation; a `repos:` that
 // is missing, null, or `[]` becomes a block list indented like the rest of
 // the file.
-func (cf *configDoc) addRepo(project *ast.MappingNode, dir, src string) error {
+func (cf *Doc) AddRepo(project *ast.MappingNode, dir, src string) error {
 	entry := repoEntry{Dir: dir, Src: src}
 	repos := findKey(project, "repos")
 	if repos == nil {
