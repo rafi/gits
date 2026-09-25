@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -303,13 +304,30 @@ func (g *Git) Refs(ctx context.Context, path string) ([]string, error) {
 	return splitLines(cleanOutput(output)), nil
 }
 
+// adviceOff silences git's advice hints — the "hint:" and "use git ... to"
+// lines git prints to teach interactive users — on every invocation. They
+// would otherwise land in the git messages gits folds into its errors and
+// output. advice.all needs git ≥2.44; the individual keys cover the
+// commands gits runs on older versions. Git ignores config keys it doesn't
+// know, so the redundant pairs are harmless on any version.
+var adviceOff = []string{
+	"-c", "advice.all=false",
+	"-c", "advice.detachedHead=false",
+	"-c", "advice.checkoutAmbiguousRemoteBranchName=false",
+	"-c", "advice.diverging=false",
+	"-c", "advice.pushUpdateRejected=false",
+	"-c", "advice.pushUnqualifiedRefName=false",
+	"-c", "advice.skippedCherryPicks=false",
+	"-c", "advice.statusHints=false",
+}
+
 // command builds the git invocation for path; every execution path goes
 // through here. On context cancellation git is terminated gracefully
 // (SIGTERM with a kill grace period) so its own cleanup handlers run —
 // e.g. removing a partially cloned directory — instead of the default
 // SIGKILL which leaves junk behind.
 func (g *Git) command(ctx context.Context, path string, args []string) *exec.Cmd {
-	args = append([]string{"-C", path}, args...)
+	args = slices.Concat(adviceOff, []string{"-C", path}, args)
 	cmd := exec.CommandContext(ctx, gitBin, args...)
 	cmd.Cancel = func() error {
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
