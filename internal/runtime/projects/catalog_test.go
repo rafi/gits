@@ -206,6 +206,10 @@ func (c *recordingCache) Save(string, domain.Project) error {
 
 func (c *recordingCache) Flush(domain.Project) error { return nil }
 
+func (c *recordingCache) Peek(string) (domain.Project, bool, error) {
+	return domain.Project{}, false, nil
+}
+
 func TestDiscoverSource(t *testing.T) {
 	t.Parallel()
 

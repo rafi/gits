@@ -160,33 +160,9 @@ func describeEntry(path string, ttl time.Duration) Entry {
 // was found. A stale or unreadable entry reports false, not an error.
 // Credentials from project are kept.
 func (cf *File) Get(key string, project *domain.Project) (bool, error) {
-	path, err := cacheFilePath(key)
-	if err != nil {
-		return false, fmt.Errorf("failed to get cache file path: %w", err)
-	}
-	fp, err := os.Open(path)
-	if os.IsNotExist(err) {
-		cf.logger().Debug("cache file not found", "path", path)
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("failed to open cache file: %w", err)
-	}
-	defer fp.Close()
-
-	// Read the file content
-	content, err := io.ReadAll(fp)
-	if err != nil {
-		return false, fmt.Errorf("failed to read cache file: %w", err)
-	}
-
-	// Parse the JSON content into a local value so one read can never leak
-	// state into the next. A corrupt cache file (interrupted write, disk
-	// full) is a miss to be refreshed, never a hard error.
-	var p payload
-	if err := json.Unmarshal(content, &p); err != nil {
-		cf.logger().Warn("ignoring corrupt cache file", "path", path, "err", err)
-		return false, nil
+	p, found, err := cf.read(key)
+	if !found || err != nil {
+		return false, err
 	}
 
 	// Bust cache if version or checksum mismatch
@@ -215,6 +191,50 @@ func (cf *File) Get(key string, project *domain.Project) (bool, error) {
 	cached.RestoreAuth(*project)
 	*project = cached
 	return true, nil
+}
+
+// Peek returns the Project stored under key whatever its age or checksum, so
+// `gits sync` can tell which repositories a refresh introduced. An entry
+// written by another gits version is still a miss: its layout may differ,
+// and misreading it would report every repository as new.
+func (cf *File) Peek(key string) (domain.Project, bool, error) {
+	p, found, err := cf.read(key)
+	if !found || err != nil || p.Version != version.GetMajorMinor() {
+		return domain.Project{}, false, err
+	}
+	return p.Project, true, nil
+}
+
+// read parses the cache file for key. A missing or corrupt file is not
+// found rather than an error: an interrupted write or a full disk must
+// degrade to a refresh, never block every command until the file is deleted.
+func (cf *File) read(key string) (payload, bool, error) {
+	var p payload
+	path, err := cacheFilePath(key)
+	if err != nil {
+		return p, false, fmt.Errorf("failed to get cache file path: %w", err)
+	}
+	fp, err := os.Open(path)
+	if os.IsNotExist(err) {
+		cf.logger().Debug("cache file not found", "path", path)
+		return p, false, nil
+	}
+	if err != nil {
+		return p, false, fmt.Errorf("failed to open cache file: %w", err)
+	}
+	defer fp.Close()
+
+	content, err := io.ReadAll(fp)
+	if err != nil {
+		return p, false, fmt.Errorf("failed to read cache file: %w", err)
+	}
+	// Parse into a local value so one read can never leak state into the
+	// next.
+	if err := json.Unmarshal(content, &p); err != nil {
+		cf.logger().Warn("ignoring corrupt cache file", "path", path, "err", err)
+		return payload{}, false, nil
+	}
+	return p, true, nil
 }
 
 // Save writes project to the cache file for key.

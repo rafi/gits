@@ -181,6 +181,9 @@ type hitCache struct{}
 func (hitCache) Get(string, *domain.Project) (bool, error) { return true, nil }
 func (hitCache) Save(string, domain.Project) error         { return nil }
 func (hitCache) Flush(domain.Project) error                { return nil }
+func (hitCache) Peek(string) (domain.Project, bool, error) {
+	return domain.Project{}, false, nil
+}
 
 // TestExecCloneRemoteOnly covers the state clone must never hand to git: a
 // provider-backed repository with no local home (remote-only). It is passed

@@ -33,6 +33,9 @@ type stubCache struct{}
 func (stubCache) Get(string, *domain.Project) (bool, error) { return false, nil }
 func (stubCache) Save(string, domain.Project) error         { return nil }
 func (stubCache) Flush(domain.Project) error                { return nil }
+func (stubCache) Peek(string) (domain.Project, bool, error) {
+	return domain.Project{}, false, nil
+}
 
 func finderDeps(t *testing.T) app.RuntimeCLI {
 	t.Helper()

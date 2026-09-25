@@ -11,18 +11,23 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/infra/providers"
+	"github.com/rafi/gits/internal/logging"
 	coreruntime "github.com/rafi/gits/internal/runtime"
 	"github.com/rafi/gits/internal/runtime/projects"
 )
 
 // Result is what refreshing one Project produced: where its repositories
-// were discovered from, where they live locally, and how many came back with
-// Sub-projects included.
+// were discovered from, where they live locally, how many came back with
+// Sub-projects included, and which of those the dropped cache did not have.
 type Result struct {
 	Source  domain.ProviderSource
 	Path    string
 	Repos   int
 	Flushed bool
+	// New lists the repositories the refresh introduced, in Traversal order.
+	// Empty when there was no earlier cache to compare with: without one,
+	// every repository would count as new, which says nothing.
+	New []domain.Repository
 }
 
 // Targets returns the Projects a sync run will visit, in alphabetical order:
@@ -59,8 +64,10 @@ func Targets(names []string, rt coreruntime.Runtime) ([]string, error) {
 // from its Provider Source.
 func One(name string, rt coreruntime.Runtime) (Result, error) {
 	var result Result
+	var previous map[string]bool
 	project := rt.Projects[name]
 	if providers.HasCache(project.Source) {
+		previous = cachedRepos(project, rt)
 		if err := rt.Cache.Flush(project); err != nil {
 			return result, fmt.Errorf("unable to remove cache: %w", err)
 		}
@@ -76,5 +83,71 @@ func One(name string, rt coreruntime.Runtime) (Result, error) {
 	}
 	result.Path = loaded.AbsPath
 	result.Repos = loaded.CountRepos()
+	if previous != nil {
+		result.New = newRepos(loaded, previous)
+	}
 	return result, nil
+}
+
+// cachedRepos reads the repositories the Project's cache holds before it is
+// dropped, keyed by repoKey, or nil when there is nothing to compare with:
+// no cache entry, caching turned off (a file left from before is stale by an
+// unknown amount), or an entry that cannot be read. None of these fails the
+// sync; they only mean no repository is reported as new.
+func cachedRepos(project domain.Project, rt coreruntime.Runtime) map[string]bool {
+	if rt.Settings.Cache != nil && !*rt.Settings.Cache {
+		return nil
+	}
+	cached, found, err := rt.Cache.Peek(project.Source.UniqueKey())
+	if err != nil {
+		logging.Or(rt.Log).Debug("unable to read cache before sync",
+			"project", project.Name, "err", err)
+		return nil
+	}
+	if !found {
+		return nil
+	}
+	keys := map[string]bool{}
+	walkRepos(cached, project.Source.UniqueKey(),
+		func(repo domain.Repository) { keys[repoKey(repo)] = true })
+	return keys
+}
+
+// newRepos returns the repositories in project, Sub-projects included, whose
+// key is not in previous.
+func newRepos(project domain.Project, previous map[string]bool) []domain.Repository {
+	var found []domain.Repository
+	walkRepos(project, project.Source.UniqueKey(), func(repo domain.Repository) {
+		if !previous[repoKey(repo)] {
+			found = append(found, repo)
+		}
+	})
+	return found
+}
+
+// walkRepos visits every repository in project discovered from the Provider
+// Source cached under sourceKey, in Traversal order: a Project's own
+// repositories before its Sub-projects, depth-first. A Sub-project declaring
+// a source of its own is skipped: it is cached apart from its parent, so its
+// repositories are never in the entry being compared with.
+func walkRepos(project domain.Project, sourceKey string, visit func(domain.Repository)) {
+	for _, repo := range project.Repos {
+		visit(repo)
+	}
+	for _, sub := range project.SubProjects {
+		if sub.Source != nil && sub.Source.UniqueKey() != sourceKey {
+			continue
+		}
+		walkRepos(sub, sourceKey, visit)
+	}
+}
+
+// repoKey identifies a repository across two fetches from the same Provider
+// Source: the code forge's own ID when it gave one, so a renamed repository
+// is not mistaken for a new one, and its namespaced name otherwise.
+func repoKey(repo domain.Repository) string {
+	if repo.ID != "" {
+		return "id:" + repo.ID
+	}
+	return "name:" + repo.GetNameWithNamespace()
 }

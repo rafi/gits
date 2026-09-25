@@ -563,3 +563,39 @@ func TestCacheGetRestoresCredentials(t *testing.T) {
 		t.Errorf("credential lost across the cache: %+v", got.Source)
 	}
 }
+
+// TestCacheFilePeek proves Peek reads an entry Get would refuse for its age
+// or checksum — `gits sync` compares with whatever was there, however old —
+// but still refuses one written by another gits version, whose layout it
+// cannot trust.
+func TestCacheFilePeek(t *testing.T) {
+	proj := hashedProject(t)
+	old := time.Now().Add(-1000 * time.Hour).Format(cacheTimeFormat)
+
+	t.Run("expired entry with stale checksum is read", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		writeCache(t, payload{Version: version.GetMajorMinor(), Timestamp: old, Checksum: "deadbeef", Project: proj})
+		got, ok, err := (&File{ttl: time.Nanosecond}).Peek(cacheTestKey)
+		if err != nil || !ok {
+			t.Fatalf("Peek(expired) = (%v, %v), want (true, nil)", ok, err)
+		}
+		if got.Name != proj.Name || len(got.Repos) != 1 {
+			t.Errorf("Peek(expired) project = %+v, want %+v", got, proj)
+		}
+	})
+
+	t.Run("version mismatch is a miss", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		writeCache(t, payload{Version: "v0.0", Timestamp: old, Checksum: proj.Hash, Project: proj})
+		if _, ok, err := (&File{}).Peek(cacheTestKey); err != nil || ok {
+			t.Errorf("Peek(version mismatch) = (%v, %v), want (false, nil)", ok, err)
+		}
+	})
+
+	t.Run("missing file is a miss", func(t *testing.T) {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		if _, ok, err := (&File{}).Peek("absent"); err != nil || ok {
+			t.Errorf("Peek(missing) = (%v, %v), want (false, nil)", ok, err)
+		}
+	})
+}

@@ -21,11 +21,22 @@ import (
 
 // recordCache reports every project as already cached — so the loader never
 // contacts a provider — and records the projects it was asked to flush, which
-// is what `sync` is for and therefore what these tests assert.
-type recordCache struct{ flushed []string }
+// is what `sync` is for and therefore what these tests assert. previous, when
+// set, is what the cache held before the flush; nil means it held nothing.
+type recordCache struct {
+	flushed  []string
+	previous *domain.Project
+}
 
 func (*recordCache) Get(string, *domain.Project) (bool, error) { return true, nil }
 func (*recordCache) Save(string, domain.Project) error         { return nil }
+
+func (c *recordCache) Peek(string) (domain.Project, bool, error) {
+	if c.previous == nil {
+		return domain.Project{}, false, nil
+	}
+	return *c.previous, true, nil
+}
 
 func (c *recordCache) Flush(project domain.Project) error {
 	c.flushed = append(c.flushed, project.Name)
@@ -176,6 +187,52 @@ func TestExecSyncReportsPathAndWholeTree(t *testing.T) {
 	}
 
 	want := "[1/1] acme [github:acme] flushed · ~/code/acme · 2 repositories\n"
+	if deps.Result() != want {
+		t.Errorf("Result Output = %q, want exactly %q", deps.Result(), want)
+	}
+}
+
+// TestExecSyncListsNewRepositories proves a refresh names what it
+// introduced: each repository the dropped cache did not hold gets a line of
+// its own under its project's, Sub-projects included, and the count is
+// carried on the project's line and in the summary.
+func TestExecSyncListsNewRepositories(t *testing.T) {
+	t.Parallel()
+
+	deps, _ := syncDeps(t)
+	cache := &treeCache{}
+	cache.previous = &domain.Project{Repos: []domain.Repository{{Name: "api"}}}
+	deps.Cache = cache
+
+	if err := ExecSync([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecSync(acme) error = %v, want nil", err)
+	}
+
+	want := "[1/1] acme [github:acme] flushed · 2 repositories · 1 new\n" +
+		"  + cli\n"
+	if deps.Result() != want {
+		t.Errorf("Result Output = %q, want exactly %q", deps.Result(), want)
+	}
+	wantSummary := "Synchronized 1 project, 2 repositories (1 new).\n"
+	if got := deps.Diagnostic(); got != wantSummary {
+		t.Errorf("Diagnostic Output = %q, want %q", got, wantSummary)
+	}
+}
+
+// TestExecSyncWithoutPreviousCacheListsNothingNew proves a first sync, with
+// no earlier cache to compare with, calls nothing new: against an empty
+// baseline every repository would be, which tells the user nothing.
+func TestExecSyncWithoutPreviousCacheListsNothingNew(t *testing.T) {
+	t.Parallel()
+
+	deps, _ := syncDeps(t)
+	deps.Cache = &treeCache{}
+
+	if err := ExecSync([]string{"acme"}, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecSync(acme) error = %v, want nil", err)
+	}
+
+	want := "[1/1] acme [github:acme] flushed · 2 repositories\n"
 	if deps.Result() != want {
 		t.Errorf("Result Output = %q, want exactly %q", deps.Result(), want)
 	}

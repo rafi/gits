@@ -33,6 +33,9 @@ type hitCache struct{}
 func (hitCache) Get(string, *domain.Project) (bool, error) { return true, nil }
 func (hitCache) Save(string, domain.Project) error         { return nil }
 func (hitCache) Flush(domain.Project) error                { return nil }
+func (hitCache) Peek(string) (domain.Project, bool, error) {
+	return domain.Project{}, false, nil
+}
 
 // testDeps builds the shared runtime dependencies with both output
 // destinations captured, a nil git client — nothing here may reach one — and

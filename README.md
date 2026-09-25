@@ -437,10 +437,16 @@ code forge:
 
 ```console
 $ gits sync
-[1/2] acme [github:acme] flushed · ~/code/acme · 42 repositories
+[1/2] acme [github:acme] flushed · ~/code/acme · 42 repositories · 2 new
+  + acme/widgets
+  + acme/docs
 [2/2] infra [gitlab:mygroup] flushed · ~/work/infra · 17 repositories
-Synchronized 2 projects, 59 repositories.
+Synchronized 2 projects, 59 repositories (2 new).
 ```
+
+Repositories the refetch found that the dropped cache didn't have are listed
+under their project, ready for `gits clone`. The first sync of a project has
+nothing to compare with, so it lists none.
 
 Name projects (`gits sync acme infra`) to sync only those. Only forge-backed
 projects have a cache to refresh.

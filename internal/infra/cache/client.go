@@ -10,6 +10,10 @@ import (
 // key derived from its Provider Source.
 type Cacher interface {
 	Get(key string, project *domain.Project) (bool, error)
+	// Peek reads whatever repositories are stored under key, however old,
+	// without the checks that make Get treat an entry as a miss. It is for
+	// comparing against, never for serving a command.
+	Peek(key string) (domain.Project, bool, error)
 	Save(key string, project domain.Project) error
 	Flush(project domain.Project) error
 }
