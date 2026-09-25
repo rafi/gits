@@ -11,6 +11,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/format"
 )
 
@@ -57,18 +58,25 @@ func renderReadme(readmePath string, deps app.RuntimeCLI) (string, error) {
 
 	width := previewWidth(deps)
 
-	// Initialize renderer, respect OS appearance (light/dark background).
-	// The probe writes a query to Result Output's destination and reads the
-	// terminal's reply on the input stream, so it has to ask the destination
-	// rather than the process stream. Both sides must be files: a captured
-	// destination cannot be asked and keeps the default.
-	background := "light"
-	if out, ok := deps.Out.(*os.File); ok && lipgloss.HasDarkBackground(os.Stdin, out) {
-		background = "dark"
+	// Named themes style the preview from their palette. The ansi theme keeps
+	// glamour's standard dark/light style, chosen by asking the terminal as
+	// before: its palette is the terminal's own, which glamour's standard
+	// styles already assume.
+	var styleOpt glamour.TermRendererOption
+	if deps.Scheme.Theme.Name == theme.Ansi.Name {
+		// The probe writes a query to Result Output's destination and reads
+		// the terminal's reply on the input stream, so it has to ask the
+		// destination rather than the process stream. Both sides must be
+		// files: a captured destination cannot be asked and keeps the default.
+		background := "light"
+		if out, ok := deps.Out.(*os.File); ok && lipgloss.HasDarkBackground(os.Stdin, out) {
+			background = "dark"
+		}
+		styleOpt = glamour.WithStandardStyle(background)
+	} else {
+		styleOpt = glamour.WithStyles(theme.Glamour(deps.Scheme))
 	}
-	mkd, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(background),
-	)
+	mkd, err := glamour.NewTermRenderer(styleOpt)
 	if err != nil {
 		return "", err
 	}
