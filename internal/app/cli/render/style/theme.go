@@ -51,6 +51,9 @@ type Theme struct {
 	StatusDeleted   lipgloss.Style
 	StatusDim       lipgloss.Style
 	StatusFooter    lipgloss.Style
+	StatusAgeFresh  lipgloss.Style
+	StatusAgeRecent lipgloss.Style
+	StatusAgeStale  lipgloss.Style
 
 	// List table
 	TableBorder      lipgloss.Border

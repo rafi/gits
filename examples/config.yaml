@@ -157,7 +157,8 @@ settings:
       # Messages: diff, error, warning
       # Status table: statusHeader, statusFlag, statusStaged, statusUnstaged,
       #   statusUntracked, statusAhead, statusBehind, statusDiverged, statusGone,
-      #   statusAdded, statusDeleted, statusDim, statusFooter
+      #   statusAdded, statusDeleted, statusDim, statusFooter, statusAgeFresh,
+      #   statusAgeRecent, statusAgeStale
       # List table: tableBorderStyle, tableHeader, tableRowEven, tableRowOdd
       # Chart: chartDates
       # Progress: progressName, progressPercent, progressFill, progressEmpty,

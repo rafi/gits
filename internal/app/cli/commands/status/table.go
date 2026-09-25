@@ -180,7 +180,7 @@ func renderTable(sts []*status.Report, termWidth int, opts Options, deps app.Run
 			counts.delta[i],
 			counts.upstream[i],
 			dim(st.Head.Hash),
-			dim(shortAge(st.Head.Time, now)),
+			ageCell(st.Head.Time, now, th),
 			message,
 		)
 	}
@@ -586,6 +586,24 @@ func shortAge(t, now time.Time) string {
 		return strconv.Itoa(int(d/month)) + "mo"
 	default:
 		return strconv.Itoa(int(d/year)) + "y"
+	}
+}
+
+// ageCell renders the Age column, colored by how recent the last commit is
+// so fresh work stands out: under a day is fresh, under a week recent, and
+// anything older fades like the other reference columns.
+func ageCell(t, now time.Time, th style.Theme) string {
+	age := shortAge(t, now)
+	if age == "" {
+		return ""
+	}
+	switch d := now.Sub(t); {
+	case d < day:
+		return th.StatusAgeFresh.Render(age)
+	case d < week:
+		return th.StatusAgeRecent.Render(age)
+	default:
+		return th.StatusAgeStale.Render(age)
 	}
 }
 

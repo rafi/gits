@@ -588,6 +588,35 @@ func TestShortAge(t *testing.T) {
 	}
 }
 
+// TestAgeCellTiers: the Age column renders each commit age in the style of
+// its tier, so a commit from this morning stands out from one a year old.
+func TestAgeCellTiers(t *testing.T) {
+	t.Parallel()
+
+	th := theme.DefaultStyles()
+	now := time.Now()
+	cases := []struct {
+		age   time.Duration
+		style lipgloss.Style
+	}{
+		{5 * time.Minute, th.StatusAgeFresh},
+		{23 * time.Hour, th.StatusAgeFresh},
+		{2 * 24 * time.Hour, th.StatusAgeRecent},
+		{8 * 24 * time.Hour, th.StatusAgeStale},
+		{800 * 24 * time.Hour, th.StatusAgeStale},
+	}
+	for _, c := range cases {
+		ts := now.Add(-c.age)
+		want := c.style.Render(shortAge(ts, now))
+		if got := ageCell(ts, now, th); got != want {
+			t.Errorf("ageCell(-%v) = %q, want %q", c.age, got, want)
+		}
+	}
+	if got := ageCell(time.Time{}, now, th); got != "" {
+		t.Errorf("ageCell(zero) = %q, want empty", got)
+	}
+}
+
 // TestStatusSlotsWidthWithWideIcons: the four fixed slots must occupy the
 // same width on every row, including when the error icon is 2 cells wide —
 // an error row, an N/A row and a clean row all align.

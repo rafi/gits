@@ -41,6 +41,9 @@ const (
 	RoleStatusDeleted    Role = "statusDeleted"
 	RoleStatusDim        Role = "statusDim"
 	RoleStatusFooter     Role = "statusFooter"
+	RoleStatusAgeFresh   Role = "statusAgeFresh"
+	RoleStatusAgeRecent  Role = "statusAgeRecent"
+	RoleStatusAgeStale   Role = "statusAgeStale"
 	RoleTableBorderStyle Role = "tableBorderStyle"
 	RoleTableHeader      Role = "tableHeader"
 	RoleTableRowEven     Role = "tableRowEven"
@@ -90,6 +93,9 @@ var roleFields = map[Role]field{
 	RoleStatusDeleted:    func(t *style.Theme) *lipgloss.Style { return &t.StatusDeleted },
 	RoleStatusDim:        func(t *style.Theme) *lipgloss.Style { return &t.StatusDim },
 	RoleStatusFooter:     func(t *style.Theme) *lipgloss.Style { return &t.StatusFooter },
+	RoleStatusAgeFresh:   func(t *style.Theme) *lipgloss.Style { return &t.StatusAgeFresh },
+	RoleStatusAgeRecent:  func(t *style.Theme) *lipgloss.Style { return &t.StatusAgeRecent },
+	RoleStatusAgeStale:   func(t *style.Theme) *lipgloss.Style { return &t.StatusAgeStale },
 	RoleTableBorderStyle: func(t *style.Theme) *lipgloss.Style { return &t.TableBorderStyle },
 	RoleTableHeader:      func(t *style.Theme) *lipgloss.Style { return &t.TableHeader },
 	RoleTableRowEven:     func(t *style.Theme) *lipgloss.Style { return &t.TableRowEven },
@@ -113,8 +119,9 @@ func Roles() []Role {
 		RoleDiff, RoleError, RoleWarning, RoleStatusHeader, RoleStatusFlag,
 		RoleStatusStaged, RoleStatusUnstaged, RoleStatusUntracked, RoleStatusAhead,
 		RoleStatusBehind, RoleStatusDiverged, RoleStatusGone, RoleStatusAdded,
-		RoleStatusDeleted, RoleStatusDim, RoleStatusFooter, RoleTableBorderStyle,
-		RoleTableHeader, RoleTableRowEven, RoleTableRowOdd, RoleChartDates,
+		RoleStatusDeleted, RoleStatusDim, RoleStatusFooter, RoleStatusAgeFresh,
+		RoleStatusAgeRecent, RoleStatusAgeStale, RoleTableBorderStyle, RoleTableHeader,
+		RoleTableRowEven, RoleTableRowOdd, RoleChartDates,
 		RoleProgressName, RoleProgressPercent, RoleProgressFill, RoleProgressEmpty,
 		RoleProgressStats, RoleProgressSpinner,
 	}
@@ -153,6 +160,9 @@ var baseMapping = map[Role]Spec{
 	RoleStatusDeleted:    {Fg: Ref(SlotRed)},
 	RoleStatusDim:        {Fg: Ref(SlotMuted)},
 	RoleStatusFooter:     {Fg: Ref(SlotMuted)},
+	RoleStatusAgeFresh:   {Fg: Ref(SlotGreen)},
+	RoleStatusAgeRecent:  {Fg: Ref(SlotFg)},
+	RoleStatusAgeStale:   {Fg: Ref(SlotMuted)},
 	RoleTableBorderStyle: {Fg: Ref(SlotSubtle)},
 	RoleTableHeader:      {Fg: Ref(SlotCyan)},
 	RoleTableRowEven:     {Fg: Ref(SlotFg)},

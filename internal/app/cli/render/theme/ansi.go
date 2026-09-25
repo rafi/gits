@@ -24,6 +24,8 @@ var Ansi = Theme{
 		RoleDiff:             {Fg: Raw("140")},
 		RoleStatusDim:        {Fg: None(), Faint: on},
 		RoleStatusFooter:     {Fg: None(), Faint: on},
+		RoleStatusAgeRecent:  {Fg: None()},
+		RoleStatusAgeStale:   {Fg: None(), Faint: on},
 		RoleTableBorderStyle: {Fg: Raw("240")},
 		RoleTableHeader:      {Fg: Raw("73")},
 		RoleTableRowEven:     {Fg: Raw("249")},
