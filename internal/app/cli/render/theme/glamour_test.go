@@ -22,6 +22,19 @@ func TestGlamourFromPalette(t *testing.T) {
 	}
 }
 
+func TestGlamourNoColorProfile(t *testing.T) {
+	t.Parallel()
+	for _, p := range []colorprofile.Profile{colorprofile.NoTTY, colorprofile.ASCII} {
+		cfg := Glamour(Scheme{Theme: Dracula, Profile: p})
+		if cfg.Heading.Color != nil {
+			t.Errorf("profile %s: heading color = %v, want nil", p, cfg.Heading.Color)
+		}
+		if cfg.Document.Color != nil {
+			t.Errorf("profile %s: document color = %v, want nil", p, cfg.Document.Color)
+		}
+	}
+}
+
 func TestChromaStylesExist(t *testing.T) {
 	t.Parallel()
 	for _, name := range Names() {

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"charm.land/glamour/v2/ansi"
+	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 )
 
@@ -37,10 +38,15 @@ var chromaStyles = map[string]string{
 func chromaStyleName(themeName string) string { return chromaStyles[themeName] }
 
 // colorString renders a resolved color the way glamour's style config expects
-// it: an ANSI index for indexed colors, #rrggbb otherwise, "" for none.
+// it: an ANSI index for indexed colors, #rrggbb otherwise, "" for none. A
+// NoTTY/ASCII profile resolves every slot to lipgloss.NoColor, whose RGBA()
+// reports full alpha (it means "don't color this", not "black transparent"),
+// so it needs its own case rather than falling through to the RGBA branch.
 func colorString(c color.Color) string {
 	switch v := c.(type) {
 	case nil:
+		return ""
+	case lipgloss.NoColor:
 		return ""
 	case xansi.BasicColor:
 		return strconv.Itoa(int(v))
