@@ -3,6 +3,8 @@
 package doctor
 
 import (
+	"fmt"
+
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/render/output"
@@ -26,6 +28,7 @@ func ExecDoctor(format string, _ []string, deps app.RuntimeCLI) error {
 		ConfigPath: deps.ConfigPath,
 		Findings:   health.Check(deps.Runtime),
 	}
+	report.Findings = append(report.Findings, themeFinding(deps))
 	if err := render(format, report, deps); err != nil {
 		return err
 	}
@@ -43,4 +46,19 @@ func ExecDoctor(format string, _ []string, deps app.RuntimeCLI) error {
 type Report struct {
 	ConfigPath string           `json:"configPath"`
 	Findings   []health.Finding `json:"findings"`
+}
+
+// themeFinding reports the resolved theme and color profile, the first thing
+// to check when colors look wrong.
+func themeFinding(deps app.RuntimeCLI) health.Finding {
+	bg := "light"
+	if deps.Scheme.Theme.Dark {
+		bg = "dark"
+	}
+	return health.Finding{
+		Level:   health.LevelInfo,
+		Scope:   health.ScopeEnvironment,
+		Subject: "theme",
+		Message: fmt.Sprintf("%s (%s, %s)", deps.Scheme.Theme.Name, bg, deps.Scheme.Profile),
+	}
 }

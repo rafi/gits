@@ -22,6 +22,8 @@ import (
 	"github.com/rafi/gits/internal/app/cli/commands/push"
 	"github.com/rafi/gits/internal/app/cli/commands/status"
 	"github.com/rafi/gits/internal/app/cli/commands/sync"
+	themecmd "github.com/rafi/gits/internal/app/cli/commands/theme"
+	rtheme "github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/version"
 )
 
@@ -260,6 +262,35 @@ var statusCmd = &cobra.Command{
 	RunE: runWithDeps(func(args []string, deps app.RuntimeCLI) error {
 		return status.ExecStatus(statusOutput, statusOpts, labelSet("status"), args, deps)
 	}),
+}
+
+var themeCmd = &cobra.Command{
+	Use:   "theme",
+	Short: "List and preview color themes",
+	Long: `List the built-in color themes and preview them.
+
+Select one with settings.theme.name, the --theme flag, or GITS_THEME.
+Try them live:
+
+  gits theme list | fzf --preview 'gits -C always theme show {}'`,
+	Args: cobra.NoArgs,
+}
+
+var themeListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List the built-in themes",
+	Args:  cobra.NoArgs,
+	RunE: runWithDeps(func(_ []string, deps app.RuntimeCLI) error {
+		return themecmd.ExecList(deps)
+	}),
+}
+
+var themeShowCmd = &cobra.Command{
+	Use:               "show [theme]",
+	Short:             "Render sample output in a theme",
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeValues(rtheme.Names()),
+	RunE:              runWithDeps(themecmd.ExecShow),
 }
 
 var syncCmd = &cobra.Command{

@@ -159,6 +159,22 @@ func TestDoctorJSONDocument(t *testing.T) {
 	}
 }
 
+// TestDoctorReportsTheme proves the resolved theme and color profile are
+// among the findings — the first thing to check when colors look wrong. The
+// values asserted on are clitest's own Scheme default (theme.Ansi at
+// TrueColor), not anything this test configures.
+func TestDoctorReportsTheme(t *testing.T) {
+	t.Parallel()
+
+	deps := clitest.New(t, nil)
+	if err := ExecDoctor("table", nil, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecDoctor: %v", err)
+	}
+	if got := deps.Result(); !strings.Contains(got, "theme") || !strings.Contains(got, "ansi (dark, TrueColor)") {
+		t.Errorf("Result Output = %q, want a theme finding naming ansi (dark, TrueColor)", got)
+	}
+}
+
 // TestDoctorRejectsFormat proves an unusable -o is refused before any check
 // runs, the rule every other -o command follows.
 func TestDoctorRejectsFormat(t *testing.T) {

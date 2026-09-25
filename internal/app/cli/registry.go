@@ -124,6 +124,8 @@ func init() {
 	rootCmd.AddCommand(repoOverviewCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(syncCmd)
+	themeCmd.AddCommand(themeListCmd, themeShowCmd)
+	rootCmd.AddCommand(themeCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 

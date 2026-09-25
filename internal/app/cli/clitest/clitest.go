@@ -91,6 +91,10 @@ func (d *Deps) WithProject(name string, repos ...Repo) *Deps {
 // Result returns the captured Result Output with ANSI stripped.
 func (d *Deps) Result() string { return ansi.Strip(d.out.String()) }
 
+// RawResult returns the captured Result Output with ANSI intact, for a test
+// that asserts on styling.
+func (d *Deps) RawResult() string { return d.out.String() }
+
 // Diagnostic returns the captured Diagnostic Output with ANSI stripped.
 func (d *Deps) Diagnostic() string { return ansi.Strip(d.err.String()) }
 
