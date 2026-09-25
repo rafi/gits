@@ -43,14 +43,19 @@ type Theme struct {
 	Warning lipgloss.Style
 
 	// Status table
-	StatusHeader  lipgloss.Style
-	StatusFlag    lipgloss.Style
-	StatusAhead   lipgloss.Style
-	StatusBehind  lipgloss.Style
-	StatusAdded   lipgloss.Style
-	StatusDeleted lipgloss.Style
-	StatusDim     lipgloss.Style
-	StatusFooter  lipgloss.Style
+	StatusHeader    lipgloss.Style
+	StatusFlag      lipgloss.Style
+	StatusStaged    lipgloss.Style
+	StatusUnstaged  lipgloss.Style
+	StatusUntracked lipgloss.Style
+	StatusAhead     lipgloss.Style
+	StatusBehind    lipgloss.Style
+	StatusDiverged  lipgloss.Style
+	StatusGone      lipgloss.Style
+	StatusAdded     lipgloss.Style
+	StatusDeleted   lipgloss.Style
+	StatusDim       lipgloss.Style
+	StatusFooter    lipgloss.Style
 
 	// List table
 	TableBorder      lipgloss.Border
@@ -98,14 +103,19 @@ func NewThemeDefault() Theme {
 
 		// Status table (ANSI16 palette so the terminal theme
 		// decides the exact shades, faint for informational fields)
-		StatusHeader:  lipgloss.NewStyle().Bold(true),
-		StatusFlag:    lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
-		StatusAhead:   lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		StatusBehind:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true),
-		StatusAdded:   lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		StatusDeleted: lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-		StatusDim:     lipgloss.NewStyle().Faint(true),
-		StatusFooter:  lipgloss.NewStyle().Faint(true),
+		StatusHeader:    lipgloss.NewStyle().Bold(true),
+		StatusFlag:      lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+		StatusStaged:    lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		StatusUnstaged:  lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		StatusUntracked: lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
+		StatusAhead:     lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		StatusBehind:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true),
+		StatusDiverged:  lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		StatusGone:      lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+		StatusAdded:     lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		StatusDeleted:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		StatusDim:       lipgloss.NewStyle().Faint(true),
+		StatusFooter:    lipgloss.NewStyle().Faint(true),
 
 		// List table
 		TableBorder:      lipgloss.NormalBorder(),

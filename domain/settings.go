@@ -252,14 +252,19 @@ type Theme struct {
 	Warning Style `json:"warning"`
 
 	// Status table
-	StatusHeader  Style `json:"statusHeader"`
-	StatusFlag    Style `json:"statusFlag"`
-	StatusAhead   Style `json:"statusAhead"`
-	StatusBehind  Style `json:"statusBehind"`
-	StatusAdded   Style `json:"statusAdded"`
-	StatusDeleted Style `json:"statusDeleted"`
-	StatusDim     Style `json:"statusDim"`
-	StatusFooter  Style `json:"statusFooter"`
+	StatusHeader    Style `json:"statusHeader"`
+	StatusFlag      Style `json:"statusFlag"`
+	StatusStaged    Style `json:"statusStaged"`
+	StatusUnstaged  Style `json:"statusUnstaged"`
+	StatusUntracked Style `json:"statusUntracked"`
+	StatusAhead     Style `json:"statusAhead"`
+	StatusBehind    Style `json:"statusBehind"`
+	StatusDiverged  Style `json:"statusDiverged"`
+	StatusGone      Style `json:"statusGone"`
+	StatusAdded     Style `json:"statusAdded"`
+	StatusDeleted   Style `json:"statusDeleted"`
+	StatusDim       Style `json:"statusDim"`
+	StatusFooter    Style `json:"statusFooter"`
 
 	// Table
 	TableBorderStyle Style `json:"tableBorderStyle"`

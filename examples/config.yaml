@@ -190,8 +190,13 @@ settings:
     # theme decides the exact shades.
     statusHeader: { bold: true }
     statusFlag: { color: "6" }
+    statusStaged: { color: "2" }
+    statusUnstaged: { color: "3" }
+    statusUntracked: { color: "4" }
     statusAhead: { color: "2" }
     statusBehind: { color: "1", faint: true }
+    statusDiverged: { color: "3" }
+    statusGone: { color: "5" }
     statusAdded: { color: "2" }
     statusDeleted: { color: "1" }
     statusDim: { faint: true }

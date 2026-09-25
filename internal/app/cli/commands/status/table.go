@@ -430,12 +430,12 @@ func statusSlots(st *status.Report, icons domain.Icons, th style.Theme, widths s
 		}
 		return style.Render(icon) + strings.Repeat(" ", width-lipgloss.Width(icon))
 	}
-	// flag renders a change glyph in its own width, or blanks it.
-	flag := func(active bool, icon string) string {
+	// flag renders a change glyph in its own width and style, or blanks it.
+	flag := func(active bool, icon string, style lipgloss.Style) string {
 		if !active {
 			return strings.Repeat(" ", lipgloss.Width(icon))
 		}
-		return th.StatusFlag.Render(icon)
+		return style.Render(icon)
 	}
 
 	fourthIcon, fourthStyle := "", th.StatusDim
@@ -447,31 +447,31 @@ func statusSlots(st *status.Report, icons domain.Icons, th style.Theme, widths s
 		fourthIcon = icons.NA
 	}
 
-	upstreamIcon := ""
+	upstreamIcon, upstreamStyle := "", th.StatusDim
 	switch broken := st.Repo.State != domain.RepoStateOK || st.Err != nil; {
 	case broken:
 	case st.GoneUpstream():
 		// Ahead of the divergence glyphs: a Gone Upstream is what the row is
 		// about, and the counts — measured against a fallback ref, when one
 		// was found — still show in the Upstream⇅ column.
-		upstreamIcon = icons.Gone
+		upstreamIcon, upstreamStyle = icons.Gone, th.StatusGone
 	case !st.Compared:
 		upstreamIcon = icons.NA
 	case st.Ahead > 0 && st.Behind > 0:
-		upstreamIcon = icons.Diverged
+		upstreamIcon, upstreamStyle = icons.Diverged, th.StatusDiverged
 	case st.Ahead > 0:
-		upstreamIcon = icons.Ahead
+		upstreamIcon, upstreamStyle = icons.Ahead, th.StatusAhead
 	case st.Behind > 0:
-		upstreamIcon = icons.Behind
+		upstreamIcon, upstreamStyle = icons.Behind, th.StatusBehind
 	default:
 		upstreamIcon = icons.DiffClean
 	}
 
-	return flag(st.Staged > 0, icons.Staged) +
-		flag(st.Unstaged > 0, icons.Unstaged) +
-		flag(st.Untracked > 0, icons.Untracked) +
+	return flag(st.Staged > 0, icons.Staged, th.StatusStaged) +
+		flag(st.Unstaged > 0, icons.Unstaged, th.StatusUnstaged) +
+		flag(st.Untracked > 0, icons.Untracked, th.StatusUntracked) +
 		slot(fourthIcon, fourthStyle, widths.fourth) +
-		slot(upstreamIcon, th.StatusDim, widths.upstream)
+		slot(upstreamIcon, upstreamStyle, widths.upstream)
 }
 
 // countCells holds the HEAD±, Δ± and Upstream⇅ cell text per row.
@@ -508,7 +508,7 @@ func buildCountCells(sts []*status.Report, icons domain.Icons, th style.Theme) c
 		}
 		delta[i] = countPair{
 			count(st.Staged+st.Unstaged, icons.Modified, th.StatusFlag),
-			count(st.Untracked, icons.Untracked, th.StatusFlag),
+			count(st.Untracked, icons.Untracked, th.StatusUntracked),
 		}
 		upstream[i] = countPair{
 			count(st.Ahead, icons.Ahead, th.StatusAhead),
