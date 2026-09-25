@@ -25,11 +25,21 @@ func Huh(s Scheme) huh.Theme {
 		f.SelectSelector = f.SelectSelector.Foreground(accent)
 		f.NextIndicator = f.NextIndicator.Foreground(accent)
 		f.PrevIndicator = f.PrevIndicator.Foreground(accent)
-		f.Option = f.Option.Foreground(fg)
+		// The ansi theme's Fg is ANSI 15 (bright white), picked to reproduce
+		// pre-theme defaults elsewhere — but here it would paint every option
+		// bright white regardless of the terminal's own palette, which is
+		// unreadable on a light background. Leaving it unset falls back to
+		// the terminal's default text color instead. Named themes keep fg,
+		// since their Fg is chosen to read well against their own Dark bit.
+		if s.Theme.Name != Ansi.Name {
+			f.Option = f.Option.Foreground(fg)
+		}
 		f.MultiSelectSelector = f.MultiSelectSelector.Foreground(accent)
 		f.SelectedOption = f.SelectedOption.Foreground(green)
 		f.SelectedPrefix = f.SelectedPrefix.Foreground(green)
-		f.UnselectedOption = f.UnselectedOption.Foreground(fg)
+		if s.Theme.Name != Ansi.Name {
+			f.UnselectedOption = f.UnselectedOption.Foreground(fg)
+		}
 		f.TextInput.Cursor = f.TextInput.Cursor.Foreground(accent)
 		f.TextInput.Placeholder = f.TextInput.Placeholder.Foreground(muted)
 		f.TextInput.Prompt = f.TextInput.Prompt.Foreground(accent)
