@@ -30,7 +30,7 @@ func TestAnsiMatchesLegacyDefault(t *testing.T) {
 	path := filepath.Join("testdata", "ansi.golden")
 	want, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read golden: %v (run with -update once, before Task 5)", err)
+		t.Fatalf("read golden: %v (frozen from the pre-theme defaults; never regenerate it)", err)
 	}
 	if got := renderAll(Build(Ansi, colorprofile.TrueColor, nil)); got != string(want) {
 		t.Errorf("ansi theme drifted from the legacy default:\n got:\n%s\nwant:\n%s", got, want)

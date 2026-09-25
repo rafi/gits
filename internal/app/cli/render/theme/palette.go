@@ -97,6 +97,10 @@ func (p Palette) Get(s Slot) Color {
 	case SlotOrange:
 		return p.Orange
 	default:
+		// Reached only for SlotAccent: Slot values come exclusively from the
+		// Slot constants above or from config already validated against
+		// Slots() (see ParseColorRef), so this is never an unrecognized name
+		// silently mapped to Accent.
 		return p.Accent
 	}
 }

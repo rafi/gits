@@ -39,6 +39,10 @@ var RosePineMoon = Theme{
 }
 
 // RosePineDawn — https://github.com/rose-pine/palette (palette.json, dawn)
+// Muted uses Rosé Pine's own "subtle" hex (#797593), not its "muted" one
+// (#9893a5): dawn is a light theme, and "muted" falls short of the 3:1
+// contrast floor against a light background, the same problem nord.go's
+// Muted works around.
 var RosePineDawn = Theme{
 	Name: "rose-pine-dawn",
 	Dark: false,

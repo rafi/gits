@@ -36,6 +36,7 @@ var Ansi = Theme{
 	},
 }
 
-// DefaultStyles is the ansi theme at TrueColor: what tests across packages
-// render with, and what a command falls back to before resolution runs.
+// DefaultStyles is the ansi theme at TrueColor: the fixed style.Theme tests
+// across packages render with, standing in for whatever theme.Resolve would
+// otherwise build for a real command run.
 func DefaultStyles() style.Theme { return Build(Ansi, colorprofile.TrueColor, nil) }
