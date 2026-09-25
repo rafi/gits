@@ -126,7 +126,7 @@ func registerRootFlags() {
 		// same list the flag validates against.
 		rootCmd.PersistentFlags().
 			Var(theme.NewThemeValue(&themeFlag), "theme",
-				"color theme (see `gits theme list`)")
+				`color theme (see "gits theme list")`)
 		mustRegisterFlagCompletion(rootCmd, "theme", completeValues(theme.Names()))
 	})
 }
