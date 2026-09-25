@@ -73,7 +73,7 @@ func (f FZF) Project(ctx context.Context) (string, error) {
 	finder := fzf.New(deps.Err, "--nth=1").WithFinder(deps.Settings.Finder)
 	finder.WithPrompt("project> ")
 
-	previewCmd := previewCommandf(deps.ConfigPath, "list", "{1}", "-o", "tree")
+	previewCmd := previewCommandf(deps.ConfigPath, deps.Scheme.Theme.Name, "list", "{1}", "-o", "tree")
 	finder.WithPreview(previewCmd, "")
 
 	projName, err := finder.Run(ctx, buffer)
@@ -112,7 +112,7 @@ func (f FZF) Repo(
 
 	// {} carries the selected line and is appended to the quoted prefix with
 	// no space: the two together are one argument.
-	previewCmd := previewCommand(deps.ConfigPath, "repo-overview", rootProject, prefix) + "{}"
+	previewCmd := previewCommand(deps.ConfigPath, deps.Scheme.Theme.Name, "repo-overview", rootProject, prefix) + "{}"
 	finder.WithPreview(previewCmd, "")
 
 	repoName, err := finder.Run(ctx, buffer)
@@ -158,7 +158,7 @@ func SelectBranch(
 	finder.WithPrompt(fmt.Sprintf("[%s/%s] branch> ", projName, repoFullName))
 
 	previewCmd := previewCommandf(
-		deps.ConfigPath, "branch-overview", "{2}", projName, repoFullName)
+		deps.ConfigPath, deps.Scheme.Theme.Name, "branch-overview", "{2}", projName, repoFullName)
 	finder.WithPreview(previewCmd, "")
 
 	selected, err := finder.Run(deps.Ctx, buffer)

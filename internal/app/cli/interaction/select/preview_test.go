@@ -15,12 +15,15 @@ func TestPreviewCommandQuotesPathsWithSpaces(t *testing.T) {
 	t.Parallel()
 
 	got := previewCommandf(
-		"/Users/a b/Library/Application Support/gits/config.yaml",
+		"/Users/a b/Library/Application Support/gits/config.yaml", "dracula",
 		"branch-overview", "{2}", "my project", "acme/api")
 
 	want := "--config='/Users/a b/Library/Application Support/gits/config.yaml'"
 	if !strings.Contains(got, want) {
 		t.Errorf("preview = %q, want it to contain %q", got, want)
+	}
+	if !strings.Contains(got, "--theme=dracula") {
+		t.Errorf("preview = %q, want it to contain --theme=dracula", got)
 	}
 	if !strings.HasSuffix(got, " branch-overview 'my project' 'acme/api' {2}") {
 		t.Errorf("preview = %q, want quoted arguments and a bare {2}", got)
