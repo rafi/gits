@@ -780,6 +780,36 @@ settings:
 Projects on one host share one pace, and two providers pointed at the same host
 share the slower of their two rates.
 
+### Themes
+
+gits ships 31 color themes. The default, `ansi`, uses your terminal's own
+16 colors. Pick another in config, per run with `--theme`, or with
+`GITS_THEME`:
+
+```yaml
+settings:
+  theme:
+    name: catppuccin-mocha
+    # or follow the terminal background:
+    # name: { dark: catppuccin-mocha, light: catppuccin-latte }
+    styles:                       # override individual roles
+      statusStaged: { fg: green, bold: true }
+      statusBehind: { faint: false }
+```
+
+`gits theme list` shows every theme; `gits theme show <name>` renders a
+sample. To browse them live:
+
+```sh
+gits theme list | fzf --preview 'gits -C always theme show {}'
+```
+
+Colors adapt to the terminal: truecolor terminals get the exact palette,
+256-color and 16-color terminals get hand-picked fallbacks. Override
+colors are a palette name (`fg muted subtle red green yellow blue magenta
+cyan orange accent`), `none`, `#rrggbb`, or an ANSI index. See
+`examples/config.yaml` for every role.
+
 ## Config examples
 
 Each project in the following example is defined differently:
