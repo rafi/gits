@@ -36,7 +36,7 @@ func ExecPull(format string, labels domain.LabelSet, args []string, deps app.Run
 		Name:     "pull",
 		Verb:     "pulling",
 		Do:       pull.Repo,
-		Progress: progress.New(deps.Err),
+		Progress: progress.New(deps.Err, deps.Theme),
 	}.Run(target, deps.Runtime)
 	return output.Render(res, format, view, deps)
 }

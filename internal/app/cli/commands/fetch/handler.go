@@ -36,7 +36,7 @@ func ExecFetch(format string, labels domain.LabelSet, args []string, deps app.Ru
 		Name:     "fetch",
 		Verb:     "fetching",
 		Do:       fetch.Repo,
-		Progress: progress.New(deps.Err),
+		Progress: progress.New(deps.Err, deps.Theme),
 	}.Run(target, deps.Runtime)
 	return output.Render(res, format, view, deps)
 }

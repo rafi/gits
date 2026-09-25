@@ -22,10 +22,6 @@ import (
 // 10fps, matching tickInterval.
 var spinnerFrames = spinner.Meter.Frames
 
-// huhSpinnerColor is the spinner color from huh's default theme (ThemeDefault),
-// applied to each repo row's frame so it matches the library's look.
-const huhSpinnerColor = "#F780E2"
-
 const (
 	// roundHalf is added before truncation to round to the nearest whole.
 	roundHalf = 0.5
@@ -88,10 +84,10 @@ func layoutFor(width int) (nameW int, showStats bool) {
 
 // New selects a reporter for w: the live block when it is a terminal, the
 // engine's no-op otherwise, so ANSI cursor controls never garble a pipe, a CI
-// log or a test buffer (AC-8).
-func New(w io.Writer) command.Progress {
+// log or a test buffer (AC-8). th supplies the reporter's colors.
+func New(w io.Writer, th style.Theme) command.Progress {
 	if _, isTTY := style.TermWidth(w); isTTY {
-		return newLiveReporter(w)
+		return newLiveReporter(w, th)
 	}
 	return command.Nop{}
 }
@@ -105,19 +101,21 @@ type styles struct {
 	fill    lipgloss.Style
 	empty   lipgloss.Style
 	stats   lipgloss.Style
-	spinner lipgloss.Style // huh-themed color for the per-repo spinner frame
+	spinner lipgloss.Style // spinner frame color (progressSpinner role)
 	clamp   lipgloss.Style // width-limited base used to truncate a row to the TTY
 }
 
-func newStyles() styles {
+// newStyles takes the reporter's colors from the theme's progress roles; only
+// the overall label's bold and the clamp base are layout, not color.
+func newStyles(th style.Theme) styles {
 	return styles{
-		name:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")),
+		name:    th.ProgressName,
 		overall: lipgloss.NewStyle().Bold(true),
-		percent: lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
-		fill:    lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
-		empty:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		stats:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		spinner: lipgloss.NewStyle().Foreground(lipgloss.Color(huhSpinnerColor)),
+		percent: th.ProgressPercent,
+		fill:    th.ProgressFill,
+		empty:   th.ProgressEmpty,
+		stats:   th.ProgressStats,
+		spinner: th.ProgressSpinner,
 		clamp:   lipgloss.NewStyle(),
 	}
 }
@@ -155,9 +153,9 @@ type liveReporter struct {
 	stopOnce sync.Once // Stop closes stop; a second call must not close it twice
 }
 
-func newLiveReporter(w io.Writer) *liveReporter {
+func newLiveReporter(w io.Writer, th style.Theme) *liveReporter {
 	width, _ := style.TermWidth(w)
-	return &liveReporter{w: w, st: newStyles(), width: width}
+	return &liveReporter{w: w, st: newStyles(th), width: width}
 }
 
 func (r *liveReporter) Begin(verb string, total int) {

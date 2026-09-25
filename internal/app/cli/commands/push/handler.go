@@ -50,7 +50,7 @@ func ExecPush(
 		Do: func(ctx context.Context, repo command.Repo, rt coreruntime.Runtime) (push.Report, error) {
 			return push.Repo(ctx, repo, opts, rt)
 		},
-		Progress: progress.New(deps.Err),
+		Progress: progress.New(deps.Err, deps.Theme),
 	}.Run(target, deps.Runtime)
 	return output.Render(res, format, view, deps)
 }

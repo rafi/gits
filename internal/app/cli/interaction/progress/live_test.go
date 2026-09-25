@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/runtime/command"
 )
 
@@ -40,9 +43,10 @@ func (b *syncBuffer) String() string {
 func TestNewNonTTYReturnsNop(t *testing.T) {
 	t.Parallel()
 
+	th := theme.DefaultStyles()
 	for _, w := range []io.Writer{io.Discard, &bytes.Buffer{}} {
-		if _, ok := New(w).(command.Nop); !ok {
-			t.Errorf("New(%T) = %T, want command.Nop", w, New(w))
+		if _, ok := New(w, th).(command.Nop); !ok {
+			t.Errorf("New(%T) = %T, want command.Nop", w, New(w, th))
 		}
 	}
 }
@@ -131,7 +135,7 @@ func TestLayoutFor(t *testing.T) {
 func TestBarPercentStartsAtOne(t *testing.T) {
 	t.Parallel()
 
-	r := newLiveReporter(&bytes.Buffer{})
+	r := newLiveReporter(&bytes.Buffer{}, theme.DefaultStyles())
 	tests := []struct {
 		current, total int64
 		want           string
@@ -166,7 +170,7 @@ func TestLiveReporterConcurrent(t *testing.T) {
 	t.Parallel()
 
 	const repos = 8
-	r := newLiveReporter(&bytes.Buffer{})
+	r := newLiveReporter(&bytes.Buffer{}, theme.DefaultStyles())
 	r.Begin("fetching", repos)
 
 	var wg sync.WaitGroup
@@ -200,7 +204,7 @@ func TestLiveReporterStopIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	buf := &syncBuffer{}
-	r := newLiveReporter(buf)
+	r := newLiveReporter(buf, theme.DefaultStyles())
 
 	r.Stop() // never started: nothing to stop
 	r.Begin("fetching", 1)
@@ -222,7 +226,7 @@ func TestLiveReporterRedrawsInPlace(t *testing.T) {
 	t.Parallel()
 
 	buf := &syncBuffer{}
-	r := newLiveReporter(buf)
+	r := newLiveReporter(buf, theme.DefaultStyles())
 	r.Begin("fetching", 4)
 
 	// Hold two rows live across several 100ms render ticks.
@@ -239,5 +243,20 @@ func TestLiveReporterRedrawsInPlace(t *testing.T) {
 	}
 	if !strings.Contains(out, ansiEraseLine) {
 		t.Fatal("expected the live block to be erased on Stop")
+	}
+}
+
+// TestNewStylesFromTheme verifies newStyles takes its colors from the theme's
+// progress roles rather than the old hardcoded ANSI indices.
+func TestNewStylesFromTheme(t *testing.T) {
+	t.Parallel()
+	th := theme.DefaultStyles()
+	th.ProgressSpinner = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456"))
+	st := newStyles(th)
+	if got := st.spinner.Render("x"); !strings.Contains(got, "38;2;18;52;86") {
+		t.Errorf("spinner = %q, want the theme's ProgressSpinner", got)
+	}
+	if got := st.fill.Render("x"); got != th.ProgressFill.Render("x") {
+		t.Errorf("fill = %q, want ProgressFill %q", got, th.ProgressFill.Render("x"))
 	}
 }

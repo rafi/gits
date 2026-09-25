@@ -38,7 +38,7 @@ func ExecClone(format string, labels domain.LabelSet, args []string, deps app.Ru
 		Accepts:  clone.Accepts(),
 		Skip:     clone.Skip,
 		Do:       clone.Repo,
-		Progress: progress.New(deps.Err),
+		Progress: progress.New(deps.Err, deps.Theme),
 	}.Run(target, deps.Runtime)
 	return output.Render(res, format, view, deps)
 }

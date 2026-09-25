@@ -53,7 +53,7 @@ func Exec(format string, argv []string, labels domain.LabelSet, args []string, d
 		Do: func(ctx context.Context, repo command.Repo, _ coreruntime.Runtime) (exec.Report, error) {
 			return exec.Repo(ctx, argv, repo)
 		},
-		Progress: progress.New(deps.Err),
+		Progress: progress.New(deps.Err, deps.Theme),
 	}.Run(target, deps.Runtime)
 	return output.Render(res, format, view, deps)
 }

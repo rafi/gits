@@ -111,7 +111,7 @@ func ExecStatus(
 	res := command.Command[*status.Report]{
 		Verb:     "checking status",
 		Do:       status.Probe{Stat: opts.Stat}.Repo,
-		Progress: progress.New(deps.Err),
+		Progress: progress.New(deps.Err, deps.Theme),
 	}.Run(target, deps.Runtime)
 	output.Skips(res, deps)
 
