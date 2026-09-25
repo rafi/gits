@@ -8,6 +8,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
+	rtheme "github.com/rafi/gits/internal/app/cli/render/theme"
 )
 
 // Every test drives ExecDoctor — the command's real entry point — with a nil
@@ -170,8 +171,24 @@ func TestDoctorReportsTheme(t *testing.T) {
 	if err := ExecDoctor("table", nil, deps.RuntimeCLI); err != nil {
 		t.Fatalf("ExecDoctor: %v", err)
 	}
-	if got := deps.Result(); !strings.Contains(got, "theme") || !strings.Contains(got, "ansi (dark, TrueColor)") {
-		t.Errorf("Result Output = %q, want a theme finding naming ansi (dark, TrueColor)", got)
+	if got := deps.Result(); !strings.Contains(got, "theme") || !strings.Contains(got, "ansi (terminal colors, TrueColor)") {
+		t.Errorf("Result Output = %q, want a theme finding naming ansi (terminal colors, TrueColor)", got)
+	}
+}
+
+// TestDoctorReportsNamedThemeBackground proves a named theme is labeled by
+// its own design background (dark/light theme), unlike ansi which reports
+// "terminal colors" since it has no design background of its own.
+func TestDoctorReportsNamedThemeBackground(t *testing.T) {
+	t.Parallel()
+
+	deps := clitest.New(t, nil)
+	deps.Scheme.Theme = rtheme.Dracula
+	if err := ExecDoctor("table", nil, deps.RuntimeCLI); err != nil {
+		t.Fatalf("ExecDoctor: %v", err)
+	}
+	if got := deps.Result(); !strings.Contains(got, "dracula (dark theme, TrueColor)") {
+		t.Errorf("Result Output = %q, want dracula (dark theme, TrueColor)", got)
 	}
 }
 

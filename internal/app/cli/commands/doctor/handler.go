@@ -8,6 +8,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/render/output"
+	rtheme "github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/service/health"
 )
 
@@ -49,11 +50,18 @@ type Report struct {
 }
 
 // themeFinding reports the resolved theme and color profile, the first thing
-// to check when colors look wrong.
+// to check when colors look wrong. The wording distinguishes a named theme's
+// own design background from the ansi theme, which has none — its colors
+// come from whatever the terminal itself is set to, dark or light, so
+// labeling it "dark"/"light" like a named theme would misreport the
+// terminal's actual background.
 func themeFinding(deps app.RuntimeCLI) health.Finding {
-	bg := "light"
+	bg := "light theme"
 	if deps.Scheme.Theme.Dark {
-		bg = "dark"
+		bg = "dark theme"
+	}
+	if deps.Scheme.Theme.Name == rtheme.Ansi.Name {
+		bg = "terminal colors"
 	}
 	return health.Finding{
 		Level:   health.LevelInfo,
