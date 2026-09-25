@@ -36,10 +36,12 @@ func ExecList(deps app.RuntimeCLI) error {
 		width = max(width, len(n))
 	}
 	for _, n := range rtheme.Names() {
+		// n came from Names(), the same slice Lookup searches, so this cannot
+		// fail.
 		t, _ := rtheme.Lookup(n)
 		s := rtheme.Scheme{Theme: t, Profile: deps.Scheme.Profile}
 		mark := " "
-		if n == deps.Scheme.Theme.Name {
+		if isActiveTheme(n, deps) {
 			mark = "*"
 		}
 		bg := "light"
@@ -58,6 +60,19 @@ func ExecList(deps app.RuntimeCLI) error {
 	return nil
 }
 
+// isActiveTheme reports whether name gets the `*` marker in `theme list`. The
+// spec marks the active theme(s): the one this run actually resolved to, plus
+// both halves of a configured {dark, light} pair, since the other half is
+// exactly as "active" the moment the terminal's background differs from what
+// this run saw. Whether a flag or GITS_THEME override is in effect is not
+// tracked this far from Resolve, so this deliberately stays simple rather
+// than trying to detect that case.
+func isActiveTheme(name string, deps app.RuntimeCLI) bool {
+	return name == deps.Scheme.Theme.Name ||
+		name == deps.Settings.Theme.Name.Dark ||
+		name == deps.Settings.Theme.Name.Light
+}
+
 // ExecShow renders sample output — a status table, a project tree, a warning,
 // an error and the palette — in the named theme, or the active one.
 func ExecShow(args []string, deps app.RuntimeCLI) error {
@@ -68,9 +83,15 @@ func ExecShow(args []string, deps app.RuntimeCLI) error {
 			return err
 		}
 		s.Theme = t
+		// The user's settings.theme.styles overrides apply to whichever theme
+		// is shown, not only the active one, so a named theme's preview looks
+		// like it would if the user actually switched to it. Any warnings
+		// (unknown role, bad color) were already reported once at startup, so
+		// they are dropped here rather than shown a second time.
+		overrides, _ := rtheme.ParseStyles(deps.Settings.Theme.Styles)
+		deps.Scheme = s
+		deps.Theme = rtheme.Build(s.Theme, s.Profile, overrides)
 	}
-	deps.Scheme = s
-	deps.Theme = rtheme.Build(s.Theme, s.Profile, nil)
 
 	lipgloss.Fprintln(deps.Out, deps.Theme.StatusHeader.Render("Theme: "+s.Theme.Name))
 	fmt.Fprintln(deps.Out)

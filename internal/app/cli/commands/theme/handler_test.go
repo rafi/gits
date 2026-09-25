@@ -4,9 +4,29 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
 	rtheme "github.com/rafi/gits/internal/app/cli/render/theme"
 )
+
+// TestIsActiveThemeMarksBothConfiguredHalves proves `*` marks not only the
+// theme this run resolved to, but also both halves of a configured
+// {dark, light} pair — the spec's "active theme(s)", plural.
+func TestIsActiveThemeMarksBothConfiguredHalves(t *testing.T) {
+	t.Parallel()
+	deps := clitest.New(t, nil)
+	deps.Scheme.Theme = rtheme.Nord // the theme this run resolved to
+	deps.Settings.Theme.Name.Dark = "dracula"
+	deps.Settings.Theme.Name.Light = "one-light"
+
+	for name, want := range map[string]bool{
+		"nord": true, "dracula": true, "one-light": true, "gruvbox-dark": false,
+	} {
+		if got := isActiveTheme(name, deps.RuntimeCLI); got != want {
+			t.Errorf("isActiveTheme(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
 
 func TestListNonTTYPrintsBareNames(t *testing.T) {
 	t.Parallel()
@@ -45,6 +65,24 @@ func TestShowRendersEveryGlyph(t *testing.T) {
 	// Raw (unstripped) output carries dracula's green #50fa7b at TrueColor.
 	if raw := deps.RawResult(); !strings.Contains(raw, "38;2;80;250;123") {
 		t.Error("show dracula output has no dracula truecolor SGR")
+	}
+}
+
+// TestShowNamedThemeKeepsStyleOverrides proves that showing a named theme
+// still applies the user's settings.theme.styles overrides, rather than
+// building the named theme from scratch with no overrides at all.
+func TestShowNamedThemeKeepsStyleOverrides(t *testing.T) {
+	t.Setenv("CLICOLOR_FORCE", "1")
+	t.Setenv("COLORTERM", "truecolor")
+	deps := clitest.New(t, nil)
+	hex := "#123456"
+	deps.Settings.Theme.Styles = map[string]domain.StyleSpec{"error": {Fg: &hex}}
+
+	if err := ExecShow([]string{"dracula"}, deps.RuntimeCLI); err != nil {
+		t.Fatal(err)
+	}
+	if raw := deps.RawResult(); !strings.Contains(raw, "38;2;18;52;86") {
+		t.Errorf("show dracula output = %q, want the overridden error color", raw)
 	}
 }
 
