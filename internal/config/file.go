@@ -203,6 +203,12 @@ func (f *File) loadConfig(filePath string) error {
 		return err
 	}
 
+	// settings.theme has a string shorthand and a deprecated flat form; both
+	// are rewritten in the tree so the settings decode below sees one shape.
+	if normalizeTheme(f.client) {
+		f.Warnings = append(f.Warnings, legacyThemeNotice)
+	}
+
 	// Parse special key 'settings'.
 	if err := f.client.UnmarshalWithConf("settings", &f.Settings, koanfConf); err != nil {
 		return fmt.Errorf("unable to parse config file: %w", err)

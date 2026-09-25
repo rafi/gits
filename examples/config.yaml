@@ -140,76 +140,29 @@ settings:
     gone: "⊘"        # Upstream configured, but its remote branch is gone
     na: "–"          # Not available, e.g. nothing to compare against
 
-  # Colors and text styles. Each key takes an object with these fields:
-  #
-  #   color  ANSI palette index as a string, "0"–"255", or a hex value
-  #          such as "#A15444".
-  #   align  One of left, right, center. Any other value is a startup
-  #          error, not a warning.
-  #   width  Pad or truncate to this many cells. Only applied when > 0.
-  #   bold   true/false
-  #   faint  true/false
-  #
-  # Caveat: a key you set replaces its default style entirely. Writing
-  # `repoTitle: { bold: true }` drops the default color, so repeat `color`
-  # whenever you override a key. Keys left out are untouched.
-  #
-  # Every key below is set to its built-in default.
+  # Theme. `name` picks one of `gits theme list`; give a pair to follow the
+  # terminal background:  name: { dark: catppuccin-mocha, light: catppuccin-latte }
+  # Also selectable per run with --theme or GITS_THEME.
   theme:
-    # General
-    # normal and previewHeader default to unstyled text.
-    # normal: {}
-    # previewHeader: {}
-    bullet: { color: "4" }
-
-    # Project
-    projectTitle: { color: "5", bold: true }
-    provider: { color: "8" }
-    desc: { color: "15" }
-
-    # Repository
-    repoTitle: { color: "4", bold: true }
-    repoPath: { color: "15" }
-    gitOutput: { color: "66" }
-
-    # Branch
-    branchName: { color: "68" }
-    branchCurrent: { color: "4" }
-    branchIndicator: { color: "4", bold: true }
-    remoteName: { color: "1" }
-
-    # Tag
-    tagIndicator: { color: "1", bold: true }
-
-    # Status
-    diff: { color: "140", align: right }
-    error: { color: "1" }
-    warning: { color: "3", faint: true }
-
-    # Status table. These use the ANSI 16-color palette so the terminal
-    # theme decides the exact shades.
-    statusHeader: { bold: true }
-    statusFlag: { color: "6" }
-    statusStaged: { color: "2" }
-    statusUnstaged: { color: "3" }
-    statusUntracked: { color: "4" }
-    statusAhead: { color: "2" }
-    statusBehind: { color: "1", faint: true }
-    statusDiverged: { color: "3" }
-    statusGone: { color: "5" }
-    statusAdded: { color: "2" }
-    statusDeleted: { color: "1" }
-    statusDim: { faint: true }
-    statusFooter: { faint: true }
-
-    # List table. The border characters themselves are not configurable.
-    tableBorderStyle: { color: "240" }
-    tableHeader: { color: "73" }
-    tableRowEven: { color: "249" }
-    tableRowOdd: { color: "247" }
-
-    # Chart
-    chartDates: { color: "8" }
+    name: ansi
+    # Per-role overrides on top of the theme. Colors are a palette slot
+    # (fg muted subtle red green yellow blue magenta cyan orange accent),
+    # none, "#rrggbb", or an ANSI index "0"-"255". Attributes: bold, faint,
+    # italic, underline — `false` turns one off.
+    styles:
+      # General: normal, bullet, previewHeader
+      # Project: projectTitle, provider, desc
+      # Repository: repoTitle, repoPath, gitOutput
+      # Branch/tag: branchName, branchCurrent, branchIndicator, remoteName, tagIndicator
+      # Messages: diff, error, warning
+      # Status table: statusHeader, statusFlag, statusStaged, statusUnstaged,
+      #   statusUntracked, statusAhead, statusBehind, statusDiverged, statusGone,
+      #   statusAdded, statusDeleted, statusDim, statusFooter
+      # List table: tableBorderStyle, tableHeader, tableRowEven, tableRowOdd
+      # Chart: chartDates
+      # Progress: progressName, progressPercent, progressFill, progressEmpty,
+      #   progressStats, progressSpinner
+      statusStaged: { fg: green, bold: true }
 
 # ---------------------------------------------------------------------------
 # Projects

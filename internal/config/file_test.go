@@ -501,8 +501,10 @@ settings:
     modified: "M"
     gone: "G"
   theme:
-    repoTitle: { color: "4", bold: true }
-    diff: { color: "140", align: right, width: 3, faint: true }
+    name: ansi
+    styles:
+      repoTitle: { fg: "4", bold: true }
+      diff: { fg: "140", faint: true }
 
 remote:
   desc: A provider-backed project

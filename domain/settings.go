@@ -29,7 +29,7 @@ type Settings struct {
 	Finder          Finder           `json:"finder"`
 	GitTimeout      string           `json:"gitTimeout,omitempty"`
 	Icons           Icons            `json:"icons"`
-	Theme           Theme            `json:"theme"`
+	Theme           ThemeSettings    `json:"theme"`
 	CacheTTL        string           `json:"cacheTTL,omitempty"`
 	IncludeArchived bool             `json:"includeArchived,omitempty"`
 	ProviderTimeout string           `json:"providerTimeout,omitempty"`
@@ -210,76 +210,30 @@ func (i *Icons) ApplyDefaults() {
 	def(&i.NA, "–")
 }
 
-// Style is one configurable text style, resolved into a render style by the
-// CLI's config package.
-type Style struct {
-	Color string `json:"color,omitempty"`
-	Align string `json:"align,omitempty"`
-	Width int    `json:"width,omitempty"`
-	Bold  bool   `json:"bold,omitempty"`
-	Faint bool   `json:"faint,omitempty"`
+// ThemeSettings selects the CLI theme and overrides individual style roles on
+// top of it. The loader normalizes a bare `name: dracula` into both halves of
+// ThemeName, and the pre-0.3 flat form (role keys directly under `theme:`)
+// into Styles.
+type ThemeSettings struct {
+	Name   ThemeName            `json:"name,omitempty"`
+	Styles map[string]StyleSpec `json:"styles,omitempty"`
 }
 
-// Theme is the configurable style of every element gits renders.
-type Theme struct {
-	// General
-	Normal        Style `json:"normal"`
-	Bullet        Style `json:"bullet"`
-	PreviewHeader Style `json:"previewHeader"`
+// ThemeName is the theme for a dark and for a light terminal background. When
+// the two differ, the CLI asks the terminal which it has.
+type ThemeName struct {
+	Dark  string `json:"dark,omitempty"`
+	Light string `json:"light,omitempty"`
+}
 
-	// Project
-	ProjectTitle Style `json:"projectTitle"`
-	Provider     Style `json:"provider"`
-	Desc         Style `json:"desc"`
-
-	// Repository
-	RepoTitle Style `json:"repoTitle"`
-	RepoPath  Style `json:"repoPath"`
-	GitOutput Style `json:"gitOutput"`
-
-	// Branch
-	BranchName      Style `json:"branchName"`
-	BranchCurrent   Style `json:"branchCurrent"`
-	BranchIndicator Style `json:"branchIndicator"`
-	RemoteName      Style `json:"remoteName"`
-
-	// Tag
-	TagIndicator Style `json:"tagIndicator"`
-
-	// Status
-	Diff    Style `json:"diff"`
-	Error   Style `json:"error"`
-	Warning Style `json:"warning"`
-
-	// Status table
-	StatusHeader    Style `json:"statusHeader"`
-	StatusFlag      Style `json:"statusFlag"`
-	StatusStaged    Style `json:"statusStaged"`
-	StatusUnstaged  Style `json:"statusUnstaged"`
-	StatusUntracked Style `json:"statusUntracked"`
-	StatusAhead     Style `json:"statusAhead"`
-	StatusBehind    Style `json:"statusBehind"`
-	StatusDiverged  Style `json:"statusDiverged"`
-	StatusGone      Style `json:"statusGone"`
-	StatusAdded     Style `json:"statusAdded"`
-	StatusDeleted   Style `json:"statusDeleted"`
-	StatusDim       Style `json:"statusDim"`
-	StatusFooter    Style `json:"statusFooter"`
-
-	// Table
-	TableBorderStyle Style `json:"tableBorderStyle"`
-	TableHeader      Style `json:"tableHeader"`
-	TableRowEven     Style `json:"tableRowEven"`
-	TableRowOdd      Style `json:"tableRowOdd"`
-
-	// Chart
-	ChartDates Style `json:"chartDates"`
-
-	// Progress reporter
-	ProgressName    Style `json:"progressName"`
-	ProgressPercent Style `json:"progressPercent"`
-	ProgressFill    Style `json:"progressFill"`
-	ProgressEmpty   Style `json:"progressEmpty"`
-	ProgressStats   Style `json:"progressStats"`
-	ProgressSpinner Style `json:"progressSpinner"`
+// StyleSpec overrides one style role. A nil field keeps the theme's value, so
+// `faint: false` really turns faint off. Colors are a palette slot name,
+// `none`, `#rrggbb`/`#rgb`, or an ANSI index 0–255; the CLI validates them.
+type StyleSpec struct {
+	Fg        *string `json:"fg,omitempty"`
+	Bg        *string `json:"bg,omitempty"`
+	Bold      *bool   `json:"bold,omitempty"`
+	Faint     *bool   `json:"faint,omitempty"`
+	Italic    *bool   `json:"italic,omitempty"`
+	Underline *bool   `json:"underline,omitempty"`
 }

@@ -249,9 +249,6 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 
 		// Setup CLI theme.
 		theme := style.NewThemeDefault()
-		if err := theme.ParseConfig(configFile.Settings.Theme); err != nil {
-			return err
-		}
 
 		// A setting that fell back to its default, or a deprecated config key,
 		// is a warning, not a failure: render it as prose on Diagnostic Output,
