@@ -50,11 +50,37 @@ func Resolve(in ResolveInput) (Scheme, style.Theme, []error, error) {
 		t = Ansi
 	}
 
+	if in.Flag == "" && in.Env == "" {
+		warns = append(warns, validateUnusedHalf(in.Settings.Name, name)...)
+	}
+
 	overrides, bad := ParseStyles(in.Settings.Styles)
 	warns = append(warns, bad...)
 
 	s := Scheme{Theme: t, Profile: profile(in)}
 	return s, Build(t, s.Profile, overrides), warns, nil
+}
+
+// validateUnusedHalf reports a typo in the half of a configured {dark, light}
+// pair that this run did not select. pickName only resolves the half the
+// terminal's current background calls for, so a bad name in the other half
+// would otherwise go unnoticed until the day the background flips — the
+// mirror-image of the same bug this run may already be quietly working
+// around. It only applies once both halves are configured and differ,
+// mirroring the one condition under which pickName itself consults them.
+func validateUnusedHalf(name domain.ThemeName, selected string) []error {
+	dark, light := name.Dark, name.Light
+	if dark == "" || light == "" || dark == light {
+		return nil
+	}
+	unused := light
+	if selected == light {
+		unused = dark
+	}
+	if _, err := Lookup(unused); err != nil {
+		return []error{err}
+	}
+	return nil
 }
 
 // pickName applies the selection precedence and reports whether the name came

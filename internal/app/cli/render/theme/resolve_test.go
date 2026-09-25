@@ -69,6 +69,23 @@ func TestResolveBadInputs(t *testing.T) {
 	}
 }
 
+// TestResolveValidatesUnusedHalf proves a typo in the half of a configured
+// pair that this run does not select is still reported: otherwise it would
+// only surface the day the terminal's background flips to the other value.
+// The selected half still resolves normally despite the bad sibling.
+func TestResolveValidatesUnusedHalf(t *testing.T) {
+	t.Parallel()
+	r := in("", "", "nord", "nope")
+	r.IsDark = func() bool { return true } // selects dark; light half has the typo
+	s, _, warns, err := Resolve(r)
+	if err != nil || s.Theme.Name != "nord" {
+		t.Fatalf("theme = %q, err %v; want nord selected normally", s.Theme.Name, err)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0].Error(), "nope") {
+		t.Errorf("warns = %v, want one warning naming the bad unused (light) half", warns)
+	}
+}
+
 func TestResolveProfileFromColorFlag(t *testing.T) {
 	t.Parallel()
 	r := in("", "", "", "")
