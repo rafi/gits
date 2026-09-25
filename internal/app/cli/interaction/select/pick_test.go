@@ -13,7 +13,7 @@ import (
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/clitest"
-	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/infra/git"
 )
 
@@ -139,7 +139,7 @@ func stubFinder(t *testing.T, script string) {
 func selectDeps(t *testing.T) app.RuntimeCLI {
 	t.Helper()
 	deps := finderDeps(t)
-	deps.Theme = style.NewThemeDefault()
+	deps.Theme = theme.DefaultStyles()
 	deps.Out = io.Discard
 	deps.Err = io.Discard
 	return deps

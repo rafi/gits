@@ -13,6 +13,7 @@ import (
 	"github.com/rafi/gits/internal/app/cli/commands/list"
 	"github.com/rafi/gits/internal/app/cli/render/output"
 	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 )
 
 // TestCompletionNeverReachesProvider proves pressing Tab on a remote,
@@ -117,6 +118,8 @@ func TestFlagValueCompletion(t *testing.T) {
 		{"push -o is table and json", pushCmd, "output", "", output.Formats()},
 		{"-C offers the three colors", rootCmd, "color", "", style.ColorChoices()},
 		{"-C filters by prefix", rootCmd, "color", "a", []string{"auto", "always"}},
+		{"--theme offers every theme", rootCmd, "theme", "", theme.Names()},
+		{"--theme filters by prefix", rootCmd, "theme", "catppuccin-m", []string{"catppuccin-macchiato", "catppuccin-mocha"}},
 		{"an unmatched prefix offers nothing", listCmd, "output", "z", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

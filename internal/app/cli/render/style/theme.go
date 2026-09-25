@@ -71,67 +71,6 @@ type Theme struct {
 	ProgressSpinner lipgloss.Style
 }
 
-// NewThemeDefault returns the built-in theme.
-func NewThemeDefault() Theme {
-	theme := Theme{
-		// General
-		Normal:        lipgloss.NewStyle(),
-		PreviewHeader: lipgloss.NewStyle(),
-		Bullet:        lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
-
-		// Project
-		ProjectTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true),
-		Provider:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-		Desc:         lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
-
-		// Repository
-		RepoTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true),
-		RepoPath:  lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
-		GitOutput: lipgloss.NewStyle().Foreground(lipgloss.Color("66")),
-
-		// Branch
-		BranchName:      lipgloss.NewStyle().Foreground(lipgloss.Color("68")),
-		BranchCurrent:   lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
-		BranchIndicator: lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true),
-		RemoteName:      lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-
-		// Tag
-		TagIndicator: lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
-
-		// Status
-		Diff:    lipgloss.NewStyle().Foreground(lipgloss.Color("140")).Align(lipgloss.Right),
-		Error:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-		Warning: lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Faint(true),
-
-		// Status table (ANSI16 palette so the terminal theme
-		// decides the exact shades, faint for informational fields)
-		StatusHeader:    lipgloss.NewStyle().Bold(true),
-		StatusFlag:      lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
-		StatusStaged:    lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		StatusUnstaged:  lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		StatusUntracked: lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
-		StatusAhead:     lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		StatusBehind:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true),
-		StatusDiverged:  lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		StatusGone:      lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
-		StatusAdded:     lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		StatusDeleted:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-		StatusDim:       lipgloss.NewStyle().Faint(true),
-		StatusFooter:    lipgloss.NewStyle().Faint(true),
-
-		// List table
-		TableBorder:      lipgloss.NormalBorder(),
-		TableBorderStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		TableHeader:      lipgloss.NewStyle().Foreground(lipgloss.Color("73")),
-		TableRowEven:     lipgloss.NewStyle().Foreground(lipgloss.Color("249")),
-		TableRowOdd:      lipgloss.NewStyle().Foreground(lipgloss.Color("247")),
-
-		// Chart
-		ChartDates: lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-	}
-	return theme
-}
-
 // TableRowStyle returns the style for a table row, striping data rows and
 // setting the header apart.
 func (t *Theme) TableRowStyle(row, _ int) lipgloss.Style {

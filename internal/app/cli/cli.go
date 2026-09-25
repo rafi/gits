@@ -15,12 +15,14 @@ import (
 	"sync"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
 	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/config"
 	"github.com/rafi/gits/internal/infra/cache"
 	"github.com/rafi/gits/internal/infra/git"
@@ -33,6 +35,7 @@ var (
 	configPath  string
 	configFile  config.File
 	verboseFlag bool
+	themeFlag   string
 	// errConfigLoad holds a config parse or read failure from OnInitialize.
 	// A cobra initializer cannot return an error, so it is surfaced by the
 	// root's PersistentPreRunE before any command runs. A missing config file
@@ -118,6 +121,13 @@ func registerRootFlags() {
 
 		rootCmd.PersistentFlags().
 			BoolVarP(&verboseFlag, "verbose", "v", false, "display verbose output")
+
+		// --theme rejects unknown names, so a typo fails loudly; Tab offers the
+		// same list the flag validates against.
+		rootCmd.PersistentFlags().
+			Var(theme.NewThemeValue(&themeFlag), "theme",
+				"color theme (see `gits theme list`)")
+		mustRegisterFlagCompletion(rootCmd, "theme", completeValues(theme.Names()))
 	})
 }
 
@@ -247,8 +257,25 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 			return err
 		}
 
-		// Setup CLI theme.
-		theme := style.NewThemeDefault()
+		// Setup CLI theme: flag > GITS_THEME > settings.theme > ansi, built
+		// for the richer of the two streams' color profiles.
+		scheme, styles, themeWarnings, err := theme.Resolve(theme.ResolveInput{
+			Flag:     themeFlag,
+			Env:      os.Getenv("GITS_THEME"),
+			Settings: configFile.Settings.Theme,
+			Color:    configFile.Color,
+			Stdout:   os.Stdout,
+			Stderr:   os.Stderr,
+			Environ:  os.Environ(),
+			IsDark:   terminalIsDark,
+		})
+		if err != nil {
+			return err
+		}
+		settingWarnings = append(settingWarnings, themeWarnings...)
+		for _, w := range themeWarnings {
+			runtime.ConfigWarnings = append(runtime.ConfigWarnings, w.Error())
+		}
 
 		// A setting that fell back to its default, or a deprecated config key,
 		// is a warning, not a failure: render it as prose on Diagnostic Output,
@@ -256,17 +283,18 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 		// record or a raw os.Stderr print.
 		if !o.ownsConfigWarnings {
 			for _, w := range configFile.Warnings {
-				writeWarning(os.Stderr, theme, w)
+				writeWarning(os.Stderr, styles, w)
 			}
 			for _, w := range settingWarnings {
-				writeWarning(os.Stderr, theme, w.Error())
+				writeWarning(os.Stderr, styles, w.Error())
 			}
 		}
 
 		// Run command with dependencies.
 		cmdErr := f(args, app.RuntimeCLI{
 			Runtime: runtime,
-			Theme:   theme,
+			Theme:   styles,
+			Scheme:  scheme,
 			Out:     os.Stdout,
 			Err:     os.Stderr,
 		})
@@ -274,7 +302,7 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 		// Downgrade warnings to a subtle sentence on Diagnostic Output — real
 		// errors must still propagate.
 		if domain.IsWarning(cmdErr) {
-			writeWarning(os.Stderr, theme, cmdErr.Error())
+			writeWarning(os.Stderr, styles, cmdErr.Error())
 			return nil
 		}
 		return cmdErr
@@ -288,4 +316,14 @@ func runWithDeps(f func([]string, app.RuntimeCLI) error, opts ...runOption) cobr
 // log record.
 func writeWarning(w io.Writer, theme style.Theme, msg string) {
 	lipgloss.Fprintln(w, theme.Warning.Render(msg))
+}
+
+// terminalIsDark asks the terminal for its background color. It answers dark
+// without asking when stdout is not a terminal, since the query's reply is
+// read from stdin and a pipe would never answer.
+func terminalIsDark() bool {
+	if !term.IsTerminal(os.Stdout.Fd()) || !term.IsTerminal(os.Stdin.Fd()) {
+		return true
+	}
+	return lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
 }

@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 )
 
 // TestWriteWarningRendersProse proves a downgraded warning reaches Diagnostic
@@ -17,10 +17,10 @@ import (
 func TestWriteWarningRendersProse(t *testing.T) {
 	t.Parallel()
 
-	theme := style.NewThemeDefault()
+	styles := theme.DefaultStyles()
 	var buf bytes.Buffer
 
-	writeWarning(&buf, theme, "no branch selected")
+	writeWarning(&buf, styles, "no branch selected")
 
 	got := ansi.Strip(buf.String())
 	if strings.Contains(got, "level=warning") || strings.Contains(got, "msg=") {

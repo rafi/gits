@@ -20,11 +20,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app"
-	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/logging"
 )
@@ -61,9 +62,10 @@ func New(t *testing.T, gitClient git.Client) *Deps {
 	deps := &Deps{t: t}
 	logger := logging.New(&deps.log, true)
 	deps.RuntimeCLI = app.RuntimeCLI{
-		Theme: style.NewThemeDefault(),
-		Out:   &deps.out,
-		Err:   &deps.err,
+		Theme:  theme.DefaultStyles(),
+		Scheme: theme.Scheme{Theme: theme.Ansi, Profile: colorprofile.TrueColor},
+		Out:    &deps.out,
+		Err:    &deps.err,
 		// Canceled when the test ends, so a command left walking does
 		// not outlive it.
 		Ctx:      t.Context(),

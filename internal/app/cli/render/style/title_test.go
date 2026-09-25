@@ -25,7 +25,7 @@ func TestRepoTitleRendersRelPath(t *testing.T) {
 		},
 	}
 
-	theme := NewThemeDefault()
+	theme := Theme{}
 	for _, repo := range project.Repos {
 		want := format.RepoRelPath(project, repo, home)
 		if got := RepoTitle(repo, project, home, theme).Value(); got != want {
@@ -49,7 +49,7 @@ var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 func TestProjectTitles(t *testing.T) {
 	t.Parallel()
 
-	theme := NewThemeDefault()
+	theme := Theme{}
 
 	t.Run("title carries source and description", func(t *testing.T) {
 		t.Parallel()

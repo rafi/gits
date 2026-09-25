@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	coreruntime "github.com/rafi/gits/internal/runtime"
 )
 
@@ -27,6 +28,11 @@ type Presenter struct {
 	Err io.Writer
 
 	Theme style.Theme
+
+	// Scheme is the resolved theme and color profile Theme was built from,
+	// for views that derive styling of their own (huh prompts, the glamour
+	// README preview, `gits theme`).
+	Scheme theme.Scheme
 }
 
 // RuntimeCLI is the full set of dependencies a CLI command runs with: the

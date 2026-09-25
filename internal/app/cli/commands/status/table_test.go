@@ -10,7 +10,7 @@ import (
 
 	"github.com/rafi/gits/domain"
 	"github.com/rafi/gits/internal/app/cli/clitest"
-	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/infra/git"
 	"github.com/rafi/gits/internal/runtime/command"
 	"github.com/rafi/gits/internal/service/status"
@@ -596,7 +596,7 @@ func TestStatusSlotsWidthWithWideIcons(t *testing.T) {
 
 	icons := domain.Icons{DiffError: "✗✗"} // 2-cell error icon
 	icons.ApplyDefaults()
-	th := style.NewThemeDefault()
+	th := theme.DefaultStyles()
 	sts := []*status.Report{
 		fixture("a", domain.RepoStateOK, status.Report{}),
 		fixture("b", domain.RepoStateOK, status.Report{

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/rafi/gits/domain"
 )
 
@@ -80,7 +82,7 @@ func TestAbortOnRepoStateTerminatesItsLine(t *testing.T) {
 	}
 
 	var diag bytes.Buffer
-	err := AbortOnRepoState(&diag, repo, NewThemeDefault().Error)
+	err := AbortOnRepoState(&diag, repo, lipgloss.NewStyle())
 
 	if RenderErrors(io.Discard, []error{err}, true) == nil {
 		t.Error("an aborted repo should count toward the exit code")
