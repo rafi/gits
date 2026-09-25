@@ -274,4 +274,12 @@ type Theme struct {
 
 	// Chart
 	ChartDates Style `json:"chartDates"`
+
+	// Progress reporter
+	ProgressName    Style `json:"progressName"`
+	ProgressPercent Style `json:"progressPercent"`
+	ProgressFill    Style `json:"progressFill"`
+	ProgressEmpty   Style `json:"progressEmpty"`
+	ProgressStats   Style `json:"progressStats"`
+	ProgressSpinner Style `json:"progressSpinner"`
 }

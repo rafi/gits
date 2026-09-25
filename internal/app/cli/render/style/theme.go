@@ -66,6 +66,14 @@ type Theme struct {
 
 	// Chart
 	ChartDates lipgloss.Style
+
+	// Progress reporter
+	ProgressName    lipgloss.Style
+	ProgressPercent lipgloss.Style
+	ProgressFill    lipgloss.Style
+	ProgressEmpty   lipgloss.Style
+	ProgressStats   lipgloss.Style
+	ProgressSpinner lipgloss.Style
 }
 
 // NewThemeDefault returns the built-in theme, which ParseConfig then
