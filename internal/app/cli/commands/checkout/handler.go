@@ -15,6 +15,7 @@ import (
 	"github.com/rafi/gits/internal/app"
 	pick "github.com/rafi/gits/internal/app/cli/interaction/select"
 	"github.com/rafi/gits/internal/app/cli/render/style"
+	"github.com/rafi/gits/internal/app/cli/render/theme"
 	"github.com/rafi/gits/internal/runtime/command"
 	"github.com/rafi/gits/internal/service/checkout"
 )
@@ -122,7 +123,7 @@ func promptRepo(repoTitle string, repo domain.Repository, deps app.RuntimeCLI) (
 
 	want := current
 	prompt := newBranchPrompt(repoTitle, branches, &want)
-	if err := runBranchPrompt(prompt, &want); err != nil {
+	if err := runBranchPrompt(prompt, &want, theme.Huh(deps.Scheme)); err != nil {
 		return "", "", err
 	}
 	return want, current, nil

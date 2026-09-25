@@ -139,7 +139,7 @@ func stubPrompt(t *testing.T, choose func(current string) (string, error)) {
 	original := runBranchPrompt
 	t.Cleanup(func() { runBranchPrompt = original })
 
-	runBranchPrompt = func(_ *huh.Select[string], choice *string) error {
+	runBranchPrompt = func(_ *huh.Select[string], choice *string, _ huh.Theme) error {
 		want, err := choose(*choice)
 		if err != nil {
 			return err

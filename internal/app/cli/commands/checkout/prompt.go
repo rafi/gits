@@ -25,8 +25,13 @@ const branchPageSize = 10
 // it. Bubbletea handles SIGINT itself and reports it as an abort, which is
 // what an interrupted prompt is; handing it the root context would reach the
 // same user through huh.ErrTimeout instead.
-var runBranchPrompt = func(prompt *huh.Select[string], _ *string) error {
-	return huh.NewForm(huh.NewGroup(prompt)).Run()
+//
+// th themes the field via the form rather than the field itself:
+// (*huh.Select[string]).WithTheme returns huh.Field, not *huh.Select[string],
+// so chaining it into newBranchPrompt's builder would lose the concrete type
+// callers and tests (Hovered, GetValue) rely on.
+var runBranchPrompt = func(prompt *huh.Select[string], _ *string, th huh.Theme) error {
+	return huh.NewForm(huh.NewGroup(prompt)).WithTheme(th).Run()
 }
 
 // newBranchPrompt builds the branch selection. choice is huh's value binding:
