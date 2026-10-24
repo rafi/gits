@@ -34,10 +34,9 @@ gits clone acme      # clone the ones that aren't there yet
 
 A project is just a label for a group of repositories. It either lists them by
 hand or discovers them from GitHub, GitLab, Bitbucket, Gitea, Forgejo, Gerrit
-or a local directory -
-cached, so day-to-day commands never wait on the network.
+or a local directory - cached, so day-to-day commands never wait on the network.
 
-It is a single static Go binary needing nothing but `git`.
+Only requirement is `git`.
 
 ## Why gits?
 
@@ -70,7 +69,7 @@ request cannon. `gits` covers the first two in one binary.
   one. Point it at a directory and go. Bring a config later, if ever.
 - **Pipe-friendly by design.** `-o json` on every command that lists or reports,
   clean stdout, progress on stderr. Your scripts, your CI, and your agents all
-  get a straiacme answer.
+  get a straight answer.
 - **Projects that nest.** GitHub, GitLab, Bitbucket, and more, grouped into
   sub-projects and filtered down. Flat tag lists give up long before you do.
 
@@ -174,12 +173,20 @@ gits status acme       # where does everything stand?
 gits pull acme         # bring them all up to date
 ```
 
+![gits list](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/list.png)
+
+![gits clone](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/clone.png)
+
+![gits pull](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/pull.png)
+
 **4. Or point it at a directory**, with no config at all:
 
 ```bash
 gits status ~/code     # every repository under a path
 gits status .          # every repository under the current directory
 ```
+
+![gits status on a directory](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/status-path.png)
 
 ## Commands
 
@@ -219,6 +226,10 @@ commands offer `table` and `json`.
 
 Every command that addresses repositories also takes `-l`/`--label`, which
 picks them out by label instead of by project. See [Labels](#labels).
+
+![gits list -o tree](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/list-tree.png)
+
+![gits status -o json piped to jq](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/json.png)
 
 ## Usage
 
@@ -265,10 +276,10 @@ gits exec acme -l demo -- git gc  # one command across the labeled ones
 gits list -l demo                 # across every project, no project named
 ```
 
-A repository carries its own tags plus its project's, sub-projects included, so
-`web` above is reachable as both `demo` and `work`, and one tag on a project
-addresses everything in it - including repositories discovered from a forge,
-which have no config entry of their own to label.
+A repository carries its own labels plus its project's, sub-projects included,
+so `web` above is reachable as both `demo` and `work`, and one label on a
+project addresses everything in it - including repositories discovered from a
+forge, which have no config entry of their own to label.
 
 Matching is exact and case-insensitive, like `include`/`exclude`: no globs. A
 label nothing carries is reported rather than silently doing nothing, so a
@@ -302,6 +313,10 @@ gits status acme --dirty     # only repositories with uncommitted changes
 gits status acme --unsynced  # only repositories ahead of or behind upstream
 gits status acme --stat      # add a column of uncommitted line counts
 ```
+
+![gits status](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/status.png)
+
+![gits status --dirty](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/status-dirty.png)
 
 ### Adding repositories to a project
 
@@ -399,6 +414,8 @@ failed. Also supported: `--all`, `--branches`, `--follow-tags`, `--atomic` and
 deliberately unreachable: one mistyped flag across forty remotes is not
 recoverable the way it is against one.
 
+![gits push](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/push.png)
+
 ### Running a command everywhere
 
 `gits exec` runs one command in every repository. Everything after `--` is the
@@ -412,6 +429,8 @@ gits exec acme -- sh -c 'git log -1 --format=%s | tr a-z A-Z'   # pipes need a s
 
 Commands run directly rather than through a shell, each in its repository, with
 `GITS_PROJECT`, `GITS_REPO` and `GITS_REPO_PATH` exported.
+
+![gits exec](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/exec.png)
 
 ### Jumping to a repository
 
@@ -468,6 +487,8 @@ info    cache directory ~/.cache/gits
 warning cache.github-acme written by gits v0.10, will be refetched (cached 9d ago)
 info    cache.github-rafi cached 1d ago, valid for 168h0m0s
 ```
+
+![gits doctor](https://raw.githubusercontent.com/rafi/assets/master/repo/gits/screenshots/doctor.png)
 
 ### Shell completion
 

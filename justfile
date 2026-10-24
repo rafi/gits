@@ -22,7 +22,7 @@ LDFLAGS := (
 # Tool requirements, as semver requirements (e.g. "^2", ">=2.12", "*"). A tool
 # already on PATH that satisfies its requirement is used as-is — provided it
 # was also built by the active Go toolchain, see _go_tool_version.
-GOLANGCI_VERSION := ">=2.13.1"
+GOLANGCI_VERSION := ">=2.13.2"
 GOIMPORTS_VERSION := "^0"
 
 [private]
@@ -64,9 +64,30 @@ bump version:
   git tag -a "{{ version }}" -m "{{ version }}"
   echo "Tagged {{ version }}. Push with: git push --follow-tags"
 
-# video tape a demo
-vhs:
-  vhs examples/demo.tape
+# Where `just demo` copies the finished recording. Override to keep it here:
+#   just DEMO_ASSETS=examples demo
+DEMO_ASSETS := env('DEMO_ASSETS', home_directory() / 'code/rafi/assets/repo/gits')
+
+# record the demo GIF and screenshots against a temp directory
+demo: build
+  #!/usr/bin/env bash
+  set -euo pipefail
+  sandbox=$(mktemp -d /tmp/gits-demo.XXXX)
+  trap 'rm -rf "$sandbox"' EXIT
+
+  ./examples/demo-fixture.sh "$sandbox" '{{ BINDIR / BINNAME }}'
+
+  rm -rf examples/demo.gif examples/screenshots
+  mkdir -p examples/screenshots
+  DEMO_SANDBOX="$sandbox" PATH="$sandbox/bin:$PATH" vhs examples/demo.tape
+
+  dest='{{ DEMO_ASSETS }}'
+  if [ "$dest" != "examples" ]; then
+    rm -rf "$dest/screenshots"
+    mkdir -p "$dest"
+    mv examples/demo.gif examples/screenshots "$dest/"
+  fi
+  echo "demo written to $dest: demo.gif and $(ls "$dest/screenshots" | wc -l | tr -d ' ') screenshots"
 
 # remove build artifacts
 clean:
