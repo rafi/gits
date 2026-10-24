@@ -49,15 +49,15 @@ func Lookup(name string) (Theme, error) {
 		name, strings.Join(Names(), ", "))
 }
 
-// ThemeValue is a pflag.Value binding --theme to a string, rejecting unknown
+// FlagValue is a pflag.Value binding --theme to a string, rejecting unknown
 // names so a typo fails loudly instead of silently meaning ansi.
-type ThemeValue struct{ dst *string }
+type FlagValue struct{ dst *string }
 
-// NewThemeValue binds a theme flag to dst.
-func NewThemeValue(dst *string) *ThemeValue { return &ThemeValue{dst: dst} }
+// NewFlagValue binds a theme flag to dst.
+func NewFlagValue(dst *string) *FlagValue { return &FlagValue{dst: dst} }
 
 // String returns the current value.
-func (v *ThemeValue) String() string {
+func (v *FlagValue) String() string {
 	if v.dst == nil {
 		return ""
 	}
@@ -65,7 +65,7 @@ func (v *ThemeValue) String() string {
 }
 
 // Set validates and stores a theme name.
-func (v *ThemeValue) Set(s string) error {
+func (v *FlagValue) Set(s string) error {
 	if _, err := Lookup(s); err != nil {
 		return err
 	}
@@ -74,4 +74,4 @@ func (v *ThemeValue) Set(s string) error {
 }
 
 // Type is the flag's value type name, shown in help.
-func (v *ThemeValue) Type() string { return "theme" }
+func (v *FlagValue) Type() string { return "theme" }

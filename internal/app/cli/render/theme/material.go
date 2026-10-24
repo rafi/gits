@@ -1,6 +1,6 @@
 package theme
 
-// MaterialPalenight — https://github.com/material-theme/vsc-material-theme (Palenight variant)
+// MaterialPalenight — https://github.com/material-theme/vsc-material-theme (Palenight variant).
 var MaterialPalenight = Theme{
 	Name: "material-palenight",
 	Dark: true,

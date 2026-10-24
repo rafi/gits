@@ -1,6 +1,6 @@
 package theme
 
-// TokyoNight — https://github.com/folke/tokyonight.nvim (colors/night.lua, colors/storm.lua)
+// TokyoNight — https://github.com/folke/tokyonight.nvim (colors/night.lua, colors/storm.lua).
 var TokyoNight = Theme{
 	Name: "tokyo-night",
 	Dark: true,
@@ -19,7 +19,7 @@ var TokyoNight = Theme{
 	},
 }
 
-// TokyoNightStorm — https://github.com/folke/tokyonight.nvim (colors/storm.lua)
+// TokyoNightStorm — https://github.com/folke/tokyonight.nvim (colors/storm.lua).
 var TokyoNightStorm = Theme{
 	Name: "tokyo-night-storm",
 	Dark: true,
@@ -38,7 +38,7 @@ var TokyoNightStorm = Theme{
 	},
 }
 
-// TokyoNightDay — https://github.com/folke/tokyonight.nvim (colors/storm.lua inverted via util.invert; cross-checked against extras/prism/tokyonight_day.js and extras/alacritty/tokyonight_day.toml)
+// TokyoNightDay — https://github.com/folke/tokyonight.nvim (colors/storm.lua inverted via util.invert; cross-checked against extras/prism/tokyonight_day.js and extras/alacritty/tokyonight_day.toml).
 var TokyoNightDay = Theme{
 	Name: "tokyo-night-day",
 	Dark: false,

@@ -36,10 +36,10 @@ func TestLookupUnknownListsNames(t *testing.T) {
 	}
 }
 
-func TestThemeValueRejectsUnknown(t *testing.T) {
+func TestFlagValueRejectsUnknown(t *testing.T) {
 	t.Parallel()
 	var dst string
-	v := NewThemeValue(&dst)
+	v := NewFlagValue(&dst)
 	if err := v.Set("nord"); err != nil || dst != "nord" {
 		t.Errorf("Set(nord) = %v, dst %q", err, dst)
 	}

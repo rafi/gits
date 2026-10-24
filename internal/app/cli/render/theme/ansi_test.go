@@ -27,6 +27,7 @@ func renderAll(th style.Theme) string {
 // pre-theme defaults did. The golden was captured from the pre-theme
 // defaults and must never be regenerated from the ansi theme itself.
 func TestAnsiMatchesLegacyDefault(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join("testdata", "ansi.golden")
 	want, err := os.ReadFile(path)
 	if err != nil {

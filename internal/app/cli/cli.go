@@ -125,7 +125,7 @@ func registerRootFlags() {
 		// --theme rejects unknown names, so a typo fails loudly; Tab offers the
 		// same list the flag validates against.
 		rootCmd.PersistentFlags().
-			Var(theme.NewThemeValue(&themeFlag), "theme",
+			Var(theme.NewFlagValue(&themeFlag), "theme",
 				`color theme (see "gits theme list")`)
 		mustRegisterFlagCompletion(rootCmd, "theme", completeValues(theme.Names()))
 	})

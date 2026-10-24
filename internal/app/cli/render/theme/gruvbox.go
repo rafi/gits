@@ -1,6 +1,6 @@
 package theme
 
-// GruvboxDark — https://github.com/morhetz/gruvbox (colors/gruvbox.vim)
+// GruvboxDark — https://github.com/morhetz/gruvbox (colors/gruvbox.vim).
 var GruvboxDark = Theme{
 	Name: "gruvbox-dark",
 	Dark: true,
@@ -19,7 +19,7 @@ var GruvboxDark = Theme{
 	},
 }
 
-// GruvboxLight — https://github.com/morhetz/gruvbox (colors/gruvbox.vim)
+// GruvboxLight — https://github.com/morhetz/gruvbox (colors/gruvbox.vim).
 var GruvboxLight = Theme{
 	Name: "gruvbox-light",
 	Dark: false,

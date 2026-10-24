@@ -1,6 +1,6 @@
 package theme
 
-// CatppuccinLatte — https://catppuccin.com/palette (latte)
+// CatppuccinLatte — https://catppuccin.com/palette (latte).
 var CatppuccinLatte = Theme{
 	Name: "catppuccin-latte",
 	Dark: false,
@@ -19,7 +19,7 @@ var CatppuccinLatte = Theme{
 	},
 }
 
-// CatppuccinFrappe — https://catppuccin.com/palette (frappe)
+// CatppuccinFrappe — https://catppuccin.com/palette (frappe).
 var CatppuccinFrappe = Theme{
 	Name: "catppuccin-frappe",
 	Dark: true,
@@ -38,7 +38,7 @@ var CatppuccinFrappe = Theme{
 	},
 }
 
-// CatppuccinMacchiato — https://catppuccin.com/palette (macchiato)
+// CatppuccinMacchiato — https://catppuccin.com/palette (macchiato).
 var CatppuccinMacchiato = Theme{
 	Name: "catppuccin-macchiato",
 	Dark: true,
@@ -57,7 +57,7 @@ var CatppuccinMacchiato = Theme{
 	},
 }
 
-// CatppuccinMocha — https://catppuccin.com/palette (mocha)
+// CatppuccinMocha — https://catppuccin.com/palette (mocha).
 var CatppuccinMocha = Theme{
 	Name: "catppuccin-mocha",
 	Dark: true,

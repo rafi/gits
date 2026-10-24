@@ -49,8 +49,9 @@ func TestBuildLayersTweaksThenOverrides(t *testing.T) {
 	t.Parallel()
 	yes, no := true, false
 	th := testTheme
-	th.Tweaks = map[Role]Spec{RoleStatusStaged: {Bold: &yes}}
-	over := map[Role]Spec{RoleStatusStaged: {Fg: Ref(SlotRed)}, RoleStatusBehind: {Faint: &no}}
+	// Tweaks and overrides name only the roles they change.
+	th.Tweaks = map[Role]Spec{RoleStatusStaged: {Bold: &yes}}                                   //exhaustive:ignore
+	over := map[Role]Spec{RoleStatusStaged: {Fg: Ref(SlotRed)}, RoleStatusBehind: {Faint: &no}} //exhaustive:ignore
 	built := Build(th, colorprofile.TrueColor, over)
 	if s := built.StatusStaged.Render("x"); !strings.Contains(s, "38;2;255;0;0") || !built.StatusStaged.GetBold() {
 		t.Errorf("StatusStaged = %q, want red (override) and bold (tweak)", s)
@@ -62,7 +63,7 @@ func TestBuildLayersTweaksThenOverrides(t *testing.T) {
 
 func TestBuildRawAndNoneRefs(t *testing.T) {
 	t.Parallel()
-	over := map[Role]Spec{RoleStatusGone: {Fg: Raw("#123456")}, RoleStatusDim: {Fg: None()}}
+	over := map[Role]Spec{RoleStatusGone: {Fg: Raw("#123456")}, RoleStatusDim: {Fg: None()}} //exhaustive:ignore
 	built := Build(testTheme, colorprofile.TrueColor, over)
 	if s := built.StatusGone.Render("x"); !strings.Contains(s, "38;2;18;52;86") {
 		t.Errorf("StatusGone = %q, want the raw hex", s)

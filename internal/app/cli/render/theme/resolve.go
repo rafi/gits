@@ -124,7 +124,7 @@ func profile(in ResolveInput) colorprofile.Profile {
 // (with a warning) unknown roles and invalid colors so one typo does not cost
 // the rest of the config.
 func ParseStyles(cfg map[string]domain.StyleSpec) (map[Role]Spec, []error) {
-	valid := map[Role]bool{}
+	valid := make(map[Role]bool)
 	for _, r := range Roles() {
 		valid[r] = true
 	}
@@ -134,7 +134,7 @@ func ParseStyles(cfg map[string]domain.StyleSpec) (map[Role]Spec, []error) {
 	}
 	sort.Strings(keys) // stable warning order
 
-	out := map[Role]Spec{}
+	out := make(map[Role]Spec)
 	var warns []error
 	for _, key := range keys {
 		if !valid[Role(key)] {

@@ -9,7 +9,10 @@ import (
 // Ansi is the default theme: every slot is a terminal-palette index, so the
 // terminal's own color scheme decides the shades. Its tweaks reproduce the
 // pre-theme defaults exactly, including their few 256-color picks, so users
-// who never choose a theme see no change.
+// who never choose a theme see no change. Tweaks name only the roles they
+// change, so the map is partial by design.
+//
+//exhaustive:ignore
 var Ansi = Theme{
 	Name: "ansi",
 	Dark: true,

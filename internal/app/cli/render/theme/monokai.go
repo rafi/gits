@@ -1,6 +1,6 @@
 package theme
 
-// MonokaiPro — https://monokai.pro (cross-checked against mbadolato/iTerm2-Color-Schemes windowsterminal/Monokai Pro.json)
+// MonokaiPro — https://monokai.pro (cross-checked against mbadolato/iTerm2-Color-Schemes windowsterminal/Monokai Pro.json).
 var MonokaiPro = Theme{
 	Name: "monokai-pro",
 	Dark: true,

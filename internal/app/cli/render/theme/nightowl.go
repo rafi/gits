@@ -1,6 +1,6 @@
 package theme
 
-// NightOwl — https://github.com/sdras/night-owl-vscode-theme (themes/Night Owl-color-theme.json)
+// NightOwl — https://github.com/sdras/night-owl-vscode-theme (themes/Night Owl-color-theme.json).
 var NightOwl = Theme{
 	Name: "night-owl",
 	Dark: true,

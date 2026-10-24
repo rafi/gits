@@ -1,6 +1,6 @@
 package theme
 
-// EverforestDark — https://github.com/sainnhe/everforest (autoload/everforest.vim, medium)
+// EverforestDark — https://github.com/sainnhe/everforest (autoload/everforest.vim, medium).
 var EverforestDark = Theme{
 	Name: "everforest-dark",
 	Dark: true,
@@ -19,7 +19,7 @@ var EverforestDark = Theme{
 	},
 }
 
-// EverforestLight — https://github.com/sainnhe/everforest (autoload/everforest.vim, medium)
+// EverforestLight — https://github.com/sainnhe/everforest (autoload/everforest.vim, medium).
 var EverforestLight = Theme{
 	Name: "everforest-light",
 	Dark: false,

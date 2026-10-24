@@ -22,8 +22,8 @@ func RenderSample(deps app.RuntimeCLI) {
 	proj := domain.Project{Name: "sample"}
 	mk := func(name string, state domain.RepoState, r status.Report) *status.Report {
 		r.Repo = command.Repo{
-			Repository: domain.Repository{Name: name, State: state},
-			Project:    proj, ProjectKey: "sample", Path: name,
+			Name: name, State: state,
+			Project: proj, ProjectKey: "sample", Path: name,
 		}
 		if r.Branch == "" {
 			r.Branch = "main"
@@ -41,7 +41,7 @@ func RenderSample(deps app.RuntimeCLI) {
 		mk("ahead", domain.RepoStateOK, status.Report{Snapshot: tracking(3, 0), Compared: true, Head: head("feat: ship it", time.Hour)}),
 		mk("behind", domain.RepoStateOK, status.Report{Snapshot: tracking(0, 5), Compared: true, Head: head("refactor: split", 40*24*time.Hour)}),
 		mk("diverged", domain.RepoStateOK, status.Report{Snapshot: tracking(2, 7), Compared: true, Head: head("wip", 30*time.Minute)}),
-		mk("gone", domain.RepoStateOK, status.Report{Snapshot: git.Snapshot{Branch: "old", Upstream: "origin/old"}, Head: head("feat: old branch", 400*24*time.Hour)}),
+		mk("gone", domain.RepoStateOK, status.Report{Branch: "old", Upstream: "origin/old", Head: head("feat: old branch", 400*24*time.Hour)}),
 		mk("broken", domain.RepoStateError, status.Report{Err: errors.New("not a readable git repository")}),
 		mk("missing", domain.RepoStateNotCloned, status.Report{Err: errors.New("not cloned")}),
 	}

@@ -44,6 +44,7 @@ func (c Color) resolve(p colorprofile.Profile) color.Color {
 // Slot names one palette color. The string is the name users write in config.
 type Slot string
 
+// The palette slots, in display order (see Slots).
 const (
 	SlotFg      Slot = "fg"
 	SlotMuted   Slot = "muted"
@@ -96,11 +97,10 @@ func (p Palette) Get(s Slot) Color {
 		return p.Cyan
 	case SlotOrange:
 		return p.Orange
-	default:
-		// Reached only for SlotAccent: Slot values come exclusively from the
-		// Slot constants above or from config already validated against
-		// Slots() (see ParseColorRef), so this is never an unrecognized name
-		// silently mapped to Accent.
+	case SlotAccent:
 		return p.Accent
 	}
+	// Unreachable: Slot values come exclusively from the Slot constants above
+	// or from config already validated against Slots() (see ParseColorRef).
+	return p.Accent
 }

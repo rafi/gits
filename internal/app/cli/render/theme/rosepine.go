@@ -1,6 +1,6 @@
 package theme
 
-// RosePine — https://github.com/rose-pine/palette (palette.json, main)
+// RosePine — https://github.com/rose-pine/palette (palette.json, main).
 var RosePine = Theme{
 	Name: "rose-pine",
 	Dark: true,
@@ -19,7 +19,7 @@ var RosePine = Theme{
 	},
 }
 
-// RosePineMoon — https://github.com/rose-pine/palette (palette.json, moon)
+// RosePineMoon — https://github.com/rose-pine/palette (palette.json, moon).
 var RosePineMoon = Theme{
 	Name: "rose-pine-moon",
 	Dark: true,

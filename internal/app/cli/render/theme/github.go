@@ -1,6 +1,6 @@
 package theme
 
-// GitHubDark — https://github.com/primer/primitives (functional/color/ansi-dark.json, base/color/dark.json; fgColor-default/muted, borderColor-default, prettylights-syntax-variable)
+// GitHubDark — https://github.com/primer/primitives (functional/color/ansi-dark.json, base/color/dark.json; fgColor-default/muted, borderColor-default, prettylights-syntax-variable).
 var GitHubDark = Theme{
 	Name: "github-dark",
 	Dark: true,
@@ -19,7 +19,7 @@ var GitHubDark = Theme{
 	},
 }
 
-// GitHubLight — https://github.com/primer/primitives (functional/color/ansi-light.json, base/color/light.json; fgColor-default/muted, borderColor-default, fgColor-severe)
+// GitHubLight — https://github.com/primer/primitives (functional/color/ansi-light.json, base/color/light.json; fgColor-default/muted, borderColor-default, fgColor-severe).
 var GitHubLight = Theme{
 	Name: "github-light",
 	Dark: false,

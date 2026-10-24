@@ -1,6 +1,6 @@
 package theme
 
-// Kanagawa — https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua, wave)
+// Kanagawa — https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua, wave).
 var Kanagawa = Theme{
 	Name: "kanagawa",
 	Dark: true,

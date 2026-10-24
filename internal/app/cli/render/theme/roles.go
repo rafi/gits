@@ -10,6 +10,7 @@ import (
 // settings.theme.styles.
 type Role string
 
+// The styled roles; Roles lists them in this order.
 const (
 	RoleNormal           Role = "normal"
 	RoleBullet           Role = "bullet"

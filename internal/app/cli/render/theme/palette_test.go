@@ -118,10 +118,10 @@ func lab(c color.Color) (float64, float64, float64) {
 		}
 		return math.Pow((f+0.055)/1.055, 2.4)
 	}
-	R, G, B := lin(r), lin(g), lin(b)
-	x := (0.4124*R + 0.3576*G + 0.1805*B) / 0.95047
-	y := 0.2126*R + 0.7152*G + 0.0722*B
-	z := (0.0193*R + 0.1192*G + 0.9505*B) / 1.08883
+	rl, gl, bl := lin(r), lin(g), lin(b)
+	x := (0.4124*rl + 0.3576*gl + 0.1805*bl) / 0.95047
+	y := 0.2126*rl + 0.7152*gl + 0.0722*bl
+	z := (0.0193*rl + 0.1192*gl + 0.9505*bl) / 1.08883
 	f := func(t float64) float64 {
 		if t > 0.008856 {
 			return math.Cbrt(t)

@@ -207,8 +207,6 @@ func TestExecStatusSingleRepo(t *testing.T) {
 // TestExecStatusPathDiscoversLiveRepos covers the status-specific path mode:
 // a directory argument is a live group independent of the config, containing the
 // argument itself when it is a repository or every repository below it.
-//
-//nolint:paralleltest // t.Chdir changes process-wide state.
 func TestExecStatusPathDiscoversLiveRepos(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{"single", "fleet/api", "fleet/web", "fleet/nested/worker"} {
@@ -262,8 +260,6 @@ func TestExecStatusPathDiscoversLiveRepos(t *testing.T) {
 
 // TestExecStatusFilePathUsesContainingRepository covers a file path argument:
 // it resolves to its containing directory, then discovers the repository there.
-//
-//nolint:paralleltest // t.Chdir changes process-wide state.
 func TestExecStatusFilePathUsesContainingRepository(t *testing.T) {
 	root := t.TempDir()
 	repo := filepath.Join(root, "api")

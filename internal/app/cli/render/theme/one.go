@@ -1,6 +1,6 @@
 package theme
 
-// OneDark — https://github.com/atom/one-dark-syntax (styles/colors.less)
+// OneDark — https://github.com/atom/one-dark-syntax (styles/colors.less).
 var OneDark = Theme{
 	Name: "one-dark",
 	Dark: true,
@@ -19,7 +19,7 @@ var OneDark = Theme{
 	},
 }
 
-// OneLight — https://github.com/atom/one-light-syntax (styles/colors.less)
+// OneLight — https://github.com/atom/one-light-syntax (styles/colors.less).
 var OneLight = Theme{
 	Name: "one-light",
 	Dark: false,

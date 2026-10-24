@@ -57,7 +57,9 @@ func colorString(c color.Color) string {
 	if a == 0 {
 		return ""
 	}
-	return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
+	// RGBA channels are 16-bit; the high byte is the 8-bit #rrggbb value.
+	const toByte = 8
+	return fmt.Sprintf("#%02x%02x%02x", r>>toByte, g>>toByte, b>>toByte)
 }
 
 // Glamour returns a glamour style for the README preview built from the
@@ -71,7 +73,8 @@ func Glamour(s Scheme) ansi.StyleConfig {
 		return &v
 	}
 	yes := true
-	margin := uint(2)
+	const blockMargin = 2 // document margin and quote indent, in cells
+	margin := uint(blockMargin)
 	cfg := ansi.StyleConfig{
 		Document: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{BlockPrefix: "\n", BlockSuffix: "\n", Color: c(SlotFg)},

@@ -1,6 +1,6 @@
 package theme
 
-// Nightfox — https://github.com/EdenEast/nightfox.nvim (lua/nightfox/palette/nightfox.lua)
+// Nightfox — https://github.com/EdenEast/nightfox.nvim (lua/nightfox/palette/nightfox.lua).
 var Nightfox = Theme{
 	Name: "nightfox",
 	Dark: true,
@@ -19,7 +19,7 @@ var Nightfox = Theme{
 	},
 }
 
-// Dayfox — https://github.com/EdenEast/nightfox.nvim (lua/nightfox/palette/dayfox.lua)
+// Dayfox — https://github.com/EdenEast/nightfox.nvim (lua/nightfox/palette/dayfox.lua).
 var Dayfox = Theme{
 	Name: "dayfox",
 	Dark: false,

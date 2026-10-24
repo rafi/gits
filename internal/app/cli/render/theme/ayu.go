@@ -1,6 +1,6 @@
 package theme
 
-// AyuDark — https://github.com/ayu-theme/ayu-colors (themes/dark.yaml)
+// AyuDark — https://github.com/ayu-theme/ayu-colors (themes/dark.yaml).
 var AyuDark = Theme{
 	Name: "ayu-dark",
 	Dark: true,
@@ -19,7 +19,7 @@ var AyuDark = Theme{
 	},
 }
 
-// AyuLight — https://github.com/ayu-theme/ayu-colors (themes/light.yaml)
+// AyuLight — https://github.com/ayu-theme/ayu-colors (themes/light.yaml).
 var AyuLight = Theme{
 	Name: "ayu-light",
 	Dark: false,

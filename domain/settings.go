@@ -215,7 +215,7 @@ func (i *Icons) ApplyDefaults() {
 // ThemeName, and the pre-0.3 flat form (role keys directly under `theme:`)
 // into Styles.
 type ThemeSettings struct {
-	Name   ThemeName            `json:"name,omitempty"`
+	Name   ThemeName            `json:"name,omitzero"`
 	Styles map[string]StyleSpec `json:"styles,omitempty"`
 }
 

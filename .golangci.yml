@@ -225,7 +225,7 @@ linters:
       # Default: [ switch ]
       check:
         - switch
-        - map
+        - mapliteral
 
     # The two output destinations are runtime dependencies on app.RuntimeCLI:
     # a command's result goes to deps.Out and its diagnostics to deps.Err, so
@@ -347,6 +347,10 @@ linters:
         - fsutil.WriteFileAtomicPreserve
         - prometheus.ExponentialBuckets.*
         - prometheus.LinearBuckets
+        # Theme palettes are tables of color values: C("#hex", 256-index,
+        # 16-index) and A(16-index). The numbers are the data.
+        - ^C$
+        - ^A$
 
     nakedret:
       max-func-lines: 30
@@ -467,3 +471,11 @@ linters:
       - linters: [forbidigo]
         path: _test\.go$
         text: the process streams are constructed by the command wiring
+      # Theme palettes are parallel data declarations with one shape (name,
+      # dark flag, eleven colors), so every palette file matches every other.
+      - linters: [dupl]
+        path: ^internal/app/cli/render/theme/
+      # The sample repositories behind `gits theme show` are fixture data:
+      # their counts and ages are the content, not unnamed constants.
+      - linters: [mnd]
+        path: ^internal/app/cli/commands/status/sample\.go$
